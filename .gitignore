@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Data: keep directory placeholders, never commit downloaded datasets
+data/raw/*
+!data/raw/.gitkeep
+!data/raw/ioda/
+data/raw/ioda/*
+!data/raw/ioda/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Model artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+checkpoints/
+models/
