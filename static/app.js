@@ -1,156 +1,41 @@
-const palette = {
-  bgp: "#78a9ff",
-  "ping-slash24": "#61d6c5",
-  "merit-nt": "#f0bd70"
-};
-
-let chart;
-const rangeSelect = document.querySelector("#time-range");
-const refreshButton = document.querySelector("#refresh");
-const metrics = document.querySelector("#metrics");
-const toast = document.querySelector("#toast");
-
-function formatNumber(value) {
-  return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value);
-}
-
-function formatTime(timestamp) {
-  if (!timestamp) return "Time unavailable";
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC"
-  }).format(new Date(timestamp * 1000)) + " UTC";
-}
-
-function showToast(message) {
-  toast.textContent = message;
-  toast.classList.add("show");
-  window.setTimeout(() => toast.classList.remove("show"), 2600);
-}
-
-function renderMetrics(data) {
-  if (!data.series.length) {
-    metrics.innerHTML = '<div class="metric-card"><strong>Measurements unavailable</strong><p class="metric-description">The provider did not return usable observations. Try refreshing in a moment.</p></div>';
-    return;
-  }
-  metrics.innerHTML = data.series.map((item) => {
-    const isAvailable = item.status === "available";
-    return `
-      <article class="metric-card">
-        <div class="metric-top">
-          <span class="metric-label">${item.label}</span>
-          <span class="status-pill ${isAvailable ? "" : "error"}">${isAvailable ? "Data available" : "No data"}</span>
-        </div>
-        <div class="metric-value">${item.latest === null ? "—" : formatNumber(item.latest)}</div>
-        <div class="metric-unit">${item.unit}</div>
-        <p class="metric-description">${item.description}</p>
-        <div class="metric-foot"><span>${item.observations} observations</span><span>Latest: ${formatTime(item.latest_at)}</span></div>
-      </article>`;
-  }).join("");
-}
-
-function renderChart(data) {
-  const available = data.series.filter(item => item.points.length);
-  const ctx = document.querySelector("#signals-chart");
-  if (chart) chart.destroy();
-
-  if (!available.length || typeof Chart === "undefined") {
-    document.querySelector(".chart-wrap").innerHTML = '<p class="section-subtitle">Chart unavailable. Measurement cards may still contain the latest values.</p>';
-    return;
-  }
-
-  chart = new Chart(ctx, {
-    type: "line",
-    data: {
-      datasets: available.map(item => ({
-        label: item.label,
-        data: item.points.filter(point => point.value !== null).map(point => ({
-          x: point.timestamp * 1000,
-          y: point.value
-        })),
-        borderColor: palette[item.id],
-        backgroundColor: palette[item.id],
-        borderWidth: 1.8,
-        pointRadius: 0,
-        pointHitRadius: 8,
-        tension: .22
-      }))
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "nearest", intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: "#1a2a40",
-          borderColor: "#344a65",
-          borderWidth: 1,
-          titleColor: "#dce7f3",
-          bodyColor: "#b9c9db",
-          callbacks: {
-            title: items => items.length ? formatTime(items[0].parsed.x / 1000) : "",
-            label: context => ` ${context.dataset.label}: ${formatNumber(context.parsed.y)}`
-          }
-        }
-      },
-      scales: {
-        x: {
-          type: "linear",
-          ticks: { callback: value => formatTime(value / 1000).replace(" UTC", ""), color: "#7589a3", maxTicksLimit: 7, font: { size: 9 } },
-          grid: { color: "rgba(145,162,185,.08)" },
-          },
-        y: {
-          grid: { color: "rgba(145,162,185,.08)" },
-          ticks: { color: "#7589a3", maxTicksLimit: 5, font: { size: 9 } }
-        }
-      }
-    }
-  });
-
-  document.querySelector("#chart-legend").innerHTML = available.map(item => `
-    <span class="legend-item"><i class="legend-dot" style="background:${palette[item.id]}"></i>${item.label}</span>
-  `).join("");
-}
-
-function renderFeed(data) {
-  const states = {
-    available: ["Measurements updated", "All configured IODA measurement sources returned data."],
-    partial: ["Partial measurements", "Some sources returned data; at least one source is unavailable."],
-    unavailable: ["Provider unavailable", "No configured measurement source returned usable data."]
-  };
-  const [title, description] = states[data.feed_status];
-  document.querySelector("#feed-title").textContent = title;
-  document.querySelector("#feed-description").textContent = description;
-  document.querySelector("#feed-icon").textContent = data.feed_status === "available" ? "✓" : "!";
-  document.querySelector("#feed-time").textContent = `Updated ${formatTime(Date.parse(data.generated_at) / 1000)}`;
-  document.querySelector("#updated-at").textContent = `Last checked ${formatTime(Date.parse(data.generated_at) / 1000)}`;
-  document.querySelector("#method-note").textContent = data.notice;
-}
-
-async function loadDashboard(force = false) {
-  refreshButton.disabled = true;
-  refreshButton.innerHTML = '<span aria-hidden="true">↻</span> Loading';
-  try {
-    const params = new URLSearchParams({ hours: rangeSelect.value });
-    if (force) params.set("refresh", "true");
-    const response = await fetch(`/api/dashboard?${params.toString()}`);
-    if (!response.ok) throw new Error(`Request failed (${response.status})`);
-    const data = await response.json();
-    renderFeed(data);
-    renderMetrics(data);
-    renderChart(data);
-    if (data.errors.length) showToast(`${data.errors.length} source(s) could not be loaded.`);
-  } catch (error) {
-    document.querySelector("#feed-title").textContent = "Could not load measurements";
-    document.querySelector("#feed-description").textContent = error.message;
-    document.querySelector("#feed-icon").textContent = "!";
-    showToast("Could not reach the NetGuard API.");
-  } finally {
-    refreshButton.disabled = false;
-    refreshButton.innerHTML = '<span aria-hidden="true">↻</span> Refresh';
-  }
-}
-
-rangeSelect.addEventListener("change", () => loadDashboard());
-refreshButton.addEventListener("click", () => loadDashboard(true));
-loadDashboard();
+const palette={bgp:"#171717","ping-slash24":"#777777","merit-nt":"#aaaaaa"};
+const labels={bgp:"دیدپذیری BGP","ping-slash24":"پایش فعال","merit-nt":"تلسکوپ شبکه"};
+let trendChart=null,signalCharts=[];
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const rangeSelect=$("#time-range"),refreshButton=$("#refresh"),toast=$("#toast");
+let latestData=null;
+function number(v){return new Intl.NumberFormat("fa-IR",{maximumFractionDigits:1}).format(v)}
+function signed(v){return (v>0?"+":"")+number(v)+"٪"}
+function time(ts){if(!ts)return"نامشخص";return new Intl.DateTimeFormat("fa-IR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",timeZone:"UTC"}).format(new Date(ts*1000))+" UTC"}
+function relative(series){const valid=series.points.filter(p=>p.value!==null);if(valid.length<2)return null;const half=Math.max(1,Math.floor(valid.length/2)),a=valid.slice(0,half),b=valid.slice(half);const avg=x=>x.reduce((s,p)=>s+p.value,0)/x.length;const first=avg(a),last=avg(b);return first===0?null:(last-first)/Math.abs(first)*100}
+function freshness(s){if(!s.latest_at)return null;return (Date.now()/1000)-s.latest_at}
+function freshnessText(s){const age=freshness(s);if(age===null)return"زمان نامشخص";if(age<3600)return"کمتر از یک ساعت";if(age<86400)return number(age/3600)+" ساعت قبل";return number(age/86400)+" روز قبل"}
+function validSeries(data){return data.series||[]}
+function showToast(m){toast.textContent=m;toast.classList.add("show");setTimeout(()=>toast.classList.remove("show"),2800)}
+function nav(page){$$(".page").forEach(p=>p.classList.toggle("active",p.id==="page-"+page));$$(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.page===page));const names={overview:"نمای کلی",analysis:"تحلیل وضعیت",signals:"سیگنال‌ها",events:"رخدادهای شناسایی‌شده",method:"روش‌شناسی"};$("#page-name").textContent=names[page]||names.overview;window.scrollTo({top:0,behavior:"smooth"})}
+$$("[data-page]").forEach(b=>b.addEventListener("click",()=>nav(b.dataset.page)));
+function renderFeed(d){const state={available:["داده‌های هر سه منبع دریافت شد","تمام منابع پیکربندی‌شده IODA در این درخواست داده قابل استفاده برگرداندند."],partial:["دریافت ناقص داده‌ها","حداقل یک منبع داده در دسترس نبود؛ نتایج با احتیاط تفسیر شوند."],unavailable:["داده‌ای دریافت نشد","هیچ‌یک از منابع در این نوبت داده قابل استفاده برنگرداندند."]}[d.feed_status]||["وضعیت نامشخص",""];$("#feed-title").textContent=state[0];$("#feed-description").textContent=state[1];$("#feed-icon").textContent=d.feed_status==="available"?"✓":"!";$("#feed-time").textContent="دریافت: "+time(Date.parse(d.generated_at)/1000);$("#updated-at").textContent=time(Date.parse(d.generated_at)/1000);$("#method-note").textContent=d.notice||""}
+function renderMetrics(d){const list=validSeries(d);$("#metrics").innerHTML=list.length?list.map(s=>`<article class="metric-card"><div class="metric-top"><span class="metric-label">${labels[s.id]||s.label}</span><span class="status-pill ${s.status==="available"?"":"error"}">${s.status==="available"?"داده موجود است":"بدون داده"}</span></div><div class="metric-value">${s.latest===null?"—":number(s.latest)}</div><div class="metric-unit">${s.unit}</div><p class="metric-description">${s.description}</p><div class="metric-foot"><span>${number(s.observations)} مشاهده</span><span>آخرین: ${time(s.latest_at)}</span></div></article>`).join(""):'<div class="panel">در این بازه داده معتبری دریافت نشد.</div>'}
+function chartOptions(){return{responsive:true,maintainAspectRatio:false,interaction:{mode:"nearest",intersect:false},plugins:{legend:{display:false},tooltip:{backgroundColor:"#171717",titleFont:{family:"Vazirmatn"},bodyFont:{family:"Vazirmatn"},callbacks:{title:items=>items.length?time(items[0].parsed.x/1000):"",label:c=>" "+number(c.parsed.y)}}},scales:{x:{type:"linear",ticks:{color:"#999",maxTicksLimit:6,font:{family:"Vazirmatn",size:9},callback:v=>time(v/1000).replace(" UTC","")},grid:{color:"#f0f0ed"}},y:{ticks:{color:"#999",font:{family:"Vazirmatn",size:9}},grid:{color:"#f0f0ed"}}}}}
+function renderTrend(d){if(trendChart)trendChart.destroy();const sets=validSeries(d).filter(s=>s.points.some(p=>p.value!==null)).map(s=>{const pts=s.points.filter(p=>p.value!==null);const base=pts[0]?.value;return{label:labels[s.id]||s.label,data:pts.map(p=>({x:p.timestamp*1000,y:base?100*p.value/base:0})),borderColor:palette[s.id],backgroundColor:palette[s.id],borderWidth:2,pointRadius:0,tension:.2}});if(!sets.length)return;const ctx=$("#trend-chart");trendChart=new Chart(ctx,{type:"line",data:{datasets:sets},options:{...chartOptions(),scales:{...chartOptions().scales,y:{...chartOptions().scales.y,title:{display:true,text:"شاخص نسبی",font:{family:"Vazirmatn",size:9}}}}}});$("#trend-legend").innerHTML=sets.map(s=>`<span class="legend-item"><i class="legend-dot" style="background:${s.borderColor}"></i>${s.label}</span>`).join("")}
+function renderComparison(d){$("#comparison-body").innerHTML=validSeries(d).map(s=>{const ch=relative(s),age=freshnessText(s),cls=ch===null?"change-flat":ch>2?"change-up":ch< -2?"change-down":"change-flat";return`<tr><td>${labels[s.id]||s.label}</td><td>${s.latest===null?"—":number(s.latest)+" "+s.unit}</td><td class="${cls}">${ch===null?"داده ناکافی":signed(ch)}</td><td>${number(s.observations)}</td><td>${age}</td></tr>`}).join("")||'<tr><td colspan="5">داده‌ای موجود نیست</td></tr>'}
+function buildAnalysis(d){const ss=validSeries(d),available=ss.filter(s=>s.points.some(p=>p.value!==null)),changes=available.map(s=>({s,change:relative(s),age:freshness(s)})),fresh=changes.filter(x=>x.age!==null&&x.age<21600),strong=changes.filter(x=>x.change!==null&&Math.abs(x.change)>=10),drops=changes.filter(x=>x.change!==null&&x.change<=-10),rises=changes.filter(x=>x.change!==null&&x.change>=10),missing=d.errors?.length||0;let confidence=available.length>=3&&fresh.length>=2?"متوسط":available.length>=2?"محدود":"پایین";$("#confidence-label").textContent=confidence;
+let headline="تصویر فعلی: داده کافی برای اعلام اختلال گسترده وجود ندارد";let summary="در داده‌های دریافت‌شده نشانه هم‌زمان و کافی برای نتیجه‌گیری درباره اختلال گسترده مشاهده نمی‌شود. این به معنی تضمین کیفیت اینترنت برای همه کاربران یا همه مناطق نیست.";
+if(available.length===0){headline="وضعیت نامشخص؛ داده قابل اتکا در دسترس نیست";summary="در این درخواست داده معتبر کافی از منابع اندازه‌گیری دریافت نشده است. درباره وضعیت شبکه نمی‌توان نتیجه‌گیری کرد."}
+else if(drops.length>=2){headline="کاهش هم‌زمان در چند شاخص مشاهده شده است";summary="حداقل دو منبع در مقایسه نیمه دوم با نیمه اول بازه، کاهش قابل توجه نشان می‌دهند. این یک نشانه نیازمند بررسی است، نه اثبات قطعی قطعی سراسری یا علت آن."}
+else if(drops.length===1){headline="یک منبع کاهش قابل توجه نشان می‌دهد";summary="افت در یک سیگنال دیده می‌شود، اما منابع دیگر آن را به شکل مشابه تأیید نمی‌کنند. فعلاً باید آن را تغییر محدود به همان منبع یا نیازمند بررسی بیشتر دانست."}
+else if(strong.length>=2){headline="تغییرات قابل توجه در چند منبع دیده می‌شود";summary="چند سیگنال نسبت به نیمه ابتدایی بازه تغییر محسوسی دارند، اما جهت تغییرها یا ماهیت منابع یکسان نیست. برای تفسیر دقیق‌تر باید روند خام و زمان آخرین مشاهده بررسی شود."}
+$("#analysis-hero").innerHTML=`<div class="analysis-state">${headline}</div><p>${summary}</p>`;
+const current=changes.map(x=>`<p><strong>${labels[x.s.id]||x.s.label}:</strong> مقدار اخیر ${x.s.latest===null?"ناموجود":number(x.s.latest)+" "+x.s.unit}؛ تغییر نیمه دوم نسبت به نیمه اول: ${x.change===null?"قابل محاسبه نیست":signed(x.change)}؛ آخرین مشاهده: ${freshnessText(x.s)}.</p>`).join("");
+$("#current-picture").innerHTML=current||"<p>هیچ سری زمانی معتبری در دسترس نیست.</p>";
+let agreement;if(changes.length<2)agreement="برای مقایسه بین‌منبعی حداقل دو سری معتبر لازم است.";else if(drops.length>=2)agreement="چند منبع کاهش هم‌جهت دارند. هم‌جهتی، سطح توجه را بالا می‌برد؛ اما به دلیل تفاوت روش اندازه‌گیری، به‌تنهایی علت یا گستره جغرافیایی را مشخص نمی‌کند.";else if(strong.length===0)agreement="در مقایسه دو نیمه بازه، تغییر بزرگ و هم‌جهت در منابع موجود دیده نمی‌شود. نوسان‌های کوچک یا رخدادهای کوتاه ممکن است با این خلاصه آشکار نشوند.";else agreement="منابع تغییراتی نشان می‌دهند، اما الگو کاملاً هم‌جهت نیست. BGP، کاوش فعال و تلسکوپ شبکه چیزهای متفاوتی می‌سنجند؛ بنابراین اختلاف آن‌ها لزوماً تناقض نیست.";
+$("#signal-agreement").innerHTML=`<p>${agreement}</p><p><strong>منابع دارای تغییر ≥۱۰٪:</strong> ${strong.length} از ${available.length}</p>`;
+const gaps=ss.reduce((n,s)=>n+(s.missing||0),0),obs=ss.reduce((n,s)=>n+(s.observations||0),0);$("#data-quality").innerHTML=`<p><strong>منابع معتبر:</strong> ${available.length} از ۳</p><p><strong>نقاط ثبت‌شده:</strong> ${number(obs)} · <strong>نقاط خالی:</strong> ${number(gaps)}</p><p><strong>منابع تازه‌تر از ۶ ساعت:</strong> ${fresh.length} از ${available.length}</p><p><strong>خطاهای منبع:</strong> ${number(missing)}</p><p>بازه درخواستی: ${number(d.window_hours)} ساعت. تعداد نقاط به نرخ نمونه‌برداری و پاسخ منبع وابسته است.</p>`}
+const caveat=available.length<2||fresh.length<2?"به دلیل پوشش یا تازگی محدود، اطمینان تحلیل پایین است.":"سطح اطمینان صرفاً کیفیت داده برای همین جمع‌بندی را توصیف می‌کند، نه احتمال درست بودن یک علت خاص.";
+$("#quick-analysis").innerHTML=`<p><strong>${headline}</strong></p><p>${summary}</p><p>${caveat}</p>`}
+function makeEvents(d){const events=[];for(const s of validSeries(d)){const pts=s.points.filter(p=>p.value!==null);for(let i=1;i<pts.length;i++){const prev=pts[i-1],cur=pts[i];if(prev.value===0)continue;const delta=(cur.value-prev.value)/Math.abs(prev.value)*100;if(Math.abs(delta)>=15)events.push({id:s.id,label:labels[s.id]||s.label,time:cur.timestamp,delta,value:cur.value})}}return events.sort((a,b)=>b.time-a.time).slice(0,40)}
+function renderEvents(d){const ev=makeEvents(d);$("#event-summary").innerHTML=`<div class="event-count"><strong>${number(ev.length)}</strong><span>تغییر قابل توجه ثبت‌شده</span></div><div class="event-count"><strong>${number(ev.filter(e=>e.delta<0).length)}</strong><span>کاهش‌های ≥۱۵٪</span></div><div class="event-count"><strong>${number(ev.filter(e=>e.delta>0).length)}</strong><span>افزایش‌های ≥۱۵٪</span></div>`;$("#event-list").innerHTML=ev.length?ev.map(e=>`<div class="event-item"><span class="event-time">${time(e.time)}</span><div><strong>${e.label} · ${signed(e.delta)}</strong><p>مقدار مشاهده‌شده: ${number(e.value)} · تغییر نسبت به نقطه قبلی همین منبع</p></div><span class="event-tag">تغییر مشاهده‌شده</span></div>`).join(""):'<div class="prose-block">در این بازه تغییر متوالی بزرگ‌تر از آستانه ۱۵٪ در نقاط معتبر شناسایی نشد. این به معنی نبود هرگونه اختلال نیست.</div>'}
+function renderSignals(d){signalCharts.forEach(c=>c.destroy());signalCharts=[];$("#signal-details").innerHTML=validSeries(d).map((s,i)=>`<article class="panel signal-card"><div><span class="panel-index">SIGNAL 0${i+1} / ${s.id.toUpperCase()}</span><h2>${labels[s.id]||s.label}</h2><p>${s.description}</p><div class="signal-stat">${s.latest===null?"—":number(s.latest)}</div><span class="metric-unit">${s.unit}</span><p>تعداد نقاط: ${number(s.observations)} · آخرین مشاهده: ${time(s.latest_at)}</p></div><div class="signal-chart"><canvas id="signal-chart-${s.id}"></canvas></div></article>`).join("")||'<div class="panel">داده‌ای برای نمایش وجود ندارد.</div>';validSeries(d).forEach(s=>{const el=$("#signal-chart-"+s.id);if(!el)return;const c=new Chart(el,{type:"line",data:{datasets:[{label:labels[s.id],data:s.points.filter(p=>p.value!==null).map(p=>({x:p.timestamp*1000,y:p.value})),borderColor:palette[s.id],backgroundColor:palette[s.id],borderWidth:2,pointRadius:0,tension:.18}]},options:chartOptions()});signalCharts.push(c)})}
+function renderAll(d){latestData=d;renderFeed(d);renderMetrics(d);renderTrend(d);renderComparison(d);buildAnalysis(d);renderEvents(d);renderSignals(d)}
+async function loadDashboard(force=false){refreshButton.disabled=true;refreshButton.textContent="در حال دریافت…";try{const p=new URLSearchParams({hours:rangeSelect.value});if(force)p.set("refresh","true");const r=await fetch("/api/dashboard?"+p);if(!r.ok)throw new Error("خطا در دریافت داده ("+r.status+")");const d=await r.json();renderAll(d);if(d.errors?.length)showToast(d.errors.length+" منبع داده در دسترس نبود.");}catch(e){$("#feed-title").textContent="دریافت داده ناموفق بود";$("#feed-description").textContent=e.message;$("#feed-icon").textContent="!";showToast("ارتباط با سرویس NetGuard برقرار نشد.");}finally{refreshButton.disabled=false;refreshButton.textContent="↻ به‌روزرسانی"}}
+rangeSelect.addEventListener("change",()=>loadDashboard());refreshButton.addEventListener("click",()=>loadDashboard(true));loadDashboard();
