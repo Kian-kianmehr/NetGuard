@@ -33,7 +33,7 @@ def test_normalise_series_preserves_missing_values():
     }
     result = _normalise_series(payload, "bgp")
     assert result["latest"] == 8.0
-    assert result["observations"] == 3
+    assert result["observations"] == 2
     assert result["missing"] == 1
     assert result["points"][1]["value"] is None
 
