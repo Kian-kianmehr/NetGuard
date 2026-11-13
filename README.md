@@ -2,38 +2,41 @@
 
 مرکز پایش و تحلیل شواهد عمومی وضعیت اینترنت ایران.
 
-## نسخه ۱
-- داشبورد فارسی و راست‌چین با شش بخش: نمای کلی، تحلیل، سیگنال‌ها، رخدادها، منابع و روش‌شناسی.
-- دریافت سه سیگنال ملی IODA برای ایران: `bgp`، `ping-slash24` و `merit-nt`.
-- Collector مستقل پایتون و ذخیرهٔ تاریخچه در Supabase PostgreSQL.
-- اجرای هدف‌گذاری‌شده هر پنج دقیقه از GitHub Actions؛ زمان‌بندی best-effort است و SLA ندارد.
-- ثبت زمان مشاهدهٔ upstream و زمان دریافت به‌صورت جداگانه.
-- دادهٔ خالی، قدیمی و خطادار «سالم» فرض نمی‌شود.
+## معماری نسخهٔ اول
+- React/Vite فارسی به‌صورت Render Static Site.
+- FastAPI به‌صورت Render Free Web Service برای API فقط‌خواندنی.
+- Collector پایتون در همان سرویس API؛ چرخهٔ هدف پنج‌دقیقه‌ای هنگام بیداربودن سرویس.
+- Supabase PostgreSQL برای ثبت تاریخچه، و RLS برای خواندن عمومی.
+- سه سیگنال ملی IODA: `bgp`، `ping-slash24` و `merit-nt`.
 
-## اجرای محلی
+## راه‌اندازی محلی
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-python -m pytest -q
-python scripts/collect_ioda.py
+uvicorn app.main:app --reload
 
 cd frontend
 npm install
 npm run dev
 ```
 
-## راه‌اندازی آنلاین
-1. یک بار فایل `sql/001_initial_schema.sql` را در SQL Editor پروژهٔ Supabase اجرا کنید.
-2. در GitHub → Settings → Secrets and variables → Actions یک repository secret با نام `SUPABASE_SECRET_KEY` بسازید.
-3. در Render یک Static Site از همین repository و شاخهٔ `master` بسازید. Build command: `cd frontend && npm install && npm run build`؛ Publish directory: `frontend/dist`.
-4. در environment variables سایت Render این دو مقدار را تنظیم کنید:
-   - `VITE_SUPABASE_URL`: آدرس پروژه
-   - `VITE_SUPABASE_PUBLISHABLE_KEY`: کلید publishable یا anon عمومی
-5. در GitHub Actions، workflow با نام NetGuard IODA collection را یک بار دستی اجرا کنید.
+## راه‌اندازی Supabase
+1. فایل `sql/001_initial_schema.sql` را یک‌بار در SQL Editor پروژه اجرا کنید.
+2. کلیدهای Supabase را فقط در Environment سرویس API در Render قرار دهید:
+   - `SUPABASE_URL`
+   - `SUPABASE_PUBLISHABLE_KEY` (یا کلید قدیمی anon)
+   - `SUPABASE_SECRET_KEY` (یا کلید قدیمی service_role؛ فقط برای Collector)
+3. کلید secret را هرگز به فرانت‌اند ندهید.
 
-کلید secret فقط در GitHub Actions قرار می‌گیرد؛ آن را هرگز در frontend یا فایل عمومی repository نگذارید.
+## Deploy روی Render
+- سرویس `netguard-api`: Python Web Service، build: `pip install -r requirements.txt`، start: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`، health: `/health`.
+- سرویس `netguard-dashboard`: Static Site، build: `cd frontend && npm install && npm run build`، publish: `frontend/dist`.
+- مقدار `VITE_API_URL` در Static Site برابر URL عمومی سرویس API است.
 
-## محدودیت‌های اندازه‌گیری
-IODA دادهٔ زیرساختی ملی است، نه سنجش تجربهٔ تک‌تک کاربران یا تمام ISPها. تغییر یک سیگنال به‌تنهایی قطعی، سانسور، تحریم یا علت اختلال را اثبات نمی‌کند. دادهٔ ملی به استان یا شهر تعمیم داده نمی‌شود. پیش‌بینی تا زمانی که تاریخچهٔ کافی و ارزیابی معتبر وجود نداشته باشد فعال نیست.
+## محدودیت اجرا
+پلن رایگان Render برای Web Service پس از دورهٔ بی‌درخواست به حالت خواب می‌رود. Collector در همان پردازه اجرا می‌شود؛ بنابراین زمان‌بندی پنج‌دقیقه‌ای فقط تا وقتی سرویس بیدار است ادامه دارد و SLA یا پایش ۲۴ساعته نیست. Static Site مستقل از خواب API در CDN قابل‌دسترسی می‌ماند.
+
+## محدودیت اندازه‌گیری
+IODA دادهٔ زیرساختی ملی است، نه سنجش تجربهٔ تک‌تک کاربران یا همهٔ ISPها. تغییر یک سیگنال به‌تنهایی قطعی، سانسور، تحریم یا علت اختلال را اثبات نمی‌کند. دادهٔ ملی به استان یا شهر تعمیم داده نمی‌شود.

@@ -1,11 +1,35 @@
 services:
   - type: web
+    name: netguard-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: SUPABASE_URL
+        value: https://fsglerccgxktvcpybuzk.supabase.co
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: NETGUARD_COUNTRY_CODE
+        value: IR
+      - key: IODA_LOOKBACK_HOURS
+        value: "4"
+      - key: IODA_MAX_POINTS
+        value: "240"
+      - key: COLLECTOR_INTERVAL_SECONDS
+        value: "300"
+
+  - type: web
     name: netguard-dashboard
     runtime: static
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
+    autoDeployTrigger: checksPass
     envVars:
-      - key: VITE_SUPABASE_URL
-        value: https://fsglerccgxktvcpybuzk.supabase.co
-      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+      - key: VITE_API_URL
         sync: false

@@ -2,7 +2,7 @@ name: NetGuard CI
 
 on:
   push:
-    branches: [master, "rebuild/**"]
+    branches: [master, "rebuild/**", "render/**"]
   pull_request:
 
 permissions:
