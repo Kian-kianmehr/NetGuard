@@ -1,13 +1,13 @@
 services:
   - type: web
     name: netguard
-    runtime: python
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: .
     healthCheckPath: /api/health
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12.8
       - key: CACHE_TTL_SECONDS
         value: "90"
+      - key: SOURCE_TIMEOUT_SECONDS
+        value: "5"
