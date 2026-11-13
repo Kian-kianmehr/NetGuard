@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
+FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 IODA_BASE_URL = os.getenv("IODA_BASE_URL", "https://api.ioda.inetintel.cc.gatech.edu/v2").rstrip("/")
 COUNTRY_CODE = os.getenv("NETGUARD_COUNTRY_CODE", "IR").upper()
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "90"))
@@ -29,6 +30,8 @@ SOURCES = {
 
 app = FastAPI(title="NetGuard API", description="Public internet measurement dashboard for Iran, powered by IODA.", version="0.2.0")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+if (FRONTEND_DIST / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
 
 _cache: dict[int, tuple[float, dict[str, Any]]] = {}
 _refresh_tasks: dict[int, asyncio.Task] = {}
@@ -150,7 +153,8 @@ def _loading_payload(hours: int, cached: dict[str, Any] | None = None) -> dict[s
 
 @app.get("/", include_in_schema=False)
 async def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    index_file = FRONTEND_DIST / "index.html"
+    return FileResponse(index_file if index_file.is_file() else STATIC_DIR / "index.html")
 
 
 @app.get("/api/health")
