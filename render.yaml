@@ -1,13 +1,11 @@
 services:
   - type: web
-    name: netguard
-    runtime: docker
-    plan: free
-    dockerfilePath: ./frontend/Dockerfile
-    dockerContext: .
-    healthCheckPath: /api/health
+    name: netguard-dashboard
+    runtime: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
     envVars:
-      - key: CACHE_TTL_SECONDS
-        value: "90"
-      - key: SOURCE_TIMEOUT_SECONDS
-        value: "5"
+      - key: VITE_SUPABASE_URL
+        value: https://fsglerccgxktvcpybuzk.supabase.co
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false

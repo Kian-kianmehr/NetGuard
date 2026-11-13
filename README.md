@@ -1,64 +1,39 @@
 # NetGuard
 
-**پایش و تحلیل سیگنال‌های عمومی اینترنت ایران**
+مرکز پایش و تحلیل شواهد عمومی وضعیت اینترنت ایران.
 
-NetGuard presents public IODA measurements for Iran through a Persian, RTL React dashboard and a FastAPI data API.
+## نسخه ۱
+- داشبورد فارسی و راست‌چین با شش بخش: نمای کلی، تحلیل، سیگنال‌ها، رخدادها، منابع و روش‌شناسی.
+- دریافت سه سیگنال ملی IODA برای ایران: `bgp`، `ping-slash24` و `merit-nt`.
+- Collector مستقل پایتون و ذخیرهٔ تاریخچه در Supabase PostgreSQL.
+- اجرای هدف‌گذاری‌شده هر پنج دقیقه از GitHub Actions؛ زمان‌بندی best-effort است و SLA ندارد.
+- ثبت زمان مشاهدهٔ upstream و زمان دریافت به‌صورت جداگانه.
+- دادهٔ خالی، قدیمی و خطادار «سالم» فرض نمی‌شود.
 
-## Architecture
-
-- **React + Vite:** component-based frontend, client-side navigation, responsive RTL interface and charts.
-- **FastAPI:** JSON API, health endpoint and static production hosting.
-- **IODA adapter:** normalizes BGP, active-probing and network-telescope observations.
-- **Container build:** multi-stage Docker build compiles React assets and packages the API.
-- **Kubernetes:** example Deployment and Service manifests are provided in `k8s/`.
-
-The current backend remains a single deployable API service. It is intentionally structured as a modular service rather than introducing distributed microservices, a message broker and a database before there is a measured need. The Kubernetes manifests provide a path to multiple API replicas, but the current in-process cache and refresh coordination are per process; use a shared cache/queue before relying on cross-replica cache consistency or running a dedicated collector.
-
-## Run locally
-
-API:
-
+## اجرای محلی
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+cp .env.example .env
+python -m pytest -q
+python scripts/collect_ioda.py
 
-Frontend development server (in another terminal):
-
-```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Vite proxies `/api` and `/static` to FastAPI at `127.0.0.1:8000`.
+## راه‌اندازی آنلاین
+1. یک بار فایل `sql/001_initial_schema.sql` را در SQL Editor پروژهٔ Supabase اجرا کنید.
+2. در GitHub → Settings → Secrets and variables → Actions یک repository secret با نام `SUPABASE_SECRET_KEY` بسازید.
+3. در Render یک Static Site از همین repository و شاخهٔ `master` بسازید. Build command: `cd frontend && npm install && npm run build`؛ Publish directory: `frontend/dist`.
+4. در environment variables سایت Render این دو مقدار را تنظیم کنید:
+   - `VITE_SUPABASE_URL`: آدرس پروژه
+   - `VITE_SUPABASE_PUBLISHABLE_KEY`: کلید publishable یا anon عمومی
+5. در GitHub Actions، workflow با نام NetGuard IODA collection را یک بار دستی اجرا کنید.
 
-## Docker
+کلید secret فقط در GitHub Actions قرار می‌گیرد؛ آن را هرگز در frontend یا فایل عمومی repository نگذارید.
 
-```bash
-docker build -f frontend/Dockerfile -t netguard .
-docker run --rm -p 8000:8000 netguard
-```
-
-## Kubernetes
-
-Build and publish the image, update `image` in `k8s/deployment.yaml`, then:
-
-```bash
-kubectl apply -f k8s/deployment.yaml
-kubectl get deployment,service
-```
-
-The sample uses two API replicas and health probes. Before scaling beyond a small deployment, move cache and refresh coordination to a shared Redis service and run collection as a dedicated worker.
-
-## API
-
-- `GET /api/health`
-- `GET /api/dashboard?hours=24`
-- Supported windows: 6–168 hours.
-
-## Measurement limitations
-
-IODA is an upstream measurement source, not a measurement from every Iranian ISP or end-user. Missing observations are not zero. A change in one signal alone does not prove censorship, sanctions-related blocking, or the cause of a disruption. This release does not claim confirmed attribution or outage prediction.
+## محدودیت‌های اندازه‌گیری
+IODA دادهٔ زیرساختی ملی است، نه سنجش تجربهٔ تک‌تک کاربران یا تمام ISPها. تغییر یک سیگنال به‌تنهایی قطعی، سانسور، تحریم یا علت اختلال را اثبات نمی‌کند. دادهٔ ملی به استان یا شهر تعمیم داده نمی‌شود. پیش‌بینی تا زمانی که تاریخچهٔ کافی و ارزیابی معتبر وجود نداشته باشد فعال نیست.
