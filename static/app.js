@@ -44,4 +44,6 @@ async function loadDashboard(force=false){if(requestBusy)return;requestBusy=true
 rangeSelect.addEventListener("change",()=>{clearTimeout(pollTimer);loadDashboard(true)});refreshButton.addEventListener("click",()=>loadDashboard(true));
 window.addEventListener("beforeunload",destroyCharts);
 nav("overview");
+function loadCharts(){const script=document.createElement("script");script.src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js";script.async=true;script.onload=()=>{if(latestData){renderTrend(latestData);if(document.body.dataset.page==="signals")renderSignals(latestData)}};script.onerror=()=>showToast("نمودارها بارگذاری نشدند؛ داده‌های عددی همچنان در دسترس‌اند.");document.head.appendChild(script)}
 loadDashboard();
+loadCharts();
