@@ -87,16 +87,18 @@ function renderChart(data) {
           borderWidth: 1,
           titleColor: "#dce7f3",
           bodyColor: "#b9c9db",
-          callbacks: { label: context => ` ${context.dataset.label}: ${formatNumber(context.parsed.y)}` }
+          callbacks: {
+            title: items => items.length ? formatTime(items[0].parsed.x / 1000) : "",
+            label: context => ` ${context.dataset.label}: ${formatNumber(context.parsed.y)}`
+          }
         }
       },
       scales: {
         x: {
-          type: "time",
-          time: { tooltipFormat: "dd MMM yyyy, HH:mm" },
+          type: "linear",
+          ticks: { callback: value => formatTime(value / 1000).replace(" UTC", ""), color: "#7589a3", maxTicksLimit: 7, font: { size: 9 } },
           grid: { color: "rgba(145,162,185,.08)" },
-          ticks: { color: "#7589a3", maxTicksLimit: 7, font: { size: 9 } }
-        },
+          },
         y: {
           grid: { color: "rgba(145,162,185,.08)" },
           ticks: { color: "#7589a3", maxTicksLimit: 5, font: { size: 9 } }
