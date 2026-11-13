@@ -1,99 +1,103 @@
 <!doctype html>
-<html lang="en">
+<html lang="fa" dir="rtl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1220">
-  <meta name="description" content="NetGuard monitors public internet measurement signals for Iran using data from IODA.">
-  <title>NetGuard — Internet observability for Iran</title>
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="نت‌گارد؛ سامانه پایش و تحلیل سیگنال‌های عمومی وضعیت اینترنت ایران">
+  <title>نت‌گارد | پایش اینترنت ایران</title>
   <link rel="icon" type="image/svg+xml" href="/static/logo.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
   <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <div class="shell">
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="#overview" data-page="overview"><img src="/static/logo.svg" alt=""><span>نت‌گارد<span class="brand-mark">/</span></span></a>
+    <div class="side-caption">مرکز پایش شبکه</div>
+    <nav class="main-nav" aria-label="ناوبری اصلی">
+      <button class="nav-item active" data-page="overview"><span class="nav-icon">◫</span> نمای کلی <kbd>01</kbd></button>
+      <button class="nav-item" data-page="analysis"><span class="nav-icon">⌁</span> تحلیل وضعیت <kbd>02</kbd></button>
+      <button class="nav-item" data-page="signals"><span class="nav-icon">⌗</span> سیگنال‌ها <kbd>03</kbd></button>
+      <button class="nav-item" data-page="events"><span class="nav-icon">◷</span> رخدادهای شناسایی‌شده <kbd>04</kbd></button>
+      <button class="nav-item" data-page="method"><span class="nav-icon">ⓘ</span> روش‌شناسی <kbd>05</kbd></button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="country-card"><span class="country-symbol">IR</span><div><strong>ایران</strong><small>کشور تحت پایش</small></div><span class="country-live"></span></div>
+      <a class="side-github" href="https://github.com/Kian-kianmehr/NetGuard" target="_blank" rel="noreferrer">مشاهده کد در گیت‌هاب ↗</a>
+      <div class="side-version">نسخه پایش عمومی · داده‌های IODA</div>
+    </div>
+  </aside>
+
+  <main class="main-area">
     <header class="topbar">
-      <a class="brand" href="/" aria-label="NetGuard home">
-        <img src="/static/logo.svg" alt="" width="38" height="38">
-        <span>netguard<span class="brand-dot">.</span></span>
-      </a>
-      <div class="topbar-right">
-        <span class="live-indicator"><i></i> PUBLIC MONITOR</span>
-        <a class="github-link" href="https://github.com/Kian-kianmehr/NetGuard" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">↗</span></a>
-      </div>
+      <div class="mobile-brand">نت‌گارد<span>/</span></div>
+      <div class="breadcrumb"><span>ایران</span><b>/</b><strong id="page-name">نمای کلی</strong></div>
+      <div class="top-actions"><span class="live-label"><i></i> پایش داده‌های عمومی</span><button id="refresh" class="refresh-button">↻ <span>به‌روزرسانی</span></button></div>
     </header>
 
-    <main>
-      <section class="hero">
-        <div class="eyebrow"><span></span> INTERNET OBSERVABILITY</div>
-        <h1>See the signal.<br><span>Understand the network.</span></h1>
-        <p class="hero-copy">A public view of internet connectivity signals across Iran, built on independent network measurements.</p>
-        <div class="hero-meta">
-          <span class="country-mark">IR</span>
-          <span>Iran</span>
-          <span class="meta-divider"></span>
-          <span id="updated-at">Waiting for measurements</span>
-        </div>
-      </section>
+    <section class="page active" id="page-overview">
+      <div class="page-heading hero-heading">
+        <div><div class="eyebrow">NETGUARD / IRAN NETWORK OBSERVATORY</div><h1>تصویر لحظه‌ای از <span>وضعیت اینترنت ایران</span></h1><p>پایش مستقل سیگنال‌های زیرساختی، بررسی تغییرات شبکه و ارائه تحلیلی محتاطانه از وضعیت اتصال.</p></div>
+        <div class="heading-stamp"><span>آخرین دریافت داده</span><strong id="updated-at">در انتظار داده</strong><small>زمان مرجع: UTC</small></div>
+      </div>
 
-      <section class="control-row" aria-label="Dashboard controls">
-        <div>
-          <h2>Network overview</h2>
-          <p class="section-subtitle">Measurements reported by IODA</p>
-        </div>
-        <div class="controls">
-          <label class="sr-only" for="time-range">Time range</label>
-          <select id="time-range">
-            <option value="24">Last 24 hours</option>
-            <option value="48">Last 48 hours</option>
-            <option value="72">Last 3 days</option>
-            <option value="168">Last 7 days</option>
-          </select>
-          <button id="refresh" class="refresh-button" type="button"><span aria-hidden="true">↻</span> Refresh</button>
-        </div>
-      </section>
+      <div class="toolbar"><div><strong>نمای کلی شبکه</strong><span>خلاصه وضعیت در بازه انتخاب‌شده</span></div><div class="toolbar-controls"><label for="time-range">بازه زمانی</label><select id="time-range"><option value="24">۲۴ ساعت گذشته</option><option value="48">۴۸ ساعت گذشته</option><option value="72">۳ روز گذشته</option><option value="168">۷ روز گذشته</option></select></div></div>
 
-      <section class="feed-banner" id="feed-banner" aria-live="polite">
-        <span class="feed-icon" id="feed-icon">···</span>
-        <div><strong id="feed-title">Connecting to measurement provider</strong><p id="feed-description">Fetching the latest available observations.</p></div>
-        <span class="feed-time" id="feed-time"></span>
-      </section>
+      <div class="status-strip" id="feed-banner"><span class="status-symbol" id="feed-icon">…</span><div class="status-copy"><strong id="feed-title">در حال اتصال به منبع داده</strong><p id="feed-description">آخرین اندازه‌گیری‌های منتشرشده در حال دریافت هستند.</p></div><span id="feed-time" class="status-time"></span></div>
 
-      <section class="metrics-grid" id="metrics" aria-label="Measurement sources">
-        <article class="metric-card skeleton"><div class="skeleton-line"></div><div class="skeleton-value"></div><div class="skeleton-line short"></div></article>
-        <article class="metric-card skeleton"><div class="skeleton-line"></div><div class="skeleton-value"></div><div class="skeleton-line short"></div></article>
-        <article class="metric-card skeleton"><div class="skeleton-line"></div><div class="skeleton-value"></div><div class="skeleton-line short"></div></article>
-      </section>
+      <div class="section-kicker"><span>01</span> شاخص‌های زیرساختی <small>مقادیر آخرین مشاهده معتبر؛ واحد هر شاخص متفاوت است</small></div>
+      <div class="metrics-grid" id="metrics"><div class="metric-card skeleton"></div><div class="metric-card skeleton"></div><div class="metric-card skeleton"></div></div>
 
-      <section class="chart-panel">
-        <div class="panel-heading">
-          <div><h2>Signal history</h2><p class="section-subtitle">Each source is shown in its own measurement unit.</p></div>
-          <span class="chart-caption">UTC · IODA DATA</span>
-        </div>
-        <div class="chart-wrap"><canvas id="signals-chart" aria-label="Internet measurement signals over time" role="img"></canvas></div>
-        <div id="chart-legend" class="chart-legend"></div>
-      </section>
+      <div class="overview-grid">
+        <section class="panel trend-panel"><div class="panel-head"><div><span class="panel-index">A / TREND</span><h2>روند هم‌مقیاس سیگنال‌ها</h2><p>تغییر نسبی هر منبع نسبت به اولین مقدار معتبر در بازه؛ شاخص ۱۰۰ یعنی مقدار مبنا.</p></div><span class="unit-tag">INDEX = 100</span></div><div class="chart-wrap tall"><canvas id="trend-chart"></canvas></div><div id="trend-legend" class="chart-legend"></div></section>
+        <section class="panel quick-analysis"><div class="panel-head"><div><span class="panel-index">B / SNAPSHOT</span><h2>برداشت اولیه سامانه</h2><p>جمع‌بندی خودکار از تازگی و هم‌جهتی داده‌ها</p></div></div><div id="quick-analysis" class="analysis-copy"><p>در انتظار دریافت داده‌ها…</p></div><button class="text-link" data-page="analysis">مشاهده تحلیل کامل ←</button></section>
+      </div>
 
-      <section class="method-panel">
-        <div class="method-icon">i</div>
-        <div>
-          <h2>How to read this dashboard</h2>
-          <p id="method-note">Measurements describe different parts of network infrastructure. They are not interchangeable, and no single source can establish the cause of a disruption.</p>
-          <p class="source-line">Data provider: <a href="https://ioda.inetintel.cc.gatech.edu/" target="_blank" rel="noreferrer">IODA, Georgia Tech</a> · <a href="https://api.ioda.inetintel.cc.gatech.edu/v2/docs" target="_blank" rel="noreferrer">API documentation</a></p>
-        </div>
-      </section>
-    </main>
+      <section class="panel comparison-panel"><div class="panel-head"><div><span class="panel-index">C / COMPARISON</span><h2>مقایسه تغییرات منابع</h2><p>مقایسه نیمه ابتدایی و نیمه انتهایی بازه انتخاب‌شده؛ نه مقایسه مستقیم واحدها</p></div></div><div class="table-wrap"><table><thead><tr><th>منبع اندازه‌گیری</th><th>مقدار اخیر</th><th>تغییر در بازه</th><th>تعداد نقاط</th><th>تازگی داده</th></tr></thead><tbody id="comparison-body"><tr><td colspan="5">در انتظار داده…</td></tr></tbody></table></div></section>
+    </section>
 
-    <footer>
-      <a class="footer-brand" href="/"><img src="/static/logo.svg" alt="" width="22" height="22"> NetGuard</a>
-      <span>Independent measurements. Careful conclusions.</span>
-      <span>Open source · <a href="https://github.com/Kian-kianmehr/NetGuard" target="_blank" rel="noreferrer">View project ↗</a></span>
-    </footer>
-  </div>
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <section class="page" id="page-analysis">
+      <div class="page-heading"><div><div class="eyebrow">NETGUARD / INTELLIGENCE</div><h1>تحلیل وضعیت شبکه</h1><p>پاسخ به این سؤال: بر اساس داده‌های در دسترس، وضعیت اینترنت ایران در این بازه چه تصویری دارد؟</p></div><div class="heading-stamp"><span>سطح اطمینان تحلیل</span><strong id="confidence-label">در حال محاسبه</strong><small>وابسته به پوشش و تازگی داده‌ها</small></div></div>
+      <div class="analysis-hero" id="analysis-hero"><div class="analysis-state">در انتظار داده‌های کافی</div><p>پس از دریافت سیگنال‌ها، وضعیت و محدودیت‌های تحلیل اینجا نمایش داده می‌شود.</p></div>
+      <div class="analysis-grid">
+        <section class="panel"><div class="panel-head"><div><span class="panel-index">01 / CURRENT PICTURE</span><h2>الان چه می‌بینیم؟</h2><p>جمع‌بندی شواهد قابل مشاهده</p></div></div><div id="current-picture" class="prose-block">در انتظار داده…</div></section>
+        <section class="panel"><div class="panel-head"><div><span class="panel-index">02 / SIGNAL AGREEMENT</span><h2>هم‌خوانی سیگنال‌ها</h2><p>آیا منابع مختلف تغییر مشابهی نشان می‌دهند؟</p></div></div><div id="signal-agreement" class="prose-block">در انتظار داده…</div></section>
+        <section class="panel"><div class="panel-head"><div><span class="panel-index">03 / DATA QUALITY</span><h2>کیفیت و محدودیت داده</h2><p>تازگی، پوشش و نقاط مفقود</p></div></div><div id="data-quality" class="prose-block">در انتظار داده…</div></section>
+        <section class="panel"><div class="panel-head"><div><span class="panel-index">04 / INTERPRETATION</span><h2>چه چیزی را نمی‌توان نتیجه گرفت؟</h2><p>مرز میان مشاهده و نسبت‌دادن علت</p></div></div><div class="prose-block"><p>افت یک شاخص به‌تنهایی ثابت نمی‌کند اینترنت سراسری قطع شده یا فیلترینگ، اختلال عمدی، تحریم یا مشکل اپراتور رخ داده است.</p><p>برای تشخیص علت، به آزمون‌های مستقل، داده جغرافیایی و اپراتوری، فهرست دامنه‌های کنترل و شواهد تکمیلی نیاز است. این نسخه چنین انتساب علتی را انجام نمی‌دهد.</p></div></section>
+      </div>
+      <section class="panel"><div class="panel-head"><div><span class="panel-index">05 / NEXT CHECKS</span><h2>برای ارزیابی دقیق‌تر چه چیزی لازم است؟</h2></div></div><div class="check-grid"><div><b>۱</b><strong>پوشش جغرافیایی</strong><p>تفکیک داده بر اساس استان، شهر و نقاط اندازه‌گیری</p></div><div><b>۲</b><strong>تنوع اپراتور</strong><p>مقایسه شبکه‌های ثابت و همراه و مسیرهای مستقل</p></div><div><b>۳</b><strong>آزمون دسترسی</strong><p>آزمون کنترل‌شده دامنه‌ها و سرویس‌های داخلی و خارجی</p></div><div><b>۴</b><strong>تاریخچه پایدار</strong><p>ذخیره داده‌ها برای ساخت خط مبنا و تشخیص ناهنجاری</p></div></div></section>
+    </section>
+
+    <section class="page" id="page-signals">
+      <div class="page-heading"><div><div class="eyebrow">NETGUARD / MEASUREMENT LAYERS</div><h1>کاوش سیگنال‌ها</h1><p>هر منبع بخش متفاوتی از شبکه را اندازه می‌گیرد؛ نمودارهای خام را جداگانه بررسی کنید.</p></div></div>
+      <div class="signal-detail-grid" id="signal-details"><div class="panel">در انتظار داده…</div></div>
+    </section>
+
+    <section class="page" id="page-events">
+      <div class="page-heading"><div><div class="eyebrow">NETGUARD / OBSERVED CHANGES</div><h1>رخدادهای شناسایی‌شده</h1><p>تغییرات عددی قابل استخراج از داده‌های دریافتی؛ این موارد لزوماً رخداد قطعی یا علت اختلال نیستند.</p></div></div>
+      <div class="event-summary" id="event-summary"></div>
+      <section class="panel"><div class="panel-head"><div><span class="panel-index">EVENT STREAM</span><h2>دفتر تغییرات مشاهده‌شده</h2><p>بر اساس تغییرات بین نقاط متوالی هر سیگنال</p></div></div><div id="event-list" class="event-list">در انتظار داده…</div></section>
+    </section>
+
+    <section class="page" id="page-method">
+      <div class="page-heading"><div><div class="eyebrow">NETGUARD / METHODOLOGY</div><h1>روش‌شناسی و منابع داده</h1><p>این صفحه توضیح می‌دهد NetGuard چه چیزی را اندازه می‌گیرد، چگونه تفسیر می‌کند و چه ادعاهایی نمی‌کند.</p></div></div>
+      <div class="method-grid">
+        <section class="panel"><span class="panel-index">SOURCE 01</span><h2>دیدپذیری BGP</h2><p>تعداد شبکه‌های IPv4 با پیشوند /24 که در داده‌های مسیریابی BGP قابل مشاهده‌اند. تغییر آن می‌تواند نشانه تغییر در دیدپذیری مسیرها باشد؛ اما به‌تنهایی تجربه کاربران را نشان نمی‌دهد.</p><span class="method-unit">واحد: شبکه‌های IPv4 /24 قابل مشاهده</span></section>
+        <section class="panel"><span class="panel-index">SOURCE 02</span><h2>پایش فعال</h2><p>تعداد شبکه‌های IPv4 /24 که به کاوش فعال IODA پاسخ داده‌اند. این شاخص به روش، نقاط سنجش و زمان اجرای آزمون وابسته است.</p><span class="method-unit">واحد: شبکه‌های IPv4 /24 پاسخ‌گو</span></section>
+        <section class="panel"><span class="panel-index">SOURCE 03</span><h2>تلسکوپ شبکه</h2><p>تعداد IPهای مبدأ یکتای مشاهده‌شده توسط تلسکوپ شبکه Merit. این داده ماهیت متفاوتی از دو شاخص دیگر دارد و نباید معادل دسترسی کاربران تلقی شود.</p><span class="method-unit">واحد: IP مبدأ یکتا</span></section>
+        <section class="panel"><span class="panel-index">INTERPRETATION</span><h2>منطق تحلیل NetGuard</h2><p>تغییرات هر سری زمانی در مقایسه با نقاط قبلی همان سری بررسی می‌شود. هم‌زمانی تغییر چند منبع، سطح توجه را افزایش می‌دهد؛ اما بدون شواهد مستقل، علت به آن نسبت داده نمی‌شود.</p><span class="method-unit">مشاهده ≠ تشخیص علت</span></section>
+      </div>
+      <section class="panel methodology-note"><h2>منبع و محدودیت‌ها</h2><p>منبع داده: <a href="https://ioda.inetintel.cc.gatech.edu/" target="_blank" rel="noreferrer">IODA از Georgia Tech</a> · <a href="https://api.ioda.inetintel.cc.gatech.edu/v2/docs" target="_blank" rel="noreferrer">مستندات API</a>.</p><p id="method-note">داده‌ها نماینده مستقیم تجربه تمام کاربران اینترنت ایران نیستند. نقاط مفقود به‌عنوان صفر تفسیر نمی‌شوند. بازه زمانی و زمان آخرین مشاهده برای هر منبع جداگانه نمایش داده می‌شود.</p><p>نسخه فعلی NetGuard از سه منبع عمومی IODA استفاده می‌کند. پیش‌بینی قطعی، تشخیص سانسور، تفکیک تحریم از فیلترینگ و تعیین علت اختلال هنوز در این نسخه پیاده‌سازی نشده‌اند.</p></section>
+    </section>
+
+    <footer><span>نت‌گارد / دیده‌بانی مستقل اینترنت ایران</span><span>داده خام: IODA · دانشگاه جورجیا تک</span><a href="https://github.com/Kian-kianmehr/NetGuard" target="_blank" rel="noreferrer">متن‌باز در GitHub ↗</a></footer>
+  </main>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
