@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownLeft, ArrowUpLeft, BarChart3, BookOpen,
   Check, ChevronLeft, CircleHelp, Clock3, Command, Gauge, Globe2, Layers3,
@@ -59,27 +59,25 @@ function useDashboard(hours) {
 }
 
 function ChartCanvas({ datasets, height = 250, normalized = false }) {
-  const ref = useCallback((node) => {
-    if (!node) return;
-    const chart = new Chart(node, {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    if (!canvasRef.current || !datasets.length) return;
+    const chart = new Chart(canvasRef.current, {
       type: "line",
-      data: { datasets: datasets.map((s) => ({
-        label: LABELS[s.id] || s.label,
-        data: (s.points || []).filter((p) => p.value !== null).map((p) => ({ x: p.timestamp * 1000, y: normalized ? (s.points.find((q) => q.value !== null)?.value ? p.value / s.points.find((q) => q.value !== null).value * 100 : null) : p.value })),
-        borderColor: COLORS[s.id] || "#555",
-        backgroundColor: COLORS[s.id] || "#555",
-        borderWidth: 2,
-        pointRadius: 0,
-        tension: 0.2,
-        spanGaps: false,
-      })) },
+      data: { datasets: datasets.map((s) => {
+        const first = (s.points || []).find((p) => p.value !== null)?.value;
+        return {
+          label: LABELS[s.id] || s.label,
+          data: (s.points || []).filter((p) => p.value !== null).map((p) => ({ x: p.timestamp * 1000, y: normalized ? (first ? p.value / first * 100 : null) : p.value })),
+          borderColor: COLORS[s.id] || "#555",
+          backgroundColor: COLORS[s.id] || "#555",
+          borderWidth: 2, pointRadius: 0, tension: 0.2, spanGaps: false,
+        };
+      }) },
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
         interaction: { mode: "nearest", intersect: false },
-        plugins: {
-          legend: { display: false },
-          tooltip: { backgroundColor: "#171717", titleFont: { family: "Vazirmatn" }, bodyFont: { family: "Vazirmatn" } },
-        },
+        plugins: { legend: { display: false }, tooltip: { backgroundColor: "#171717", titleFont: { family: "Vazirmatn" }, bodyFont: { family: "Vazirmatn" } } },
         scales: {
           x: { type: "linear", ticks: { maxTicksLimit: 6, color: "#92928b", font: { family: "Vazirmatn", size: 10 }, callback: (v) => date(v / 1000).replace(" UTC", "") }, grid: { color: "#eeeeea" } },
           y: { ticks: { color: "#92928b", font: { family: "IBM Plex Mono", size: 10 } }, grid: { color: "#eeeeea" }, title: { display: normalized, text: "شاخص نسبی (مبنا = ۱۰۰)", font: { family: "Vazirmatn" } } },
@@ -88,9 +86,8 @@ function ChartCanvas({ datasets, height = 250, normalized = false }) {
     });
     return () => chart.destroy();
   }, [datasets, normalized]);
-  return <div className="chart-canvas" style={{ height }}><canvas ref={ref} /></div>;
+  return <div className="chart-canvas" style={{ height }}><canvas ref={canvasRef} /></div>;
 }
-
 function Panel({ eyebrow, title, subtitle, children, className = "" }) {
   return <section className={`panel ${className}`}><div className="panel-head"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div></div>{children}</section>;
 }
