@@ -3,7 +3,7 @@ const OONI_API_URL = "https://api.ooni.io/api/v1/measurements";
 const COUNTRY = "IR";
 const LOOKBACK_DAYS = 90;
 const PAGE_SIZE = 100;
-const MAX_PAGES = 2;
+const MAX_PAGES = 5;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -113,7 +113,9 @@ async function fetchMeasurements(classification: "confirmed" | "anomaly", since:
       if (!domain || !input || !measuredAt || !Number.isFinite(measuredAt.getTime())) continue;
 
       const reportId = typeof item.report_id === "string" ? item.report_id : null;
-      const probeAsnNumber = Number(item.probe_asn);
+      const rawAsn = item.probe_asn;
+      const asnMatch = typeof rawAsn === "string" ? rawAsn.trim().match(/^(?:AS)?(\\d+)$/i) : null;
+      const probeAsnNumber = typeof rawAsn === "number" ? rawAsn : Number(asnMatch?.[1]);
       const probeAsn = Number.isSafeInteger(probeAsnNumber) && probeAsnNumber > 0 ? probeAsnNumber : null;
       const categoryCode = typeof item.category_code === "string" ? item.category_code : null;
       const testName = typeof item.test_name === "string" ? item.test_name : "web_connectivity";
@@ -121,7 +123,6 @@ async function fetchMeasurements(classification: "confirmed" | "anomaly", since:
         reportId ?? "",
         input,
         measuredAt.toISOString(),
-        probeAsn ?? "",
         classification,
       ].join("|");
       collected.push({
@@ -150,7 +151,7 @@ async function saveRows(key: string, rows: Record<string, unknown>[]) {
       "POST",
       batch,
       "?on_conflict=measurement_id",
-      "resolution=ignore-duplicates,return=minimal",
+      "resolution=merge-duplicates,return=minimal",
     );
   }
 }
