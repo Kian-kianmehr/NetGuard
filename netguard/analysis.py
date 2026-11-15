@@ -254,7 +254,7 @@ def _signal_trend(
         }
 
     latest = rows[-1]["_time"] if rows else None
-    if latest is None or (now - latest).total_seconds() > max(3600, interval_seconds * 3):
+    if latest is None:
         return {
             "trend_1h_change_percent": None,
             "trend_1h_direction": "unknown",
@@ -608,14 +608,8 @@ def analyze_dashboard(
         latest = rows[-1] if rows else None
         freshness_status = source.get("freshness_status") or "unknown"
         comparison = _compare_recent_windows(rows, interval)
-        data_age = quality["observation_age_seconds"]
-        try:
-            stale_after = int(source.get("stale_after_seconds") or max(1800, interval * 3))
-        except (TypeError, ValueError):
-            stale_after = max(1800, interval * 3)
-        recent_enough = data_age is not None and data_age <= stale_after
 
-        if freshness_status == "stale" or not recent_enough:
+        if freshness_status == "stale":
             data_state = "stale"
         elif freshness_status != "fresh":
             data_state = "limited"
@@ -694,6 +688,12 @@ def analyze_dashboard(
             })
 
         trend_info = _signal_trend(rows, source.get("signal", ""), interval, now)
+        if freshness_status != "fresh":
+            trend_info = {
+                "trend_1h_change_percent": None,
+                "trend_1h_direction": "unknown",
+                "trend_1h_label": "دادهٔ تازه برای محاسبهٔ روند یک‌ساعته در دسترس نیست",
+            }
         plain_explanation = _plain_signal_explanation(
             source.get("signal", ""), data_state, current_anomaly, change
         )
