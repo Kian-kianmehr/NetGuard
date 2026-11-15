@@ -190,7 +190,7 @@ function SourceTable({ rows = [] }) {
       <td><Badge value={source.freshness_status}/></td>
       <td>{time(source.last_observed_at)}<small>{source.observation_age_seconds == null ? "سن داده نامشخص" : number(Math.floor(source.observation_age_seconds / 60), 0) + " دقیقه پیش"}</small></td>
       <td><b>{source.expected_interval_seconds ? number(source.expected_interval_seconds / 60, 0) + " دقیقه" : "—"}</b><small>{source.stale_after_seconds ? "حد هشدار " + number(source.stale_after_seconds / 60, 0) + " دقیقه" : "آستانه نامشخص"}</small></td>
-      <td>{time(source.last_run_started_at)}<small>{source.last_run_status || "بدون اجرا"}{source.last_run_duration_ms != null ? " · " + number(source.last_run_duration_ms, 0) + " ms" : ""}</small></td>
+      <td>{time(source.last_run_started_at)}<small>{source.last_run_status || "بدون اجرا"}{source.last_run_duration_ms != null ? " · " + number(source.last_run_duration_ms, 0) + " ms" : ""}{source.last_run_records_received != null ? " · " + number(source.last_run_records_received, 0) + " ردیف" : ""}{source.last_run_error_code ? " · " + source.last_run_error_code : ""}</small></td>
       <td><b>{number(source.latest_value)}</b><small>{source.unit}</small></td>
     </tr>)}</tbody>
   </table></div>;
@@ -244,11 +244,12 @@ function SourceQualityCard({ item }) {
       <div><small>میانهٔ فاصله‌ها</small><b>{item.median_gap_seconds == null ? "—" : number(item.median_gap_seconds / 60, 1) + " دقیقه"}</b></div>
       <div><small>صدک ۹۰ فاصله</small><b>{item.p90_gap_seconds == null ? "—" : number(item.p90_gap_seconds / 60, 1) + " دقیقه"}</b></div>
       <div><small>نمونهٔ ۲ ساعت اخیر</small><b>{number(item.samples_last_2h, 0)}</b></div>
+      <div><small>نمونهٔ ۳۰ دقیقه اخیر</small><b>{number(item.samples_last_30m, 0)}</b></div>
       <div><small>شکاف‌های غیرمنتظره</small><b>{number(item.gaps_over_expected_threshold, 0)}</b></div>
     </div>
     <div className="source-quality-foot">
       <span>آخرین جمع‌آوری: {time(item.last_collected_at)}</span>
-      <span>آخرین اجرای Collector: {item.last_run_status || "نامشخص"}</span>
+      <span>آخرین اجرای Collector: {item.last_run_status || "نامشخص"}{item.last_run_error_code ? " · " + item.last_run_error_code : ""}</span>
     </div>
   </article>;
 }
@@ -574,7 +575,7 @@ export default function App() {
       <Panel tag="پیش‌بینی آزمایشی" title="ریسک افت در افق ۳۰ دقیقه" note={forecast.note || "برآورد پس از دریافت دادهٔ کافی نمایش داده می‌شود."}>
         {forecast.available ? <>
           <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>شاخص ریسک آزمایشی</small><b>{number(forecast.risk_index, 0)}<em> / ۱۰۰</em></b><span>{forecast.risk_label}</span></div><p>این عدد احتمال وقوع اختلال نیست؛ شاخصی ترکیبی برای اولویت‌بندی بررسی روند دو سیگنال اصلی است.</p></div>
-          <div className="forecast-grid">{forecast.components.map((item) => <article key={item.signal}><small>{item.signal === "bgp" ? "دیدپذیری مسیرهای اینترنت (BGP)" : "پاسخ‌گویی شبکه‌ها (Ping)"}</small><b>{number(item.projected_change_30m_percent)}٪</b><span>تغییر برآوردی در ۳۰ دقیقهٔ آینده · مقدار فعلی {number(item.current_value)}</span><span>مقدار برآوردی {number(item.projected_value_30m)} · امتیاز ناهنجاری {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span></article>)}</div>
+          <div className="forecast-grid">{forecast.components.map((item) => <article key={item.signal}><small>{item.signal === "bgp" ? "دیدپذیری مسیرهای اینترنت (BGP)" : "پاسخ‌گویی شبکه‌ها (Ping)"}</small><b>{number(item.projected_change_30m_percent)}٪</b><span>تغییر برآوردی ۳۰ دقیقه پس از آخرین نمونه · مقدار فعلی {number(item.current_value)}</span><span>آخرین مشاهده: {number((item.observation_age_seconds || 0) / 60, 0)} دقیقه قبل · مقدار برآوردی {number(item.projected_value_30m)}</span><span>امتیاز ناهنجاری {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span></article>)}</div>
         </> : <Empty title="هنوز برآورد هم‌زمان ممکن نیست" note={forecast.note || "برای هر دو شاخص اصلی باید تاریخچهٔ معتبر بیشتری جمع شود."}/>}
       </Panel>
       <Panel tag="تحلیل شواهد" title="فرضیه‌های علت احتمالی" note={cause.scope_note || "این تحلیل علت قطعی اختلال را تعیین نمی‌کند."}>
