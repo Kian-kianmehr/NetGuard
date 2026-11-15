@@ -67,7 +67,10 @@ def test_stale_source_creates_operational_event_and_is_not_healthy():
         [source(freshness="stale")], rows, generated_at=NOW
     )
     assert result["assessment"] == "insufficient_data"
-    assert any(event["event_type"] == "source_stale" for event in events)
+    stale_events = [event for event in events if event["event_type"] == "source_stale"]
+    assert stale_events
+    assert stale_events[0]["evidence_score"] is None
+    assert stale_events[0]["status_label"] == "هشدار عملیاتی؛ نه رخداد شبکه"
 
 
 def test_missing_and_invalid_observations_are_not_zero_filled():
