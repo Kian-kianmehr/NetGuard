@@ -927,6 +927,7 @@ export default function App() {
         <Stat icon={Gauge} label="امتیاز نشانه‌های افت" value={forecast.risk_index == null ? "—" : <span dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</span>} hint="امتیاز آزمایشی؛ نه درصد احتمال اختلال"/>
         <Stat icon={Activity} label="شاخص‌های آمادهٔ امتیازدهی" value={number(intelligence.trained_signals, 0)} hint={"از " + number(modelSignals.length, 0) + " شاخص؛ دادهٔ تازه و تاریخچهٔ کافی لازم است"}/>
         <Stat icon={AlertTriangle} label="رفتارهای غیرمعمول" value={number(modelSignals.filter((item) => item.is_anomaly).length, 0)} hint="نیازمند بررسی چندمنبعی"/>
+        <Stat icon={BrainCircuit} label="ناهنجاری چندشاخصی" value={intelligence.joint_model?.score == null ? "—" : number(intelligence.joint_model.score, 3)} hint={intelligence.joint_model?.status_label || "تاریخچهٔ هم‌زمان کافی لازم است"}/>
         <Stat icon={Clock3} label="افق‌های برآورد" value="۱۵، ۳۰، ۶۰ دقیقه" hint="پیش‌بینی بازگشتی شبکهٔ عصبی"/>
       </div>
       <Panel tag="پیش‌بینی مبتنی بر یادگیری عمیق" title="پیش‌بینی عصبی روند کوتاه‌مدت" note="امتیاز ملی فقط با دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی محاسبه می‌شود.">
@@ -947,6 +948,7 @@ export default function App() {
         </> : <Empty title="هنوز برآورد مستقلی آماده نیست" note="برای هر شاخص باید دادهٔ تازه و نمونهٔ کافی در دو پنجرهٔ ۳۰ دقیقه‌ای موجود باشد."/>}
       </Panel>
       <Panel tag="تحلیل شواهد" title="فرضیه‌های علت احتمالی" note={cause.scope_note || "این تحلیل علت قطعی اختلال را تعیین نمی‌کند."}>
+        {intelligence.joint_model?.available && <div className="notice"><BrainCircuit size={17}/><div><b>مدل هوشمند چندشاخصی: {intelligence.joint_model.status_label}</b><p>{intelligence.joint_model.interpretation} · {number(intelligence.joint_model.sample_count, 0)} بردار هم‌زمان · ویژگی غالب: {intelligence.joint_model.dominant_feature_label}</p></div></div>}
         <div className="cause-card">
           <div className="cause-heading">
             <div><small>فرضیهٔ اصلی</small><b>{cause.hypothesis_label || "دادهٔ کافی موجود نیست"}</b></div>
