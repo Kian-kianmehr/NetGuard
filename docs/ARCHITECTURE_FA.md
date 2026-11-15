@@ -4,9 +4,9 @@
 
 ```text
 Supabase pg_cron / pg_net
-  ├─ هر ۱۰ دقیقه: IODA Edge Collector
-  ├─ هر ۱۰ دقیقه: OONI Edge Collector
-  ├─ هر ۱۰ دقیقه: Provider Status Edge Collector
+  ├─ هر ۱۰ دقیقه: netguard-collector (IODA)
+  ├─ هر ۱۰ دقیقه: netguard-censorship-collector (OONI)
+  ├─ هر ۱۰ دقیقه: netguard-provider-collector
   └─ دقیقه‌های 03,13,23,33,43,53:
        x-netguard-token → Render FastAPI
                            /internal/collect-snapshots
@@ -24,15 +24,15 @@ Supabase pg_cron / pg_net
 - Frontend: React و Vite روی Render Static Site.
 - Backend: FastAPI روی Render Free برای API خواندنی و ساخت Snapshot.
 - Database: Supabase PostgreSQL.
-- Collectors: سه Supabase Edge Function برای IODA، OONI و وضعیت رسمی ارائه‌دهندگان.
+- Collectors: سه Supabase Edge Function مستقل برای IODA، OONI و وضعیت جهانی ارائه‌دهندگان.
 - Scheduler: Supabase pg_cron و pg_net.
 
 ## چرخهٔ داده
-1. Edge Functionها هر ۱۰ دقیقه دادهٔ خام را دریافت می‌کنند.
+1. Edge Functionها هر ۱۰ دقیقه دادهٔ خام را دریافت و در Supabase ذخیره می‌کنند.
 2. observed_at زمان مشاهده و collected_at زمان دریافت را جدا نگه می‌دارند.
-3. job تجمیع به endpoint داخلی Render درخواست محافظت‌شده می‌فرستد.
-4. FastAPI تاریخچه‌های ۲۴، ۷۲ و ۱۶۸ ساعت را می‌خواند، تحلیل آماری/ML را اجرا می‌کند و شش Snapshot عمومی را می‌سازد.
-5. Snapshotها از طریق RPC netguard_save_snapshot با توکن داخلی ذخیره می‌شوند.
+3. job تجمیع در دقیقه‌های 03،13،23،33،43 و 53 درخواست محافظت‌شده‌ای به Render می‌فرستد.
+4. FastAPI تاریخچه‌های ۲۴، ۷۲ و ۱۶۸ ساعت را می‌خواند، تحلیل آماری/ML را اجرا می‌کند و شش Snapshot را می‌سازد.
+5. Snapshotها از طریق RPC محدودشدهٔ netguard_save_snapshot ذخیره می‌شوند.
 6. مرورگر Snapshotهای لازم را با Publishable Key و RLS می‌خواند و cache می‌کند.
 
 ## Snapshot و تازگی
@@ -43,7 +43,7 @@ Supabase pg_cron / pg_net
 | dashboard_168 | ۷ روز | ۱۵ دقیقه |
 | censorship | شواهد OONI | ۳۰ دقیقه |
 | providers_status | وضعیت جهانی | ۱۵ دقیقه |
-| iran_datacenters | موجودی دیتاسنتر | ۳۰ دقیقه |
+| iran_datacenters | موجودی مراکز | ۳۰ دقیقه |
 
 اگر Snapshot کهنه باشد با is_stale مشخص می‌شود؛ دادهٔ قدیمی به‌عنوان تازه معرفی نمی‌شود.
 
@@ -60,7 +60,7 @@ Supabase pg_cron / pg_net
 - anon و authenticated فقط SELECT روی داده‌های عمومی دارند.
 - netguard_collector_credentials policy عمومی ندارد.
 - Edge Functionها کلید نوشتن را از secret محیط اجرا می‌گیرند.
-- RPC netguard_save_snapshot از SECURITY DEFINER استفاده می‌کند، اما توکن بلند را با hash تطبیق می‌دهد و datasetها را whitelist می‌کند. این طراحی دلیل هشدار Supabase Advisor دربارهٔ callable بودن RPC است و باید در بازطراحی دسترسی دوباره ارزیابی شود.
+- RPC netguard_save_snapshot از SECURITY DEFINER استفاده می‌کند، اما توکن داخلی بلند را با hash تطبیق می‌دهد و datasetها را whitelist می‌کند. این طراحی علت هشدار Supabase Advisor دربارهٔ callable بودن RPC است و باید در بازطراحی دسترسی دوباره ارزیابی شود.
 - هیچ Secret Key یا Service Role Key در Frontend نیست.
 
 ## محدودیت
@@ -68,4 +68,4 @@ Supabase pg_cron / pg_net
 - موفقیت Collector تضمین نمی‌کند منبع بالادستی مشاهدهٔ تازه منتشر کرده باشد.
 - دادهٔ قدیمی، تأخیر cadence و خطای Collector جدا هستند.
 - در شکست تجمیع ممکن است Snapshot قبلی باقی بماند؛ collected_at و is_stale باید بررسی شوند.
-- مراکز دادهٔ ایران در v1 پایش زندهٔ سلامت ندارند.
+- موجودی مراکز دادهٔ ایران در v1 پایش زندهٔ سلامت ندارد.
