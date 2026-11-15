@@ -94,3 +94,16 @@ def test_two_independent_simultaneous_drops_are_only_suspected():
     assert len(flagged) >= 2
     assert all(event["status"] == "suspected" for event in flagged)
     assert all(event["status"] != "confirmed" for event in flagged)
+
+def test_old_corroborated_events_do_not_keep_current_status_elevated():
+    first = "ioda:IR:bgp"
+    second = "ioda:IR:ping-slash24"
+    first_values = [1000] * 20 + [500, 480, 470] + [1000] * 18
+    second_values = [800] * 20 + [400, 390, 380] + [800] * 18
+    rows = observations(first, first_values) + observations(second, second_values)
+    result, events = analyze_dashboard(
+        [source(first), source(second)], rows, generated_at=NOW
+    )
+    assert any(event["status"] == "suspected" for event in events)
+    assert result["assessment"] == "no_anomaly_detected"
+    assert result["anomalous_sources"] == 0

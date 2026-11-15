@@ -319,15 +319,26 @@ def analyze_dashboard(
 
     usable = [signal for signal in signal_results if signal["data_state"] == "usable"]
     anomalous = [signal for signal in signal_results if signal["current_anomaly"]]
-    corroborated = [
-        event for event in events
-        if event.get("status") == "suspected"
+    current_drops = [
+        signal for signal in signal_results
+        if signal["current_anomaly"]
+        and signal["change_percent"] is not None
+        and signal["change_percent"] < 0
+        and _parse_time(signal.get("last_observed_at")) is not None
     ]
+    current_corroboration = any(
+        left["source_id"] != right["source_id"]
+        and abs(
+            (_parse_time(left["last_observed_at"]) - _parse_time(right["last_observed_at"])).total_seconds()
+        ) <= 3600
+        for index, left in enumerate(current_drops)
+        for right in current_drops[index + 1:]
+    )
     fresh_count = sum(1 for signal in signal_results if signal["freshness_status"] == "fresh")
-    if corroborated:
+    if current_corroboration:
         assessment = "elevated_attention"
         summary = (
-            "چند شاخص مستقل در بازهٔ زمانی نزدیک کاهش غیرعادی نشان داده‌اند. "
+            "چند شاخص مستقل در داده‌های تازه کاهش غیرعادی و هم‌زمان نشان داده‌اند. "
             "این وضعیت یک هشدار چندسیگناله است، نه اثبات قطعی قطعی یا علت آن."
         )
     elif anomalous:
