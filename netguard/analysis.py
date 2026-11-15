@@ -935,7 +935,7 @@ def analyze_dashboard(
     source_count = len(signal_results)
     usable = [signal for signal in signal_results if signal["data_state"] == "usable"]
     anomalous = [signal for signal in signal_results if signal["current_anomaly"]]
-    fresh_count = sum(1 for signal in signal_results if signal["freshness_status"] == "fresh")
+    fresh_count = sum(1 for signal in signal_results if signal["display_freshness_status"] == "fresh")
     window_coverage = min(100.0, valid_total / expected_total * 100.0) if expected_total else 0.0
     observed_span = (
         sum(float(item["observed_span_percent"]) for item in quality_rows) / len(quality_rows)
