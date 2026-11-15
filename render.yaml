@@ -26,3 +26,6 @@ services:
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     autoDeployTrigger: checksPass
+    envVars:
+      - key: VITE_API_URL
+        value: https://netguard-api-oan9.onrender.com
