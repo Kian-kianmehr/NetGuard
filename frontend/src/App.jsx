@@ -414,7 +414,7 @@ function QualityBar({ value }) {
 
 function SourceQualityCard({ item }) {
   return <article className="source-quality-card">
-    <div className="source-quality-head"><div><small>آنچه این شاخص می‌سنجد</small><h3>{item.display_name}</h3></div><Badge value={item.freshness_status}/></div>
+    <div className="source-quality-head"><div><small>آنچه این شاخص می‌سنجد</small><h3>{item.display_name}</h3></div><Badge value={item.cadence_status || item.freshness_status}/></div>
     <p className="provider-simple-copy">{sourcePlain(item.signal)} پوشش نشان می‌دهد چند بررسی از تعداد برنامه‌ریزی‌شده واقعاً ثبت شده است.</p>
     <div className="quality-main-value"><b>{number(item.sample_coverage_percent, 1)}٪</b><span>بررسی‌های ثبت‌شده</span></div>
     <QualityBar value={item.sample_coverage_percent}/>
