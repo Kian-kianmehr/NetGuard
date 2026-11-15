@@ -19,8 +19,15 @@ const NAV = [
   ["sources", "منابع داده", Database],
   ["method", "روش‌شناسی", BookOpen],
 ];
-const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "https://netguard-api-oan9.onrender.com").replace(/\/$/, "");
+const SNAPSHOT_ENDPOINTS = {
+  dashboard_24: "/api/dashboard?hours=24",
+  dashboard_72: "/api/dashboard?hours=72",
+  dashboard_168: "/api/dashboard?hours=168",
+  censorship: "/api/censorship",
+  providers_status: "/api/providers/status",
+  iran_datacenters: "/api/iran/datacenters",
+};
 const SNAPSHOT_CACHE_KEY = "netguard.public-snapshots.v1";
 const SNAPSHOT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SNAPSHOT_STALE_AFTER = {
@@ -588,33 +595,31 @@ export default function App() {
     refreshInFlight.current = true;
     setIsRefreshing(true);
     try {
-      if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-        throw new Error("تنظیم اتصال عمومی Supabase در سایت کامل نیست.");
+      if (!API_BASE_URL) {
+        throw new Error("نشانی API نت‌گارد تنظیم نشده است.");
       }
-      const query = new URLSearchParams({
-        select: "dataset_key,payload,collected_at,status,source_count,error_code",
-        dataset_key: `in.(${keys.join(",")})`,
-      });
-      const payload = await fetchJsonWithRetry(
-        `${SUPABASE_URL}/rest/v1/netguard_snapshots?${query}`,
-        {
-          headers: {
-            Accept: "application/json",
-            apikey: SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+      const rows = await Promise.all(keys.map(async (key) => {
+        const payload = await fetchJsonWithRetry(
+          `${API_BASE_URL}${SNAPSHOT_ENDPOINTS[key]}`,
+          {
+            headers: { Accept: "application/json" },
+            cache: "no-store",
           },
-          cache: "no-store",
-        },
-        {
-          timeoutMs: 7000,
-          maxAttempts: 2,
-          retryDelayMs: 350,
-        }
-      );
-      if (!Array.isArray(payload) || !payload.some((row) => keys.includes(row.dataset_key))) {
-        throw new Error("Snapshot درخواستی از پایگاه داده دریافت نشد.");
-      }
-      const rows = payload.filter((row) => keys.includes(row.dataset_key));
+          {
+            timeoutMs: 7000,
+            maxAttempts: 2,
+            retryDelayMs: 350,
+          }
+        );
+        return {
+          dataset_key: key,
+          payload,
+          collected_at: payload.snapshot_at || null,
+          status: payload.snapshot_status || "unknown",
+          source_count: payload.source_count ?? 0,
+          error_code: payload.snapshot_error || null,
+        };
+      }));
       const cachedRows = readCachedSnapshotRows().filter((row) => !keys.includes(row.dataset_key));
       const mergedRows = [...cachedRows, ...rows];
       try {
