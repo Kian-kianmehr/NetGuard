@@ -335,11 +335,11 @@ Deno.serve(async (request: Request) => {
       confirmedResult.error, anomalyResult.error, testListSaveError, measurementSaveError,
     ].filter((item): item is string => Boolean(item));
     const successfulWork = testListSaved > 0 || (rows.length > 0 && !measurementSaveError);
-    const status = errors.length === 4 && !successfulWork
-      ? "error"
-      : errors.length > 0
+    const status = errors.length === 0
+      ? "success"
+      : successfulWork
       ? "partial"
-      : "success";
+      : "error";
     const finishedAt = new Date();
     await dbRequest(key, "censorship_sync_runs", "POST", {
       id: crypto.randomUUID(),
