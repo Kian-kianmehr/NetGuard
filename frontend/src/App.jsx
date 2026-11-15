@@ -87,7 +87,7 @@ const time = (value, withDate = true) => {
   }).format(date);
 };
 const freshness = {
-  fresh: ["تازه", "good"], stale: ["قدیمی", "warn"],
+  fresh: ["تازه", "good"], delayed: ["با تأخیر", "warn"], stale: ["قدیمی", "warn"],
   degraded: ["دارای خطا", "danger"], unknown: ["نامشخص", "neutral"],
 };
 const assessmentTone = {
@@ -104,6 +104,7 @@ const eventSeverity = {
 };
 const eventTypeLabel = {
   signal_anomaly: "انحراف آماری سیگنال",
+  source_delayed: "تأخیر در مشاهدهٔ منبع",
   source_stale: "هشدار تازگی داده",
   collector_error: "هشدار اجرای جمع‌آوری",
 };
@@ -392,7 +393,7 @@ function EventCard({ event }) {
       {event.evidence_score != null && <div><small>امتیاز اولویت بررسی</small><b>{number(event.evidence_score, 0)} از ۱۰۰</b></div>}
     </div>
     <div className="event-bottom">
-      <div><b>{event.source_name || "NetGuard"}</b><small>{event.event_type === "source_stale"
+      <div><b>{event.source_name || "NetGuard"}</b><small>{["source_stale", "source_delayed"].includes(event.event_type)
         ? "آخرین مشاهده: " + time(event.last_observed_at || event.start_at) + " · آخرین بررسی: " + time(event.last_collected_at || event.occurred_at)
         : event.event_type === "collector_error"
           ? "آخرین اجرای ناموفق: " + time(event.occurred_at) + " · آخرین مشاهده: " + time(event.last_observed_at)
@@ -752,7 +753,8 @@ export default function App() {
         <Stat icon={Database} label="منابع اصلی قابل استفاده" value={number(analysis.public_summary?.checked_primary_signals, 0) + " / 2"} hint="BGP و پایش فعال"/>
         <Stat icon={Gauge} label="پوشش بازه" value={number(analysis.data_quality?.window_coverage_percent, 1) + "٪"} hint="نمونه‌های معتبر نسبت به انتظار"/>
         <Stat icon={AlertTriangle} label="منابع دارای انحراف" value={number(analysis.anomalous_sources, 0)} hint="انحراف از خط مبنای هر سیگنال" tone={analysis.anomalous_sources ? "warn" : "default"}/>
-        <Stat icon={RadioTower} label="منابع تازه" value={number(analysis.fresh_sources, 0)} hint="بر اساس زمان مشاهده"/>
+        <Stat icon={RadioTower} label="منابع تازه" value={number(analysis.fresh_sources, 0)} hint="بر اساس آستانهٔ تازگی منبع"/>
+        <Stat icon={Clock3} label="منابع عقب‌مانده از cadence" value={number(analysis.data_quality?.sources_delayed, 0)} hint="آخرین مشاهده بیش از سه فاصلهٔ معمول نمونه‌برداری عقب است"/>
         <Stat icon={Activity} label="رخدادهای پنجره" value={number(analysis.events_count, 0)} hint="رخدادهای شناسایی‌شده"/>
       </div>
       <Panel tag="کیفیت داده" title="پوشش و پیوستگی تاریخچه" note="این درصد نشانهٔ سلامت اینترنت نیست؛ فقط پوشش داده در پنجرهٔ انتخابی را اندازه می‌گیرد.">
@@ -899,7 +901,7 @@ export default function App() {
       <div className="plain-explanation"><b>این مدل چه فایده‌ای دارد؟</b><p>مدل رفتار معمول هر شاخص را از روی داده‌های قبلی یاد می‌گیرد. اگر رفتار تازه با گذشته فرق زیادی داشته باشد، آن را برای بررسی علامت می‌زند؛ این علامت به‌تنهایی معنی اختلال اینترنت نیست.</p></div>
       {modelSignals.some((item) => item.is_anomaly) && <div className="notice"><Info size={17}/><div><b>یک شاخص کمکی رفتار غیرمعمولی نشان داده است</b><p>این یافته برای بررسی بیشتر نگه داشته می‌شود؛ اما چون به‌تنهایی افت مسیر یا پاسخ‌گویی شبکه را ثابت نمی‌کند، مستقیماً به امتیاز نشانه‌های افت اضافه نمی‌شود.</p></div></div>}
       <Panel tag="خروجی قابل فهم مدل‌ها" title="کدام شاخص رفتار متفاوتی نشان داده است؟" note="هر شاخص با سابقهٔ خودش سنجیده می‌شود. علامت غیرعادی فقط یک هشدار برای بررسی است و به‌تنهایی اختلال اینترنت را ثابت نمی‌کند.">
-        {modelSignals.length ? <div className="ai-signal-grid">{modelSignals.map((item) => <article key={item.source_id}><div><b>{item.display_name}</b><Badge value={item.status} map={{ready: [item.is_anomaly ? "رفتار غیرمعمول" : "در محدودهٔ معمول", item.is_anomaly ? "warn" : "good"], collecting_history: ["در حال یادگیری", "neutral"], stale_data: ["داده قدیمی", "neutral"]}}/></div><p>{item.interpretation}</p><small>{number(item.sample_count, 0)} نمونهٔ معتبر · {number(item.training_samples, 0)} نمونهٔ آموزشی</small></article>)}</div> : <Empty title="هنوز تاریخچهٔ کافی نداریم" note="مدل تا زمان جمع شدن دادهٔ واقعی، نتیجهٔ ساختگی تولید نمی‌کند."/>}
+        {modelSignals.length ? <div className="ai-signal-grid">{modelSignals.map((item) => <article key={item.source_id}><div><b>{item.display_name}</b><Badge value={item.status} map={{ready: [item.is_anomaly ? "رفتار غیرمعمول" : "در محدودهٔ معمول", item.is_anomaly ? "warn" : "good"], collecting_history: ["در حال یادگیری", "neutral"], stale_data: ["داده قدیمی", "neutral"]}}/></div><p>{item.interpretation}</p><small>{number(item.sample_count, 0)} نمونهٔ معتبر · {number(item.training_samples, 0)} نمونهٔ آموزشی · آخرین مشاهده {item.observation_age_seconds == null ? "نامشخص" : number(item.observation_age_seconds / 60, 0) + " دقیقه قبل"}</small></article>)}</div> : <Empty title="هنوز تاریخچهٔ کافی نداریم" note="مدل تا زمان جمع شدن دادهٔ واقعی، نتیجهٔ ساختگی تولید نمی‌کند."/>}
       </Panel>
       <details className="technical-details"><summary>جزئیات فنی مدل و امتیازهای هر شاخص</summary>
       <Panel tag="مدل یادگیری ماشین" title="امتیاز و تشخیص ناهنجاری به تفکیک شاخص" note={intelligence.method_note || "برای هر شاخص یک مدل مستقل و بدون‌نظارت اجرا می‌شود؛ امتیازها احتمال قطعی اختلال نیستند."}>
@@ -924,7 +926,7 @@ export default function App() {
             <div><small>امتیاز انحراف مقاوم</small><b>{item.robust_deviation_score == null ? "—" : number(item.robust_deviation_score, 3)}</b></div>
             <div><small>آستانهٔ تشخیص</small><b>۰٫۶۵</b></div>
           </div>
-          <div className="ml-meta"><span>وضعیت: {item.status_label}</span><span>تاریخچه: {number(item.sample_count, 0)} نمونه</span><span>ویژگی آموزشی: {number(item.training_samples, 0)}</span><span>فاصلهٔ نمونه‌برداری: {number((item.expected_interval_seconds || 0) / 60, 0)} دقیقه</span><span>ویژگی غالب: {item.dominant_feature_label || "نامشخص"}</span></div>
+          <div className="ml-meta"><span>وضعیت: {item.status_label}</span><span>تاریخچه: {number(item.sample_count, 0)} نمونه</span><span>ویژگی آموزشی: {number(item.training_samples, 0)}</span><span>فاصلهٔ نمونه‌برداری: {number((item.expected_interval_seconds || 0) / 60, 0)} دقیقه</span><span>آخرین مشاهده: {item.observation_age_seconds == null ? "نامشخص" : number(item.observation_age_seconds / 60, 0) + " دقیقه قبل"}</span><span>ویژگی غالب: {item.dominant_feature_label || "نامشخص"}</span></div>
         </article>)}</div> : <Empty title="امتیاز قابل نمایش نیست" note="برای هر شاخص باید تاریخچهٔ معتبر و تازه کافی باشد؛ در غیر این صورت امتیاز عمداً خالی می‌ماند."/>}
       </Panel>
       <div className="notice"><Info size={17}/><div><b>مرز علمی مدل</b><p>این مدل رفتار غیرعادی را پیدا می‌کند، نه احتمال قطعی خاموشی را. امتیازهای مدل زمانی به احتمال واقعی تبدیل می‌شوند که با رخدادهای تأییدشده آزمایش و کالیبره شده باشند.</p></div></div>
@@ -1004,7 +1006,7 @@ export default function App() {
       const rows = groups[signal.source_id] || [];
       const trend = signal.change_percent;
       return <Panel key={signal.source_id} className="signal-panel" tag={signal.provider + " · " + signal.signal} title={signal.display_name} note={signal.description}>
-        <div className="signal-card-head"><Badge value={signal.freshness_status}/><span>{signal.data_state_label}</span><a href={signal.source_url} target="_blank" rel="noreferrer">مستندات منبع ↗</a></div>
+        <div className="signal-card-head"><Badge value={signal.display_freshness_status || signal.freshness_status}/><span>{signal.data_state_label}</span><a href={signal.source_url} target="_blank" rel="noreferrer">مستندات منبع ↗</a></div>
         <div className="plain-explanation"><b>{signal.plain_title || "این شاخص چه می‌گوید؟"}</b><p>{signal.plain_explanation || signal.description}</p>{signal.trend_1h_label && <small>روند یک ساعت اخیر: {signal.trend_1h_label}{signal.trend_1h_change_percent == null ? "" : " · " + number(signal.trend_1h_change_percent) + "٪"}</small>}</div>
         <div className="signal-stats">
           <div><small>آخرین مقدار</small><b>{number(signal.latest_value)}</b><em>{signal.unit}</em></div>
@@ -1031,7 +1033,7 @@ export default function App() {
       <Stat icon={AlertTriangle} label="رخدادهای جاری" value={number(events.filter((event) => event.lifecycle === "active").length, 0)} hint="ناهنجاری با دادهٔ تازه"/>
       <Stat icon={Clock3} label="رخدادهای پایان‌یافته" value={number(events.filter((event) => event.lifecycle === "resolved").length, 0)} hint="در تاریخچهٔ بازهٔ انتخابی"/>
       <Stat icon={ShieldAlert} label="شدت بالا یا بحرانی" value={number(events.filter((event) => ["critical", "high"].includes(event.severity)).length, 0)} hint="در کل بازهٔ انتخابی"/>
-      <Stat icon={Signal} label="هشدارهای عملیاتی" value={number(events.filter((event) => ["source_stale", "collector_error"].includes(event.event_type)).length, 0)} hint="وضعیت داده و جمع‌آوری؛ نه رخداد شبکه"/>
+      <Stat icon={Signal} label="هشدارهای عملیاتی" value={number(events.filter((event) => ["source_delayed", "source_stale", "collector_error"].includes(event.event_type)).length, 0)} hint="تأخیر مشاهده، تازگی داده یا اجرای جمع‌آوری؛ نه رخداد شبکه"/>
     </div>
     <div className="toolbar">
       <div className="range-tabs">

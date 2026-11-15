@@ -27,6 +27,17 @@ def test_isolation_forest_scores_sudden_drop_as_more_unusual():
     assert result["is_anomaly"] is True
 
 
+def test_model_does_not_score_a_reading_far_behind_expected_cadence():
+    source, rows = make_data([1000 + (index % 2) for index in range(60)], "ioda:IR:bgp", "bgp")
+    latest = datetime.fromisoformat(max(row["observed_at"] for row in rows))
+    result = analyze_intelligence([source], rows, now=latest + timedelta(minutes=20))
+    signal = result["signals"][0]
+    assert signal["status"] == "stale_data"
+    assert signal["score"] is None
+    assert signal["observation_age_seconds"] == 20 * 60
+    assert "امتیاز جاری نمایش داده نمی‌شود" in signal["interpretation"]
+
+
 def test_model_waits_for_real_history_instead_of_making_up_training_data():
     source, rows = make_data([1000] * 20, "ioda:IR:bgp", "bgp")
     result = analyze_intelligence([source], rows)
@@ -59,6 +70,26 @@ def test_forecast_is_explicitly_not_a_calibrated_probability():
     assert [item["minutes"] for item in projections] == [15, 30, 60]
     assert projections[1]["projected_change_percent"] == forecast["components"][0]["projected_change_30m_percent"]
     assert all(item["method"] == "linear_trend_extension" for item in projections)
+
+
+def test_forecast_uses_fresh_ping_when_bgp_observation_is_too_old():
+    sources, rows = [], []
+    for source_id, signal, base in (
+        ("ioda:IR:bgp", "bgp", 1000),
+        ("ioda:IR:ping-slash24", "ping-slash24", 900),
+    ):
+        source, source_rows = make_data([base] * 48, source_id, signal)
+        sources.append(source)
+        rows.extend(source_rows)
+    latest = datetime.fromisoformat(max(row["observed_at"] for row in rows))
+    result = analyze_intelligence(sources, rows, now=latest + timedelta(minutes=20))
+    forecast = result["forecast"]
+    by_signal = {item["signal"]: item for item in forecast["components"]}
+    assert forecast["available"] is False
+    assert forecast["risk_index"] is None
+    assert by_signal["bgp"]["available"] is False
+    assert "سه فاصلهٔ معمول" in by_signal["bgp"]["reason"]
+    assert by_signal["ping-slash24"]["available"] is True
 
 
 def test_cause_analysis_requires_correlated_primary_signals():

@@ -199,7 +199,16 @@ def _signal_model(
     interval = _interval_seconds(source)
     rows = _valid_rows(source_id, observations)
     features = _features(rows, interval)
-    fresh = _is_fresh(source, rows, now)
+    source_fresh = _is_fresh(source, rows, now)
+    observation_age = (
+        max(0.0, (now - rows[-1][0]).total_seconds()) if rows else None
+    )
+    cadence_delayed = (
+        source_fresh
+        and observation_age is not None
+        and observation_age > interval * 3
+    )
+    fresh = source_fresh and not cadence_delayed
     result = {
         "source_id": source_id,
         "signal": source.get("signal"),
@@ -207,15 +216,26 @@ def _signal_model(
         "sample_count": len(rows),
         "training_samples": max(0, len(features) - 1),
         "expected_interval_seconds": interval,
+        "observation_age_seconds": round(observation_age) if observation_age is not None else None,
+        "cadence_delay_after_seconds": interval * 3,
         "score": None,
         "status": "collecting_history" if fresh else "stale_data",
-        "status_label": "در حال جمع‌آوری تاریخچه" if fresh else "دادهٔ تازه برای امتیازدهی موجود نیست",
+        "status_label": (
+            "در حال جمع‌آوری تاریخچه" if fresh
+            else "آخرین مشاهده نسبت به cadence منبع با تأخیر است" if cadence_delayed
+            else "دادهٔ تازه برای امتیازدهی موجود نیست"
+        ),
         "is_anomaly": False,
         "dominant_feature": None,
         "dominant_feature_label": "هنوز قابل تعیین نیست",
         "interpretation": (
             f"برای آموزش اولیهٔ مدل حداقل {MIN_RAW_POINTS} مشاهدهٔ معتبر و تاریخچهٔ پیوسته لازم است."
-            if fresh else "آخرین مشاهدهٔ معتبر برای امتیازدهی فعلی به‌اندازهٔ کافی تازه نیست."
+            if fresh else (
+                f"آخرین مشاهده {round(observation_age / 60)} دقیقه قبل است و از سه فاصلهٔ معمول "
+                f"نمونه‌برداری ({round(interval * 3 / 60)} دقیقه) قدیمی‌تر است؛ امتیاز جاری نمایش داده نمی‌شود."
+                if cadence_delayed else
+                "آخرین مشاهدهٔ معتبر برای امتیازدهی فعلی به‌اندازهٔ کافی تازه نیست."
+            )
         ),
     }
     if not fresh or len(rows) < MIN_RAW_POINTS or len(features) - 1 < MIN_TRAINING_POINTS:
@@ -275,12 +295,25 @@ def _forecast_component(
             "sample_count": len(rows),
         }
     latest_time = rows[-1][0]
+    age_seconds = max(0.0, (now - latest_time).total_seconds())
+    maximum_forecast_age = interval * 3
+    if age_seconds > maximum_forecast_age:
+        return {
+            "signal": signal,
+            "available": False,
+            "reason": (
+                f"آخرین مشاهده {round(age_seconds / 60)} دقیقه قبل ثبت شده و از "
+                f"سه فاصلهٔ معمول نمونه‌برداری ({round(maximum_forecast_age / 60)} دقیقه) قدیمی‌تر است"
+            ),
+            "sample_count": len(rows),
+            "observation_age_seconds": round(age_seconds),
+            "expected_interval_seconds": interval,
+        }
     recent_start = latest_time - timedelta(minutes=FORECAST_WINDOW_MINUTES)
     previous_start = recent_start - timedelta(minutes=FORECAST_WINDOW_MINUTES)
     previous = _window_values(rows, previous_start, recent_start - timedelta(microseconds=1))
     recent = _window_values(rows, recent_start, latest_time)
     minimum = _minimum_window_samples(interval, FORECAST_WINDOW_MINUTES)
-    age_seconds = max(0.0, (now - latest_time).total_seconds())
     if len(previous) < minimum or len(recent) < minimum:
         return {
             "signal": signal,
@@ -518,20 +551,32 @@ def analyze_intelligence(
         else:
             risk_level, risk_label = "low", "در پنجره‌های فعلی افت پرقدرتی مشاهده نمی‌شود"
 
+    unavailable_reasons = [
+        (
+            "BGP" if item.get("signal") == "bgp" else "پایش فعال",
+            item.get("reason") or "دادهٔ کافی موجود نیست",
+        )
+        for item in components if not item.get("available")
+    ]
     note = (
         "شاخص ریسک، احتمال آماری کالیبره‌شده نیست. امتداد روند از دو پنجرهٔ ۳۰ دقیقه‌ای هم‌طول، "
         "همراه با امتیاز ناهنجاری ساخته می‌شود؛ ممکن است با تغییر منبع یا پوشش خطا کند."
         if available else
-        "برای برآورد، هر دو شاخص اصلی باید دادهٔ تازه و نمونهٔ کافی در دو پنجرهٔ ۳۰ دقیقه‌ای داشته باشند. "
-        "دادهٔ ناکافی به معنی ریسک صفر نیست."
+        "برای انتشار امتیاز ترکیبی، هر دو شاخص اصلی باید تازه و دارای نمونهٔ کافی باشند. "
+        + " ".join(f"{name}: {reason}." for name, reason in unavailable_reasons)
+        + " دادهٔ ناکافی به معنی ریسک صفر نیست؛ پیش‌بینی مستقل شاخص واجد شرایط جداگانه نمایش داده می‌شود."
     )
     return {
         "model_name": MODEL_NAME,
         "model_family": "unsupervised_anomaly_detection",
         "model_status": "ready" if trained else "collecting_history",
         "model_status_label": (
-            f"مدل فعال برای {len(trained)} شاخص"
-            if trained else "در حال جمع‌آوری تاریخچهٔ تازه برای آموزش اولیه"
+            f"مدل آمادهٔ امتیازدهی برای {len(trained)} شاخص"
+            if trained else (
+                "تاریخچه وجود دارد؛ برای امتیاز جاری باید مشاهدهٔ تازه برسد"
+                if any(item.get("status") == "stale_data" and item.get("observation_age_seconds") is not None for item in models)
+                else "در حال جمع‌آوری تاریخچهٔ تازه برای آموزش اولیه"
+            )
         ),
         "trained_signals": len(trained),
         "minimum_raw_points": MIN_RAW_POINTS,
