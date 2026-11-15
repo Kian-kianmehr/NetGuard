@@ -226,3 +226,23 @@
 .ml-row p{margin:10px 0;color:#a8b9ca;font-size:11px;line-height:1.9}
 .ml-meta{display:flex;flex-wrap:wrap;gap:8px 18px;color:#8195ac;font-size:10px}
 @media(max-width:700px){.risk-callout{grid-template-columns:1fr}.forecast-grid{grid-template-columns:1fr}}
+
+
+/* Evidence-based cause hypotheses and recovery limits */
+.cause-card{padding:15px;border:1px solid #273a50;border-radius:12px;background:#101b2b}
+.cause-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.cause-heading small,.cause-heading b{display:block}
+.cause-heading small{font-size:10px;color:#8195ac}
+.cause-heading b{margin-top:6px;font-size:14px;color:#e2edf5}
+.cause-strength{padding:6px 9px;border-radius:8px;font-size:10px;background:#263447;color:#b5c6d8;white-space:nowrap}
+.cause-strength.strong{background:#4a2732;color:#f1b1b1}
+.cause-strength.corroborated{background:#3c3525;color:#e8d09d}
+.cause-strength.limited{background:#1b3548;color:#abd2e2}
+.cause-strength.weak{background:#343044;color:#c8b6e8}
+.cause-card>p{margin:12px 0;color:#a8b9ca;font-size:11px;line-height:1.9}
+.cause-signals{display:flex;flex-wrap:wrap;gap:9px}
+.cause-signals span{display:grid;gap:4px;min-width:120px;padding:9px 11px;border:1px solid #293b51;border-radius:8px;color:#93a7bc;font-size:10px}
+.cause-signals b{color:#d8e5ef;font-size:10px}
+.cause-alternatives{margin-top:12px;padding-top:11px;border-top:1px solid #273a50}
+.cause-alternatives small{font-size:10px;color:#8195ac}
+.cause-alternatives ul{margin:7px 0 0;padding-right:17px;color:#a8b9ca;font-size:10px;line-height:2}
