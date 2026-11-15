@@ -304,6 +304,7 @@ export default function App() {
   const [siteFilter, setSiteFilter] = useState("all");
   const [siteQuery, setSiteQuery] = useState("");
   const [providerData, setProviderData] = useState({ providers: [], checked_at: null, error: "", busy: true });
+  const [datacenterData, setDatacenterData] = useState({ sites: [], snapshot_at: null, error: "", busy: true });
   const [censorship, setCensorship] = useState({
     domains: [], sync: null, generated_at: null, error: "", busy: true,
   });
@@ -354,6 +355,19 @@ export default function App() {
     }
   }, []);
 
+  const loadDatacenters = useCallback(async () => {
+    try {
+      const response = await fetch(API + "/api/iran/datacenters", {
+        headers: { Accept: "application/json" }, cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "دریافت فهرست دیتاسنترهای ایران ناموفق بود.");
+      setDatacenterData({ ...payload, error: "", busy: false });
+    } catch (error) {
+      setDatacenterData((value) => ({ ...value, error: error.message || "فهرست دیتاسنترها دریافت نشد.", busy: false }));
+    }
+  }, []);
+
   const load = useCallback(async () => {
     if (!API) {
       setData((value) => ({ ...value, busy: false, error: "آدرس API در متغیر VITE_API_URL تنظیم نشده است." }));
@@ -394,6 +408,12 @@ export default function App() {
     const timer = window.setInterval(loadProviders, 5 * 60 * 1000);
     return () => window.clearInterval(timer);
   }, [loadProviders]);
+
+  useEffect(() => {
+    loadDatacenters();
+    const timer = window.setInterval(loadDatacenters, 5 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [loadDatacenters]);
 
   const groups = useMemo(() => data.observations.reduce((accumulator, row) => {
     (accumulator[row.source_id] ||= []).push(row);
@@ -683,10 +703,35 @@ export default function App() {
         <Stat icon={Server} label="شرکت‌های بررسی‌شده" value={number(providerList.length, 0)} hint="بر اساس منابع رسمی"/>
         <Stat icon={AlertTriangle} label="دارای اختلال اعلام‌شده" value={number(providerList.filter((item) => ["degraded_performance","partial_outage","major_outage"].includes(item.status)).length, 0)} hint="در صفحهٔ رسمی شرکت"/>
         <Stat icon={Cloud} label="مراکز شبکهٔ Cloudflare" value={number(cloudflare?.data_center_count, 0)} hint="مکان‌های دارای وضعیت منتشرشده"/>
-        <Stat icon={Clock3} label="آخرین بررسی" value={time(providerData.checked_at, false)} hint="بازخوانی خودکار هر ۵ دقیقه"/>
+        <Stat icon={Clock3} label="آخرین بررسی" value={time(providerData.checked_at, false)} hint="snapshot زمان‌بندی‌شدهٔ ۱۰ دقیقه‌ای"/>
       </div>
       <div className="notice"><Info size={17}/><div><b>محدودیت مهم</b><p>{providerData.scope_note || "این اطلاعات وضعیت جهانی سرویس‌ها را از منابع رسمی نشان می‌دهد؛ سالم بودن یک سرویس در جهان، دسترسی به آن از داخل ایران را ثابت نمی‌کند."}</p></div></div>
       {providerData.error && <div className="warning"><AlertTriangle/><div><b>دریافت وضعیت با مشکل روبه‌رو شد</b><p>{providerData.error}</p></div></div>}
+      <Panel tag="زیرساخت داخل ایران" title="مراکز داده و مکان‌های میزبانی ایران" note={datacenterData.scope_note || "فهرست مراکز ثبت‌شده در منابع عمومی؛ وضعیت عملیاتی فقط با اندازه‌گیری مستقیم قابل تأیید است."}>
+        {datacenterData.error && <div className="warning"><AlertTriangle/><div><b>دریافت فهرست ناموفق بود</b><p>{datacenterData.error}</p></div></div>}
+        <div className="metrics">
+          <Stat icon={Server} label="مکان‌های ثبت‌شده" value={number(datacenterData.total_sites, 0)} hint="ترکیب رکوردهای مستند و نامزدهای دایرکتوری"/>
+          <Stat icon={Activity} label="دارای پایش مستقیم NetGuard" value={number(datacenterData.directly_monitored, 0)} hint="اندازه‌گیری مستقل از داخل ایران"/>
+          <Stat icon={Clock3} label="آخرین به‌روزرسانی فهرست" value={time(datacenterData.snapshot_at, false)} hint="snapshot ذخیره‌شده"/>
+        </div>
+        {datacenterData.sites?.length ? <div className="table-wrap"><table>
+          <thead><tr><th>مرکز / محل میزبانی</th><th>اپراتور</th><th>شهر</th><th>سطح مستندات</th><th>وضعیت پایش</th><th>منبع</th></tr></thead>
+          <tbody>{datacenterData.sites.map((site) => <tr key={site.site_id}>
+            <td><b>{site.name}</b><small>{site.notes}</small></td>
+            <td>{site.operator || "نامشخص"}</td>
+            <td>{[site.city, site.province].filter(Boolean).join("، ") || "نامشخص"}</td>
+            <td>{({
+              operator_documented: "معرفی‌شده توسط اپراتور",
+              operator_listed: "در فهرست اپراتور",
+              third_party_listed: "ثبت‌شده در منبع مستقل",
+              directory_candidate: "نامزد دایرکتوری؛ نیازمند تأیید",
+            })[site.evidence_level] || "نامشخص"}</td>
+            <td><Badge value="unknown"/><small>{site.status_label}</small></td>
+            <td><a href={site.source_url} target="_blank" rel="noreferrer">{site.source_name} ↗</a></td>
+          </tr>)}</tbody>
+        </table></div> : <Empty title="فهرست دیتاسنترها هنوز ثبت نشده"/>}
+        <div className="notice"><Info size={17}/><div><b>چرا وضعیت بعضی مراکز نامشخص است؟</b><p>برای سنجش واقعی یک دیتاسنتر باید از داخل ایران به مسیرها یا نقاط آن اندازه‌گیری مستقل داشته باشیم. فهرست عمومی یا پاسخ‌دادن وب‌سایت اپراتور، سالم‌بودن خود دیتاسنتر را ثابت نمی‌کند. NetGuard این موارد را فعلاً به‌عنوان موجودی ثبت کرده و آن‌ها را سالم فرض نمی‌کند.</p></div></div>
+      </Panel>
       <Panel tag="شبکهٔ جهانی و مراکز شهری" title="مراکز شبکه و نقاط حضور" note="وضعیت شهرهایی که شرکت به‌طور جداگانه منتشر می‌کند؛ این اطلاعات معادل پایش همهٔ دیتاسنترهای جهان نیست.">
         {cloudflare ? <ProviderCard item={cloudflare}/> : <Empty title="هنوز داده‌ای دریافت نشده"/>}
       </Panel>
@@ -699,7 +744,7 @@ export default function App() {
       <Panel tag="ابزارهای توسعه" title="سرویس‌های کدنویسی و همکاری" note="اختلال در این بخش ممکن است دریافت کد یا گردش کار توسعه را تحت تأثیر قرار دهد.">
         <div className="provider-grid">{developer.map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
       </Panel>
-      <div className="toolbar-note">وضعیت سرویس‌ها هر ۵ دقیقه بازخوانی می‌شود. زمان بررسی نت‌گارد و آخرین تغییر صفحهٔ رسمی شرکت از هم جدا هستند.</div>
+      <div className="toolbar-note">وضعیت سرویس‌ها در پس‌زمینه هر ۱۰ دقیقه ذخیره می‌شود؛ بازدید صفحه فقط آخرین snapshot را می‌خواند. زمان بررسی نت‌گارد و آخرین تغییر صفحهٔ رسمی شرکت از هم جدا هستند.</div>
     </div>;
   }
   else if (page === "signals") body = <div className="stack">
