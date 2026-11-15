@@ -449,14 +449,23 @@ export default function App() {
         <div className="analysis-main"><small>ارزیابی فعلی</small><h2>{analysis.assessment_label || "دادهٔ کافی نیست"}</h2><p>{analysis.summary || "پس از دریافت دادهٔ معتبر، تحلیل نمایش داده می‌شود."}</p>
           <div className="analysis-stamp"><span><Clock3 size={13}/> {time(analysis.generated_at || data.generated_at)}</span><span><RadioTower size={13}/> بررسی چندمنبعی</span></div>
         </div>
-        <div className="coverage-ring" style={{ "--coverage": (analysis.data_coverage_percent || 0) + "%" }}><b>{number(analysis.data_coverage_percent, 0)}٪</b><small>کفایت داده</small></div>
+        <div className="coverage-ring" style={{ "--coverage": (analysis.data_quality?.window_coverage_percent || 0) + "%" }}><b>{number(analysis.data_quality?.window_coverage_percent, 1)}٪</b><small>پوشش بازه</small></div>
       </section>
       <div className="metrics">
-        <Stat icon={Database} label="منابع قابل استفاده" value={number(analysis.usable_sources, 0) + " / " + number(analysis.total_sources, 0)} hint="تاریخچه کافی و داده تازه"/>
+        <Stat icon={Database} label="منابع اصلی قابل استفاده" value={number(analysis.public_summary?.checked_primary_signals, 0) + " / 2"} hint="BGP و پایش فعال"/>
+        <Stat icon={Gauge} label="پوشش بازه" value={number(analysis.data_quality?.window_coverage_percent, 1) + "٪"} hint="نمونه‌های معتبر نسبت به انتظار"/>
         <Stat icon={AlertTriangle} label="منابع دارای انحراف" value={number(analysis.anomalous_sources, 0)} hint="انحراف از خط مبنای هر سیگنال" tone={analysis.anomalous_sources ? "warn" : "default"}/>
         <Stat icon={RadioTower} label="منابع تازه" value={number(analysis.fresh_sources, 0)} hint="بر اساس زمان مشاهده"/>
         <Stat icon={Activity} label="رخدادهای پنجره" value={number(analysis.events_count, 0)} hint="رخدادهای شناسایی‌شده"/>
       </div>
+      <Panel tag="کیفیت داده" title="پوشش و پیوستگی تاریخچه" note="این درصد نشانهٔ سلامت اینترنت نیست؛ فقط پوشش داده در پنجرهٔ انتخابی را اندازه می‌گیرد.">
+        <div className="overview-quality-grid">
+          <div><small>پوشش نمونه‌ها</small><b>{number(analysis.data_quality?.window_coverage_percent, 1)}٪</b><QualityBar value={analysis.data_quality?.window_coverage_percent}/></div>
+          <div><small>طول بازهٔ مشاهده‌شده</small><b>{number(analysis.data_quality?.observed_span_percent, 1)}٪</b><QualityBar value={analysis.data_quality?.observed_span_percent}/></div>
+          <div><small>نمونهٔ معتبر / مورد انتظار</small><b>{number(analysis.data_quality?.valid_observations, 0)} / {number(analysis.data_quality?.expected_observations, 0)}</b><span>{number(analysis.data_quality?.invalid_observations, 0)} نمونهٔ نامعتبر</span></div>
+        </div>
+        <button className="text-action" onClick={() => setPage("quality")}>جزئیات کیفیت داده <ArrowDownRight size={15}/></button>
+      </Panel>
       <Panel tag="نتیجهٔ بررسی شاخص‌ها" title="یافته‌های اصلی" note="هر یافته به دادهٔ مشخص متصل است و نتیجهٔ قطعی دربارهٔ علت اختلال ارائه نمی‌کند.">
         {signals.length ? <div className="finding-list">{signals.map((signal) =>
           <article className="finding" key={signal.source_id}>
@@ -490,6 +499,7 @@ export default function App() {
     <div className="metrics">
       <Stat icon={Globe2} label="دامنه‌های مشاهده‌شده" value={number(censorship.total_domains_observed ?? censorship.domains.length, 0)} hint="همهٔ نتایج مثبت OONI در ۹۰ روز"/>
       <Stat icon={Network} label="شبکه‌های اندازه‌گیری" value={number(censorship.coverage?.probe_networks, 0)} hint="شبکه‌های متمایز ثبت‌شده"/>
+      <Stat icon={Gauge} label="پوشش شناسهٔ شبکه" value={number(censorship.coverage?.asn_coverage_percent, 1) + "٪"} hint={number(censorship.coverage?.measurements_with_asn, 0) + " اندازه‌گیری با ASN ثبت‌شده"}/>
       <Stat icon={ShieldCheck} label="مسدودیت تأییدشده" value={number(confirmedSites.length, 0)} hint="دارای نشانهٔ تأییدشدهٔ OONI"/>
       <Stat icon={AlertTriangle} label="نیازمند بررسی" value={number(possibleSites.length, 0)} hint="فقط دارای ناهنجاری در آزمون"/>
       <Stat icon={Clock3} label="آخرین دریافت" value={censorship.sync?.finished_at ? time(censorship.sync.finished_at, false) : "—"} hint="به‌روزرسانی دوره‌ای"/>
@@ -529,7 +539,7 @@ export default function App() {
                 possible: ["نشانهٔ اختلال", "neutral"],
               }}/>
             </div>
-            <small>{site.category_code ? "دسته: " + site.category_code + " · " : ""}آخرین آزمون: {time(site.last_observed_at)} · {number(site.probe_networks, 0)} شبکهٔ ثبت‌کننده · {number(site.measurement_count, 0)} اندازه‌گیری</small>
+            <small>{site.category_code ? "دسته: " + site.category_code + " · " : ""}آخرین آزمون: {time(site.last_observed_at)} · {number(site.probe_networks, 0)} شبکهٔ دارای شناسه · {number(site.measurement_count, 0)} اندازه‌گیری · پوشش ASN {number(site.asn_coverage_percent, 0)}٪</small>
           </div>
           <div className="site-evidence">
             <span>{number(site.confirmed_measurements, 0)} آزمون تأییدشده · {number(site.anomaly_measurements, 0)} آزمون غیرعادی</span>
@@ -573,7 +583,7 @@ export default function App() {
             <span className={"cause-strength " + (cause.evidence_strength || "none")}>{cause.evidence_strength_label || "شواهد ناکافی"}</span>
           </div>
           <p>{cause.description || "برای تحلیل علت به هم‌زمانی داده‌های چند منبع نیاز است."}</p>
-          <div className="cause-signals">{(cause.observed_changes || []).map((item) => <span key={item.source_id}><b>{item.display_name}</b>{item.change_percent == null ? "—" : number(item.change_percent) + "٪"}</span>)}</div>
+          <div className="cause-signals">{(cause.observed_changes || []).map((item) => <span key={item.source_id}><b>{item.display_name}</b>{item.status === "ready" && item.change_percent != null ? number(item.change_percent) + "٪ در ۳۰ دقیقه" : "دادهٔ هم‌زمان کافی نیست"}</span>)}</div>
           {cause.alternative_explanations?.length ? <div className="cause-alternatives"><small>توضیح‌های جایگزین برای بررسی</small><ul>{cause.alternative_explanations.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
         </div>
       </Panel>
@@ -609,7 +619,11 @@ export default function App() {
         <div className="chart-heading"><b>روند اندازه‌گیری</b><span>مقیاس مستقل · {number(rows.length, 0)} نقطه</span></div>
         <Chart rows={rows}/>
         <div className="signal-foot">
-          <span>کمینه: <b>{number(signal.minimum_value)}</b></span><span>میانه: <b>{number(signal.median_value)}</b></span><span>بیشینه: <b>{number(signal.maximum_value)}</b></span><span>آخرین جمع‌آوری: <b>{time(signal.last_collected_at)}</b></span>
+          <span>کمینه: <b>{number(signal.minimum_value)}</b></span><span>میانه: <b>{number(signal.median_value)}</b></span><span>بیشینه: <b>{number(signal.maximum_value)}</b></span>
+          <span>فاصلهٔ نمونه‌گیری: <b>{number((signal.expected_interval_seconds || (signal.signal === "ping-slash24" ? 600 : 300)) / 60, 0)} دقیقه</b></span>
+          <span>پوشش بازه: <b>{number(signal.data_quality?.sample_coverage_percent, 1)}٪</b></span>
+          <span>آخرین جمع‌آوری: <b>{time(signal.last_collected_at)}</b></span>
+          {signal.last_run_error_code && <span>خطای آخرین اجرا: <b>{signal.last_run_error_code}</b></span>}
         </div>
         {signal.current_anomaly && <div className="signal-alert"><AlertTriangle size={15}/> تغییر غیرعادی در این سیگنال ثبت شده؛ برای تعیین اهمیت شبکه‌ای به شواهد مکمل نیاز است.</div>}
       </Panel>;
@@ -664,11 +678,11 @@ export default function App() {
       <div className="brand"><span><Activity size={22}/></span><div><b>NETGUARD</b><small>پایش اینترنت ایران</small></div></div>
       <label>مرکز پایش</label>
       <nav>{NAV.map(([id, title, Icon]) => <button key={id} className={id === page ? "selected" : ""} onClick={() => setPage(id)}><Icon size={18}/>{title}</button>)}</nav>
-      <div className="sidefoot"><i/>{number(fresh, 0)} منبع تازه از {number(data.sources.length, 0)}<small>نسخه ۱٫۱ · NetGuard</small></div>
+      <div className="sidefoot"><i className={attention ? "warn-dot" : ""}/>{number(fresh, 0)} منبع تازه از {number(data.sources.length, 0)}<small>دادهٔ عمومی · بدون تخمین ساختگی</small></div>
     </aside>
     <main>
-      <header className="topbar"><div>نت‌گارد <b>/</b> <strong>{current[1]}</strong></div>
-        <div className="actions"><span>ایران · ملی</span><button onClick={load} disabled={data.busy}><RefreshCw size={15}/>{data.busy ? "در حال دریافت" : "به‌روزرسانی"}</button></div>
+      <header className="topbar"><div className="topbar-crumb">نت‌گارد <b>/</b> <strong>{current[1]}</strong></div>
+        <div className="actions"><span className="scope-label"><i/> ایران · پایش ملی</span><button onClick={() => { load(); loadCensorship(); }} disabled={data.busy || censorship.busy}><RefreshCw size={15}/>{data.busy || censorship.busy ? "در حال دریافت" : "به‌روزرسانی"}</button></div>
       </header>
       <div className="content">
         {data.error && <div className="warning"><AlertTriangle/><div><b>دریافت داده ناموفق بود</b><p>{data.error} دادهٔ ساختگی جایگزین نمی‌شود.</p></div></div>}
