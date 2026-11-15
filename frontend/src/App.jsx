@@ -484,6 +484,13 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshInFlight = useRef(false);
 
+  const keysForPage = useMemo(() => {
+    if (page === "censorship") return ["censorship"];
+    if (page === "providers") return ["providers_status", "iran_datacenters"];
+    if (page === "method") return [];
+    return [`dashboard_${windowHours}`];
+  }, [page, windowHours]);
+
   const dashboardSnapshot = snapshotStore.byKey[`dashboard_${windowHours}`];
   const data = dashboardSnapshot
     ? { ...dashboardSnapshot, error: "", busy: false, window_hours: windowHours }
@@ -492,7 +499,7 @@ export default function App() {
         generated_at: null, error: snapshotStore.loaded
           ? (snapshotError || "Snapshot این بازه در دسترس نیست.")
           : "",
-        busy: !snapshotStore.loaded, window_hours: windowHours,
+        busy: !dashboardSnapshot, window_hours: windowHours,
       };
   const censorshipSnapshot = snapshotStore.byKey.censorship;
   const censorship = censorshipSnapshot
@@ -503,8 +510,8 @@ export default function App() {
       }
     : {
         domains: [], sync: null, generated_at: null,
-        error: snapshotStore.loaded ? (snapshotError || "Snapshot فهرست سایت‌ها در دسترس نیست.") : "",
-        busy: !snapshotStore.loaded,
+        error: snapshotError || "",
+        busy: !censorshipSnapshot,
       };
   const providerSnapshot = snapshotStore.byKey.providers_status;
   const providerData = providerSnapshot
@@ -515,8 +522,8 @@ export default function App() {
       }
     : {
         providers: [], checked_at: null,
-        error: snapshotStore.loaded ? (snapshotError || "Snapshot وضعیت سرویس‌ها در دسترس نیست.") : "",
-        busy: !snapshotStore.loaded,
+        error: snapshotError || "",
+        busy: !providerSnapshot,
       };
   const datacenterSnapshot = snapshotStore.byKey.iran_datacenters;
   const datacenterData = datacenterSnapshot
@@ -527,12 +534,13 @@ export default function App() {
       }
     : {
         sites: [], snapshot_at: null,
-        error: snapshotStore.loaded ? (snapshotError || "Snapshot مراکز داده در دسترس نیست.") : "",
-        busy: !snapshotStore.loaded,
+        error: snapshotError || "",
+        busy: !datacenterSnapshot,
       };
 
-  const loadSnapshots = useCallback(async () => {
-    if (refreshInFlight.current) return;
+  const loadSnapshots = useCallback(async (requestedKeys = keysForPage) => {
+    const keys = [...new Set(requestedKeys)].filter((key) => SNAPSHOT_KEYS.includes(key));
+    if (!keys.length || refreshInFlight.current) return;
     refreshInFlight.current = true;
     setIsRefreshing(true);
     try {
@@ -541,7 +549,7 @@ export default function App() {
       }
       const query = new URLSearchParams({
         select: "dataset_key,payload,collected_at,status,source_count,error_code",
-        dataset_key: `in.(${SNAPSHOT_KEYS.join(",")})`,
+        dataset_key: `in.(${keys.join(",")})`,
       });
       const response = await fetch(`${SUPABASE_URL}/rest/v1/netguard_snapshots?${query}`, {
         headers: {
@@ -555,20 +563,25 @@ export default function App() {
       if (!response.ok) {
         throw new Error(payload?.message || payload?.details || `خواندن Snapshot ناموفق بود (${response.status}).`);
       }
-      if (!Array.isArray(payload) || !payload.some((row) => row.dataset_key === "dashboard_168")) {
-        throw new Error("Snapshot اصلی داشبورد از پایگاه داده دریافت نشد.");
+      if (!Array.isArray(payload) || !payload.some((row) => keys.includes(row.dataset_key))) {
+        throw new Error("Snapshot درخواستی از پایگاه داده دریافت نشد.");
       }
-      const rows = payload.filter((row) => SNAPSHOT_KEYS.includes(row.dataset_key));
+      const rows = payload.filter((row) => keys.includes(row.dataset_key));
+      const cachedRows = readCachedSnapshotRows().filter((row) => !keys.includes(row.dataset_key));
+      const mergedRows = [...cachedRows, ...rows];
       try {
         localStorage.setItem(SNAPSHOT_CACHE_KEY, JSON.stringify({
           version: 1,
           savedAt: Date.now(),
-          rows,
+          rows: mergedRows,
         }));
       } catch {
         // The live response remains usable when browser storage is unavailable or full.
       }
-      setSnapshotStore({ byKey: indexSnapshotRows(rows), loaded: true });
+      setSnapshotStore((current) => ({
+        byKey: { ...current.byKey, ...indexSnapshotRows(rows) },
+        loaded: true,
+      }));
       setSnapshotError("");
     } catch (error) {
       setSnapshotStore((current) => ({ ...current, loaded: true }));
@@ -577,12 +590,12 @@ export default function App() {
       refreshInFlight.current = false;
       setIsRefreshing(false);
     }
-  }, []);
+  }, [keysForPage]);
 
   useEffect(() => {
-    loadSnapshots();
+    loadSnapshots(keysForPage);
     const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") loadSnapshots();
+      if (document.visibilityState === "visible") loadSnapshots(keysForPage);
     };
     const timer = window.setInterval(refreshWhenVisible, 5 * 60 * 1000);
     document.addEventListener("visibilitychange", refreshWhenVisible);
@@ -590,7 +603,7 @@ export default function App() {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [loadSnapshots]);
+  }, [loadSnapshots, keysForPage]);
 
   const groups = useMemo(() => data.observations.reduce((accumulator, row) => {
     (accumulator[row.source_id] ||= []).push(row);
@@ -1021,7 +1034,7 @@ export default function App() {
     </aside>
     <main>
       <header className="topbar"><div className="topbar-crumb">نت‌گارد <b>/</b> <strong>{current[1]}</strong></div>
-        <div className="actions"><span className="scope-label"><i/> ایران · پایش ملی</span><button onClick={loadSnapshots} disabled={isRefreshing || data.busy || censorship.busy || providerData.busy || datacenterData.busy}><RefreshCw size={15}/>{isRefreshing ? "در حال دریافت" : "به‌روزرسانی"}</button></div>
+        <div className="actions"><span className="scope-label"><i/> ایران · پایش ملی</span><button onClick={() => loadSnapshots(keysForPage)} disabled={isRefreshing}><RefreshCw size={15}/>{isRefreshing ? "در حال دریافت" : "به‌روزرسانی"}</button></div>
       </header>
       <div className="content">
         {data.error && <div className="warning"><AlertTriangle/><div><b>دریافت داده ناموفق بود</b><p>{data.error} دادهٔ ساختگی جایگزین نمی‌شود.</p></div></div>}
