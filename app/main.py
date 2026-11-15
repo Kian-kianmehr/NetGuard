@@ -114,7 +114,7 @@ def health() -> dict[str, Any]:
     return {"status": "ok", "database_configured": configured}
 
 
-def _build_dashboard_snapshot(hours: int = 168) -> dict[str, Any]: -> dict[str, Any]:
+def _build_dashboard_snapshot(hours: int = 168) -> dict[str, Any]:
     project_url, key = _supabase_config()
     now = datetime.now(timezone.utc)
     since = (now - timedelta(hours=hours)).isoformat()
