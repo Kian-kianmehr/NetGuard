@@ -16,9 +16,13 @@ logger = logging.getLogger("netguard.api")
 
 def _supabase_config() -> tuple[str, str]:
     project_url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+    # Prefer the least-privileged public key. A server-side secret is a
+    # fallback only; it is never sent to the browser and this endpoint is read-only.
     public_key = (
         os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
         or os.getenv("SUPABASE_ANON_KEY", "").strip()
+        or os.getenv("SUPABASE_SECRET_KEY", "").strip()
+        or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
     )
     if not project_url.startswith("https://") or not public_key:
         raise HTTPException(
@@ -117,6 +121,8 @@ def health() -> dict[str, Any]:
             and (
                 os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
                 or os.getenv("SUPABASE_ANON_KEY", "").strip()
+                or os.getenv("SUPABASE_SECRET_KEY", "").strip()
+                or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
             )
         ),
         "collector_configured": _collector_is_configured(),
