@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Activity, AlertTriangle, ArrowDownRight, BookOpen, CheckCircle2, CircleHelp,
-  Clock3, Database, Globe2, Info, RadioTower, RefreshCw, ShieldAlert,
+  Activity, AlertTriangle, ArrowDownRight, BookOpen, BrainCircuit, CheckCircle2, CircleHelp,
+  Clock3, Database, Gauge, Globe2, Info, Network, RadioTower, RefreshCw, ShieldAlert,
   ShieldCheck, Signal, TrendingDown, TrendingUp
 } from "lucide-react";
 
 const NAV = [
   ["overview", "نمای کلی", Globe2],
   ["censorship", "سایت‌های فیلترشده", ShieldAlert],
+  ["intelligence", "مدل هوشمند و پیش‌بینی", BrainCircuit],
   ["analysis", "تحلیل وضعیت", Activity],
   ["signals", "سیگنال‌ها", Signal],
   ["events", "رخدادها", AlertTriangle],
@@ -15,12 +16,6 @@ const NAV = [
   ["method", "روش‌شناسی", BookOpen],
 ];
 const API = (import.meta.env.VITE_API_URL || "https://netguard-api-oan9.onrender.com").replace(/\/$/, "");
-const PUBLIC_INTEREST_DOMAINS = new Set([
-  "facebook.com", "youtube.com", "instagram.com", "twitter.com", "x.com",
-  "discord.com", "tiktok.com", "vk.com", "clubhouse.com", "reddit.com",
-  "telegram.org", "t.me", "whatsapp.com", "linkedin.com", "pinterest.com",
-  "medium.com", "9gag.com",
-]);
 const number = (value, digits = 1) => value == null || !Number.isFinite(Number(value))
   ? "—"
   : new Intl.NumberFormat("fa-IR", { maximumFractionDigits: digits }).format(Number(value));
@@ -227,7 +222,7 @@ export default function App() {
   const [page, setPage] = useState("overview");
   const [windowHours, setWindowHours] = useState(168);
   const [eventFilter, setEventFilter] = useState("all");
-  const [siteFilter, setSiteFilter] = useState("confirmed");
+  const [siteFilter, setSiteFilter] = useState("all");
   const [siteQuery, setSiteQuery] = useState("");
   const [censorship, setCensorship] = useState({
     domains: [], sync: null, generated_at: null, error: "", busy: true,
@@ -251,13 +246,11 @@ export default function App() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "دریافت فهرست سایت‌ها ناموفق بود.");
-      const publicDomains = (payload.domains || []).filter((item) =>
-        PUBLIC_INTEREST_DOMAINS.has(item.domain)
-      );
+      const observedDomains = Array.isArray(payload.domains) ? payload.domains : [];
       setCensorship({
         ...payload,
-        domains: publicDomains,
-        scope_note: payload.scope_note || "نمای عمومی فقط سرویس‌های عمومی منتخب را نشان می‌دهد.",
+        domains: observedDomains,
+        scope_note: payload.scope_note || "همهٔ دامنه‌های دارای نتیجهٔ مثبت OONI در بازهٔ نمایش داده‌شده‌اند.",
         error: "",
         busy: false,
       });
@@ -416,7 +409,8 @@ export default function App() {
       <p>بر پایهٔ آزمون‌های Web Connectivity از داخل ایران در داده‌های ۹۰ روز اخیر OONI.</p>
     </div>
     <div className="metrics">
-      <Stat icon={Globe2} label="دامنه‌های ثبت‌شده" value={number(censorship.domains.length, 0)} hint="دامنهٔ یکتا در بازهٔ ۹۰ روز"/>
+      <Stat icon={Globe2} label="دامنه‌های مشاهده‌شده" value={number(censorship.total_domains_observed ?? censorship.domains.length, 0)} hint="همهٔ نتایج مثبت OONI در ۹۰ روز"/>
+      <Stat icon={Network} label="شبکه‌های اندازه‌گیری" value={number(censorship.coverage?.probe_networks, 0)} hint="شبکه‌های متمایز ثبت‌شده"/>
       <Stat icon={ShieldCheck} label="مسدودیت تأییدشده" value={number(confirmedSites.length, 0)} hint="دارای نشانهٔ تأییدشدهٔ OONI"/>
       <Stat icon={AlertTriangle} label="نیازمند بررسی" value={number(possibleSites.length, 0)} hint="فقط دارای ناهنجاری در آزمون"/>
       <Stat icon={Clock3} label="آخرین دریافت" value={censorship.sync?.finished_at ? time(censorship.sync.finished_at, false) : "—"} hint="به‌روزرسانی دوره‌ای"/>
@@ -456,7 +450,7 @@ export default function App() {
                 possible: ["نشانهٔ اختلال", "neutral"],
               }}/>
             </div>
-            <small>آخرین آزمون: {time(site.last_observed_at)} · {number(site.probe_networks, 0)} شبکهٔ ثبت‌کننده</small>
+            <small>{site.category_code ? "دسته: " + site.category_code + " · " : ""}آخرین آزمون: {time(site.last_observed_at)} · {number(site.probe_networks, 0)} شبکهٔ ثبت‌کننده · {number(site.measurement_count, 0)} اندازه‌گیری</small>
           </div>
           <div className="site-evidence">
             <span>{number(site.confirmed_measurements, 0)} آزمون تأییدشده · {number(site.anomaly_measurements, 0)} آزمون غیرعادی</span>
@@ -473,6 +467,30 @@ export default function App() {
       <p>OONI زمانی یک وب‌سایت را «تأییدشده» علامت می‌زند که اثر انگشت صفحهٔ مسدودسازی یا نشانی شناخته‌شدهٔ فیلترینگ شناسایی شود. ناهنجاری به‌تنهایی اثبات فیلترینگ نیست و ممکن است مثبت کاذب باشد. نتایج به شبکه‌هایی محدود است که در آن‌ها آزمون انجام شده است.</p>
     </div></div>
   </div>;
+  else if (page === "intelligence") {
+    const intelligence = analysis.intelligence || {};
+    const forecast = intelligence.forecast || {};
+    const modelSignals = intelligence.signals || [];
+    body = <div className="stack">
+      <div className="intro page-intro"><small><BrainCircuit size={14}/> تحلیل یادگیری ماشین</small><h2>مدل هوشمند و برآورد کوتاه‌مدت</h2><p>مدل بدون‌نظارت، رفتار هر سیگنال را با تاریخچهٔ خودش مقایسه می‌کند؛ برآورد آینده از نتیجهٔ قطعی شبکه جداست.</p></div>
+      <div className="metrics">
+        <Stat icon={BrainCircuit} label="مدل" value={intelligence.model_name || "در حال آماده‌سازی"} hint={intelligence.model_status_label || "تاریخچهٔ کافی لازم است"}/>
+        <Stat icon={Gauge} label="شاخص ریسک ۳۰ دقیقه" value={forecast.risk_index == null ? "—" : number(forecast.risk_index, 0) + " / ۱۰۰"} hint={forecast.risk_label || "فعلاً برآوردی موجود نیست"}/>
+        <Stat icon={Activity} label="شاخص‌های آموزش‌دیده" value={number(intelligence.trained_signals, 0)} hint="مدل جداگانه برای هر شاخص"/>
+        <Stat icon={Clock3} label="افق برآورد" value="۳۰ دقیقه" hint="روند کوتاه‌مدت"/>
+      </div>
+      <Panel tag="پیش‌بینی آزمایشی" title="ریسک افت در افق ۳۰ دقیقه" note={forecast.note || "برآورد پس از دریافت دادهٔ کافی نمایش داده می‌شود."}>
+        {forecast.available ? <>
+          <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>شاخص ریسک آزمایشی</small><b>{number(forecast.risk_index, 0)}<em> / ۱۰۰</em></b><span>{forecast.risk_label}</span></div><p>این عدد احتمال وقوع اختلال نیست؛ شاخصی ترکیبی برای اولویت‌بندی بررسی روند دو سیگنال اصلی است.</p></div>
+          <div className="forecast-grid">{forecast.components.map((item) => <article key={item.signal}><small>{item.signal === "bgp" ? "دیدپذیری مسیرهای اینترنت (BGP)" : "پاسخ‌گویی شبکه‌ها (Ping)"}</small><b>{number(item.projected_change_30m_percent)}٪</b><span>تغییر برآوردی در ۳۰ دقیقهٔ آینده · مقدار فعلی {number(item.current_value)}</span><span>مقدار برآوردی {number(item.projected_value_30m)} · امتیاز ناهنجاری {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span></article>)}</div>
+        </> : <Empty title="هنوز برآورد هم‌زمان ممکن نیست" note={forecast.note || "برای هر دو شاخص اصلی باید تاریخچهٔ معتبر بیشتری جمع شود."}/>}
+      </Panel>
+      <Panel tag="مدل یادگیری ماشین" title="تشخیص رفتار غیرمعمول هر شاخص" note={intelligence.method_note || "مدل بر داده‌های مشاهده‌شده آموزش می‌بیند؛ هیچ داده یا برچسب ساختگی تولید نمی‌شود."}>
+        {modelSignals.length ? <div className="ml-list">{modelSignals.map((item) => <article className="ml-row" key={item.source_id}><div className="ml-row-head"><div><b>{item.display_name}</b><small>{item.signal}</small></div><span className={item.is_anomaly ? "ml-score anomaly" : "ml-score"}>{item.score == null ? "—" : number(item.score, 3)}</span></div><p>{item.interpretation}</p><div className="ml-meta"><span>وضعیت: {item.status_label}</span><span>تاریخچه: {number(item.sample_count, 0)} نمونه</span><span>نمونهٔ آموزش: {number(item.training_samples, 0)}</span><span>ویژگی غالب: {item.dominant_feature_label}</span></div></article>)}</div> : <Empty/>}
+      </Panel>
+      <div className="notice"><Info size={17}/><div><b>مرز علمی مدل</b><p>Isolation Forest مدل تشخیص ناهنجاریِ بدون‌نظارت است، نه مدل طبقه‌بندی قطع اینترنت. برای تبدیل شاخص ریسک به احتمال واقعی، به تاریخچهٔ رخدادهای تأییدشده، ارزیابی خارج از نمونه و کالیبراسیون نیاز داریم؛ این نسخه چنین احتمالی جعل نمی‌کند.</p></div></div>
+    </div>;
+  }
   else if (page === "signals") body = <div className="stack">
     <div className="intro page-intro"><small><Signal size={14}/> پایش شاخص‌ها</small><h2>سیگنال‌های شبکه</h2><p>هر سیگنال با واحد، خط مبنا، دامنه و نمودار مستقل خودش بررسی می‌شود؛ مقادیر ناهم‌واحد با هم ادغام نمی‌شوند.</p></div>
     <div className="toolbar">
