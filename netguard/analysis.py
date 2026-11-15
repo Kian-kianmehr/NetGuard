@@ -597,6 +597,10 @@ def analyze_dashboard(
         rows = _valid_rows(raw_rows)
         rows = [row for row in rows if window_start <= row["_time"] <= now]
         interval = _interval_seconds(source)
+        try:
+            stale_after = int(source.get("stale_after_seconds") or max(1800, interval * 3))
+        except (TypeError, ValueError):
+            stale_after = max(1800, interval * 3)
         quality = _source_quality(
             source, rows, raw_rows, now=now, window_hours=window_hours
         )
