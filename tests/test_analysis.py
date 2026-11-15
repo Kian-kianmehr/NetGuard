@@ -52,6 +52,10 @@ def test_observations_far_behind_source_cadence_are_limited_and_operational():
     assert signal["display_freshness_status"] == "delayed"
     assert signal["data_state"] == "limited"
     assert result["assessment"] == "insufficient_data"
+    assert result["fresh_sources"] == 0
+    assert result["data_quality"]["sources_fresh"] == 0
+    assert result["data_quality"]["sources_delayed"] == 1
+    assert result["data_quality"]["source_details"][0]["cadence_status"] == "delayed"
     assert delayed
     assert delayed[0]["evidence_score"] is None
     assert delayed[0]["lifecycle"] == "operational"
