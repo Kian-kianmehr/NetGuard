@@ -75,6 +75,12 @@ function indexSnapshotRows(rows) {
 const number = (value, digits = 1) => value == null || !Number.isFinite(Number(value))
   ? "—"
   : new Intl.NumberFormat("fa-IR", { maximumFractionDigits: digits }).format(Number(value));
+const formatIndexDelta = (value) => {
+  const delta = Number(value);
+  if (!Number.isFinite(delta)) return "—";
+  if (Math.abs(delta) < 0.05) return "تقریباً بدون تغییر";
+  return (delta > 0 ? "+" : "−") + number(Math.abs(delta), 1) + " واحد شاخص";
+};
 const time = (value, withDate = true) => {
   if (!value) return "نامشخص";
   const date = new Date(value);
@@ -880,17 +886,22 @@ export default function App() {
         <Stat icon={AlertTriangle} label="رفتارهای غیرمعمول" value={number(modelSignals.filter((item) => item.is_anomaly).length, 0)} hint="نیازمند بررسی چندمنبعی"/>
         <Stat icon={Clock3} label="افق‌های برآورد" value="۱۵، ۳۰، ۶۰ دقیقه" hint="امتداد آزمایشی روند"/>
       </div>
-      <Panel tag="پیش‌بینی آزمایشی" title="ریسک افت در افق ۳۰ دقیقه" note={forecast.note || "برآورد پس از دریافت دادهٔ کافی نمایش داده می‌شود."}>
-        {forecast.available ? <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>امتیاز نشانه‌های افت با تأیید هم‌زمان دو شاخص اصلی</small><strong dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</strong><span>{forecast.risk_label}</span></div><p>این امتیاز فقط وقتی منتشر می‌شود که هر دو شاخص اصلی دادهٔ تازه و نمونهٔ کافی داشته باشند؛ صفر نیز به معنی نبود خطر قطعی نیست.</p></div> : <div className="notice"><Info size={17}/><div><b>امتیاز ترکیبی ملی فعلاً قابل انتشار نیست</b><p>{forecast.note || "برای جمع‌بندی هم‌زمان، دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی لازم است."} بااین‌حال، هر شاخصی که به‌تنهایی شرایط محاسبه را داشته باشد، جداگانه در پایین نمایش داده می‌شود.</p></div></div>}
+      <Panel tag="پیش‌بینی آزمایشی" title="برآورد روند کوتاه‌مدت" note="امتیاز ملی فقط با دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی محاسبه می‌شود.">
+        {forecast.available ? <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>امتیاز آزمایشی نشانه‌های افت در مقیاس ۰ تا ۱۰۰</small><strong dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</strong><span>{forecast.risk_label}</span></div><p>این امتیاز احتمال آماری یا درصد احتمال خاموشی نیست؛ فقط یک شاخص ترکیبی برای اولویت‌بندی بررسی است.</p></div> : <div className="notice"><Info size={17}/><div><b>امتیاز ترکیبی ملی فعلاً قابل انتشار نیست</b><p>{forecast.note || "برای جمع‌بندی هم‌زمان، دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی لازم است."}</p></div></div>}
         {(forecast.components || []).some((item) => item.available) ? <>
           <div className="forecast-grid">{forecast.components.filter((item) => item.available).map((item) => <article key={item.signal}>
             <small>{item.signal === "bgp" ? "دیدپذیری مسیرهای اینترنت (BGP)" : "پاسخ‌گویی شبکه در پایش فعال"}</small>
-            <div className="forecast-horizons">{(item.horizon_projections || []).map((point) => <div key={point.minutes}><small>{number(point.minutes, 0)} دقیقه</small><b className={point.projected_change_percent < 0 ? "negative" : "positive"}>{point.projected_change_percent > 0 ? "+" : ""}{number(point.projected_change_percent)}٪</b><span>مقدار تخمینی: {number(point.projected_value)}</span></div>)}</div>
+            <div className="forecast-horizons">{(item.horizon_projections || []).map((point) => <div key={point.minutes}>
+              <small>{number(point.minutes, 0)} دقیقهٔ آینده</small>
+              <b>{number(point.projected_value, 1)}</b>
+              <span>مقدار برآوردی شاخص</span>
+              <em>تغییر نسبت به مقدار فعلی: {formatIndexDelta(Number(point.projected_value) - Number(item.current_value))}</em>
+            </div>)}</div>
             <span>آخرین مشاهده: {number((item.observation_age_seconds || 0) / 60, 0)} دقیقه قبل · مقدار فعلی {number(item.current_value)}</span>
-            <span>تغییر مشاهده‌شده در ۳۰ دقیقه: {number(item.projected_change_30m_percent)}٪ · امتیاز ناهنجاری: {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span>
+            <span>تغییر برآوردی در ۳۰ دقیقه: {formatIndexDelta(Number(item.projected_value_30m) - Number(item.current_value))} · امتیاز ناهنجاری: {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span>
           </article>)}</div>
-          <p className="forecast-method-note">این مقادیر امتداد خطی روند دو پنجرهٔ ۳۰ دقیقه‌ای هستند، نه احتمال آماری یا پیش‌بینی قطعی. خروجی تک‌شاخصی جای امتیاز ترکیبی دو شاخص را نمی‌گیرد.</p>
-        </> : <Empty title="برای هیچ شاخصی برآورد مستقل آماده نیست" note="برای هر شاخص باید دادهٔ تازه و نمونهٔ کافی در دو پنجرهٔ ۳۰ دقیقه‌ای موجود باشد."/>}
+          <p className="forecast-method-note">این اعداد مقدار شاخص را بر پایهٔ امتداد خطی روند دو پنجرهٔ ۳۰ دقیقه‌ای نشان می‌دهند؛ آن‌ها درصد احتمال اختلال یا پیش‌بینی قطعی نیستند. وقتی فقط یک شاخص آماده باشد، نتیجه صرفاً مستقل و محدود به همان شاخص است.</p>
+        </> : <Empty title="هنوز برآورد مستقلی آماده نیست" note="برای هر شاخص باید دادهٔ تازه و نمونهٔ کافی در دو پنجرهٔ ۳۰ دقیقه‌ای موجود باشد."/>}
       </Panel>
       <Panel tag="تحلیل شواهد" title="فرضیه‌های علت احتمالی" note={cause.scope_note || "این تحلیل علت قطعی اختلال را تعیین نمی‌کند."}>
         <div className="cause-card">
