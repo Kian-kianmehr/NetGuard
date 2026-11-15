@@ -4,6 +4,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
@@ -131,4 +132,56 @@ def dashboard(
         "events": events,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "window_hours": hours,
+    }
+
+
+@app.get("/api/censorship")
+def censorship() -> dict[str, Any]:
+    """Return cached OONI measurements collected from probes inside Iran."""
+    project_url, key = _supabase_config()
+    timeout = httpx.Timeout(12.0, connect=5.0)
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            domains = _read_view(
+                client,
+                project_url,
+                key,
+                "censored_domains",
+                {
+                    "select": "*",
+                    "order": "confirmed_measurements.desc,last_observed_at.desc",
+                    "limit": "500",
+                },
+            )
+            runs = _read_view(
+                client,
+                project_url,
+                key,
+                "censorship_sync_runs",
+                {
+                    "select": "started_at,finished_at,status,records_received,error_code",
+                    "order": "started_at.desc",
+                    "limit": "1",
+                },
+            )
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("OONI censorship data read failed (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="Censorship monitoring data is temporarily unavailable.",
+        ) from None
+
+    for item in domains:
+        domain = item.get("domain")
+        if isinstance(domain, str) and domain:
+            item["source_url"] = (
+                "https://explorer.ooni.org/search?probe_cc=IR&domain="
+                + quote(domain, safe="")
+            )
+
+    return {
+        "domains": domains,
+        "sync": runs[0] if runs else None,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "lookback_days": 90,
     }
