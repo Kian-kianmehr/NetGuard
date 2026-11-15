@@ -35,6 +35,23 @@ def observations(source_id, values, step=300):
     ]
 
 
+def test_observations_far_behind_source_cadence_are_limited_and_operational():
+    item = source()
+    item["expected_interval_seconds"] = 300
+    rows = observations(item["source_id"], [1000 + (index % 2) for index in range(33)])
+    result, events = analyze_dashboard([item], rows, generated_at=NOW)
+    signal = result["signals"][0]
+    delayed = [event for event in events if event["event_type"] == "source_delayed"]
+    assert signal["freshness_status"] == "fresh"
+    assert signal["display_freshness_status"] == "delayed"
+    assert signal["data_state"] == "limited"
+    assert result["assessment"] == "insufficient_data"
+    assert delayed
+    assert delayed[0]["evidence_score"] is None
+    assert delayed[0]["lifecycle"] == "operational"
+    assert "اجرای موفق جمع‌آوری" in delayed[0]["description"]
+
+
 def test_stable_series_is_not_reported_as_an_anomaly():
     first = "ioda:IR:bgp"
     second = "ioda:IR:ping-slash24"
