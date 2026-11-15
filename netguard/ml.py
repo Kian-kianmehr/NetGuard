@@ -7,8 +7,10 @@ from random import Random
 from statistics import median
 from typing import Any
 
+from netguard.deep_learning import forecast_series
 
-MODEL_NAME = "Hybrid Isolation Forest"
+
+MODEL_NAME = "Neural Temporal MLP + Isolation Forest Ensemble"
 FEATURE_NAMES = ("سطح سیگنال", "تغییر نرمال‌شده در ساعت", "فاصله از خط مبنا")
 MIN_RAW_POINTS = 45
 MIN_TRAINING_POINTS = 32
@@ -116,7 +118,8 @@ def _build_tree(samples, depth, max_depth, rng, split_counts):
     if size <= 1 or depth >= max_depth:
         return leaf
     candidates = []
-    for feature in range(len(FEATURE_NAMES)):
+    feature_count = len(samples[0]) if samples else len(FEATURE_NAMES)
+    for feature in range(feature_count):
         values = [row[feature] for row in samples]
         low, high = min(values), max(values)
         if high > low:
@@ -151,7 +154,7 @@ def _isolation_score(current, training, seed):
     rng = Random(seed)
     sample_size = min(len(training), MAX_SAMPLE_SIZE)
     max_depth = ceil(log2(max(sample_size, 2)))
-    split_counts = [0 for _ in FEATURE_NAMES]
+    split_counts = [0 for _ in range(len(current))]
     paths = []
     for _ in range(TREE_COUNT):
         sample = training if len(training) <= sample_size else rng.sample(training, sample_size)
@@ -332,31 +335,59 @@ def _forecast_component(
         return {
             "signal": signal,
             "available": False,
-            "reason": "خط مبنای نزدیک صفر اجازهٔ محاسبهٔ درصد تغییر نمی‌دهد",
+            "reason": "خط مبنای نزدیک صفر اجازهٔ محاسبهٔ درصد تغییر را نمی‌دهد",
             "sample_count": len(rows),
         }
-    change = (recent_median - previous_median) / abs(previous_median) * 100.0
-    change = max(-80.0, min(80.0, change))
-    projected = max(0.0, latest * (1.0 + change / 100.0))
+
+    neural = forecast_series(
+        [value for _, value in rows],
+        [timestamp.timestamp() for timestamp, _ in rows],
+        interval,
+    )
+    if not neural.get("available"):
+        return {
+            "signal": signal,
+            "available": False,
+            "reason": neural.get("reason") or "مدل یادگیری عمیق هنوز آماده نیست",
+            "sample_count": len(rows),
+            "previous_window_samples": len(previous),
+            "recent_window_samples": len(recent),
+            "observation_age_seconds": round(age_seconds),
+            "expected_interval_seconds": interval,
+            "neural_model": neural,
+        }
+
     horizon_projections = []
-    for minutes in (15, 30, 60):
-        multiplier = minutes / FORECAST_WINDOW_MINUTES
-        horizon_change = max(-80.0, min(80.0, change * multiplier))
-        horizon_value = max(0.0, latest * (1.0 + horizon_change / 100.0))
+    for point in neural.get("projections", []):
+        projected_value = float(point["projected_value"])
+        projected_change = (
+            (projected_value - latest) / max(abs(latest), 1e-9) * 100.0
+        )
         horizon_projections.append({
-            "minutes": minutes,
-            "projected_value": round(horizon_value, 2),
-            "projected_change_percent": round(horizon_change, 1),
-            "method": "linear_trend_extension",
+            **point,
+            "projected_change_percent": round(projected_change, 2),
         })
+    projection_30 = next(
+        (item for item in horizon_projections if item["minutes"] == 30),
+        horizon_projections[0] if horizon_projections else None,
+    )
+    if projection_30 is None:
+        return {
+            "signal": signal,
+            "available": False,
+            "reason": "مدل برای افق درخواستی خروجی تولید نکرد",
+            "sample_count": len(rows),
+            "neural_model": neural,
+        }
+    change = projection_30["projected_change_percent"]
     return {
         "signal": signal,
         "available": True,
         "current_value": round(latest, 2),
         "previous_window_median": round(previous_median, 2),
         "recent_window_median": round(recent_median, 2),
-        "projected_value_30m": round(projected, 2),
-        "projected_change_30m_percent": round(change, 1),
+        "projected_value_30m": round(float(projection_30["projected_value"]), 2),
+        "projected_change_30m_percent": round(change, 2),
         "horizon_projections": horizon_projections,
         "anomaly_score": model.get("score"),
         "sample_count": len(rows),
@@ -364,6 +395,12 @@ def _forecast_component(
         "recent_window_samples": len(recent),
         "observation_age_seconds": round(age_seconds),
         "expected_interval_seconds": interval,
+        "forecast_model": neural.get("model_name"),
+        "forecast_architecture": neural.get("architecture"),
+        "validation_mae_percent": neural.get("validation_mae_percent"),
+        "baseline_mae_percent": neural.get("baseline_mae_percent"),
+        "model_skill_percent": neural.get("model_skill_percent"),
+        "neural_model": neural,
     }
 
 
@@ -406,6 +443,120 @@ def _signal_trend(
         "observation_age_seconds": round((now - latest_time).total_seconds()),
     })
     return result
+
+
+def _joint_signal_model(
+    sources: list[dict[str, Any]],
+    observations: list[dict[str, Any]],
+    now: datetime,
+) -> dict[str, Any]:
+    """Detect unusual co-movement across aligned 10-minute signal buckets."""
+    source_by_signal = {str(source.get("signal")): source for source in sources}
+    required = ("bgp", "ping-slash24")
+    bucketed: dict[str, dict[int, list[float]]] = {}
+
+    for signal in ("bgp", "ping-slash24", "merit-nt"):
+        source = source_by_signal.get(signal)
+        if source is None:
+            continue
+        rows = _valid_rows(str(source.get("source_id") or ""), observations)
+        if not rows or not _is_fresh(source, rows, now):
+            if signal in required:
+                return {"available": False, "status": "stale_data", "status_label": "دادهٔ تازهٔ هر دو شاخص اصلی لازم است", "reason": f"دادهٔ تازهٔ {signal} موجود نیست", "score": None}
+            continue
+        interval = _interval_seconds(source)
+        if max(0.0, (now - rows[-1][0]).total_seconds()) > interval * 3:
+            if signal in required:
+                return {"available": False, "status": "stale_data", "status_label": "آخرین مشاهدهٔ یکی از شاخص‌های اصلی قدیمی است", "reason": f"آخرین مشاهدهٔ {signal} از سه فاصلهٔ نمونه‌برداری قدیمی‌تر است", "score": None}
+            continue
+        buckets: dict[int, list[float]] = defaultdict(list)
+        for timestamp, value in rows:
+            buckets[int(timestamp.timestamp() // 600)].append(value)
+        bucketed[signal] = buckets
+
+    if any(signal not in bucketed for signal in required):
+        return {"available": False, "status": "insufficient_history", "status_label": "تاریخچهٔ هم‌زمان BGP و Ping کافی نیست", "reason": "هر دو شاخص اصلی برای ساخت بردار مشترک لازم‌اند", "score": None}
+
+    common = sorted(set(bucketed["bgp"]).intersection(bucketed["ping-slash24"]))
+    if not common:
+        return {"available": False, "status": "insufficient_history", "status_label": "نمونهٔ هم‌زمانی پیدا نشد", "reason": "تاریخچهٔ دو شاخص اصلی در بازه‌های ۱۰ دقیقه‌ای هم‌تراز نیست", "score": None}
+
+    latest_bucket_end = datetime.fromtimestamp((common[-1] + 1) * 600, tz=timezone.utc)
+    aligned_age = max(0.0, (now - latest_bucket_end).total_seconds())
+    if aligned_age > 1800:
+        return {"available": False, "status": "stale_data", "status_label": "آخرین پنجرهٔ مشترک قدیمی است", "reason": "آخرین بازهٔ مشترک بیش از ۳۰ دقیقه قبل بوده است", "score": None}
+
+    active = list(required)
+    merit = bucketed.get("merit-nt", {})
+    if merit and sum(1 for bucket in common if bucket in merit) / len(common) >= 0.70:
+        active.append("merit-nt")
+
+    aligned = []
+    for bucket in common:
+        if all(bucket in bucketed[signal] for signal in active):
+            aligned.append((bucket, {signal: median(bucketed[signal][bucket]) for signal in active}))
+
+    features: list[list[float]] = []
+    for previous, current in zip(aligned, aligned[1:]):
+        previous_bucket, previous_values = previous
+        current_bucket, current_values = current
+        elapsed_minutes = (current_bucket - previous_bucket) * 10.0
+        if elapsed_minutes <= 0 or elapsed_minutes > 30:
+            continue
+        vector = []
+        for signal in active:
+            before, after = previous_values[signal], current_values[signal]
+            rate = ((after - before) / max(abs(before), 1.0)) * 3600.0 / (elapsed_minutes * 60.0) * 100.0
+            vector.append(max(-300.0, min(300.0, rate)))
+        features.append(vector)
+
+    if len(features) < MIN_RAW_POINTS or len(features) - 1 < MIN_TRAINING_POINTS:
+        return {
+            "available": False,
+            "status": "insufficient_history",
+            "status_label": "تاریخچهٔ هم‌زمان برای مدل چندشاخصی کافی نیست",
+            "reason": f"{len(features)} بردار ساخته شد؛ حداقل {MIN_RAW_POINTS} بردار لازم است",
+            "score": None,
+            "sample_count": len(features),
+            "active_signals": active,
+        }
+
+    forest, splits = _isolation_score(features[-1], features[:-1], 9142026 + len(active) * 101)
+    robust_distances = []
+    for index in range(len(active)):
+        history = [row[index] for row in features[:-1]]
+        center = median(history)
+        mad = median([abs(value - center) for value in history])
+        robust_distances.append(abs(features[-1][index] - center) / max(1.4826 * mad, 1.0))
+    robust = 0.5 + 0.5 * (1.0 - exp(-max(robust_distances, default=0.0)))
+    score = 0.65 * forest + 0.35 * robust
+    dominant = max(range(len(splits)), key=lambda index: splits[index])
+    labels = {"bgp": "تغییر دیدپذیری BGP", "ping-slash24": "تغییر پاسخ‌گویی Ping", "merit-nt": "تغییر تلسکوپ شبکه"}
+    flagged = score >= ANOMALY_THRESHOLD
+    return {
+        "available": True,
+        "status": "ready",
+        "status_label": "ناهنجاری هم‌زمان چندشاخصی" if flagged else "الگوی مشترک نزدیک به تاریخچه",
+        "score": round(score, 3),
+        "is_anomaly": flagged,
+        "threshold": ANOMALY_THRESHOLD,
+        "isolation_forest_score": round(forest, 3),
+        "robust_deviation_score": round(robust, 3),
+        "sample_count": len(features),
+        "training_samples": len(features) - 1,
+        "bucket_minutes": 10,
+        "active_signals": active,
+        "active_signal_labels": [labels[signal] for signal in active],
+        "dominant_feature_label": labels[active[dominant]],
+        "feature_split_counts": {labels[signal]: splits[index] for index, signal in enumerate(active)},
+        "observation_age_seconds": round(aligned_age),
+        "interpretation": (
+            "مدل بدون‌نظارت در تغییرات هم‌زمان شاخص‌ها الگوی متفاوتی دیده است؛ این امتیاز علت یا خاموشی را اثبات نمی‌کند."
+            if flagged else
+            "تغییرات هم‌زمان شاخص‌های موجود به الگوی تاریخی نزدیک است؛ این نتیجه سلامت کامل اینترنت را ثابت نمی‌کند."
+        ),
+    }
+
 
 
 def _cause_analysis(trends: list[dict[str, Any]]) -> dict[str, Any]:
@@ -502,6 +653,7 @@ def analyze_intelligence(
     trained = [item for item in models if item["status"] == "ready"]
     trends = [_signal_trend(source, observations, reference_now) for source in sources]
     causes = _cause_analysis(trends)
+    joint_model = _joint_signal_model(sources, observations, reference_now)
     by_signal = {source.get("signal"): source for source in sources}
     rows_by_signal = {
         source.get("signal"): _valid_rows(str(source.get("source_id") or ""), observations)
@@ -532,6 +684,10 @@ def analyze_intelligence(
             min(100.0, max(0.0, (float(item["anomaly_score"] or 0.5) - 0.5) * 200.0))
             for item in available_components
         ]
+        if joint_model.get("available"):
+            model_pressure.append(
+                min(100.0, max(0.0, (float(joint_model["score"]) - 0.5) * 200.0))
+            )
         agreement_bonus = (
             15.0
             if all(float(item["projected_change_30m_percent"]) <= -8.0 for item in available_components)
@@ -568,7 +724,7 @@ def analyze_intelligence(
     )
     return {
         "model_name": MODEL_NAME,
-        "model_family": "unsupervised_anomaly_detection",
+        "model_family": "per_signal_and_multivariate_anomaly_detection_plus_deep_learning_forecasting",
         "model_status": "ready" if trained else "collecting_history",
         "model_status_label": (
             f"مدل آمادهٔ امتیازدهی برای {len(trained)} شاخص"
@@ -582,6 +738,18 @@ def analyze_intelligence(
         "minimum_raw_points": MIN_RAW_POINTS,
         "feature_window_minutes": FEATURE_WINDOW_MINUTES,
         "signals": models,
+        "joint_model": joint_model,
+        "deep_learning": {
+            "model_name": "Two-hidden-layer temporal MLP",
+            "architecture": "12-24-12-1",
+            "sequence_length": 12,
+            "hidden_layers": [24, 12],
+            "minimum_training_sequences": 48,
+            "validation_split_percent": 20,
+            "available_signals": sum(1 for item in components if item.get("available")),
+            "trained_signals": sum(1 for item in components if item.get("neural_model", {}).get("available")),
+            "training_method": "chronological_holdout_with_persistence_baseline",
+        },
         "cause_analysis": causes,
         "recovery_estimate": {
             "available": False,
@@ -604,9 +772,9 @@ def analyze_intelligence(
             "note": note,
         },
         "method_note": (
-            "ترکیب Isolation Forest بدون‌نظارت و انحراف مقاوم؛ تغییر هر نمونه بر حسب زمان واقعی "
-            "به نرخ ساعتی تبدیل می‌شود و فاصله از خط مبنا در پنجرهٔ ۶۰ دقیقه‌ای سنجیده می‌شود. "
-            "نمایش افق‌های ۱۵، ۳۰ و ۶۰ دقیقه‌ای، امتداد خطی آزمایشی روند دو پنجرهٔ ۳۰ دقیقه‌ای است؛ "
+            "تشخیص ناهنجاری مستقل و چندشاخصی با Isolation Forest و انحراف مقاوم؛ پیش‌بینی کوتاه‌مدت با شبکهٔ عصبی MLP دارای دو لایهٔ پنهان و توالی ورودی ۱۲ نمونه‌ای. "
+            "مدل با ۸۰٪ توالی‌های قدیمی‌تر آموزش می‌بیند و با ۲۰٪ انتهاییِ کنارگذاشته‌شده ارزیابی می‌شود. "
+            "پیش‌بینی ۱۵، ۳۰ و ۶۰ دقیقه‌ای به‌صورت بازگشتی از خروجی شبکهٔ عصبی ساخته می‌شود؛ "
             "این برآوردها احتمال آماری کالیبره‌شده نیستند."
         ),
     }
