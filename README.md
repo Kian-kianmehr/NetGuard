@@ -1,50 +1,49 @@
-# NetGuard
+# NetGuard — نسخهٔ اولیهٔ ۱.۰.۰
 
-مرکز پایش و تحلیل شواهد عمومی وضعیت اینترنت ایران.
+NetGuard داشبورد عمومی فارسی برای پایش و توضیح شواهد وضعیت اینترنت ایران است.
 
-## معماری نسخهٔ اول
+**داشبورد زنده:** https://netguard-dashboard-63d8.onrender.com  
+**مخزن:** https://github.com/Kian-kianmehr/NetGuard
 
-- **Dashboard:** React + Vite روی Render Static Site و CDN؛ فرانت‌اند Snapshotهای عمومی را با یک درخواست فقط‌خواندنی مستقیماً از Supabase دریافت می‌کند.
-- **API و پردازش:** FastAPI روی Render Free Web Service فقط برای ساخت و ذخیرهٔ Snapshotهای ازپیش‌محاسبه‌شده؛ این سرویس در مسیر بازدیدکننده قرار ندارد.
-- **Database:** Supabase PostgreSQL با Row Level Security؛ جدول Snapshot فقط برای نقش عمومی قابل خواندن است.
-- **Collectors:** دو تابع Edge مستقل برای داده‌های IODA و آزمون‌های دسترسی OONI.
-- **Scheduler:** دریافت IODA هر پنج دقیقه و همگام‌سازی OONI هر شش ساعت با `pg_cron` و `pg_net`.
-- **Data sources:** سه سیگنال ملی IODA (`bgp`، `ping-slash24` و `merit-nt`) و اندازه‌گیری‌های Web Connectivity پروژهٔ OONI از شبکه‌های داخل ایران.
+## محدودهٔ MVP
 
-Collectorها مستقل از Web Service در Render و از طریق زمان‌بندی Supabase اجرا می‌شوند. ساخت و تحلیل Snapshotها در پردازش زمان‌بندی‌شده انجام می‌شود؛ بازدیدکننده نه Collector را اجرا می‌کند و نه منتظر تحلیل زنده می‌ماند. مسیر نمایش عمومی فقط یک درخواست مستقیم به ردیف‌های آمادهٔ `netguard_snapshots` می‌فرستد. مرورگر صرفاً از Publishable Key استفاده می‌کند و RLS دسترسی را به خواندن محدود می‌کند.
+ده بخش محصول: نمای کلی ملی، کیفیت داده، دامنه‌ها و OONI، دیتاسنترهای ایران و وضعیت جهانی ارائه‌دهندگان، هوش مصنوعی، تحلیل، سیگنال‌ها، رخدادها، منابع و روش‌شناسی.
 
-## داده‌ها و API
+منابع فعال:
+- IODA: BGP، ping-slash24 و merit-nt در سطح ملی.
+- OONI Web Connectivity: آزمون‌های داوطلبانه از ایران؛ نتیجهٔ تأییدشده از anomaly جداست.
+- Citizen Lab: فهرست نامزدهای آزمون، نه شاهد قطعی فیلترینگ.
+- صفحه‌های رسمی جهانی ارائه‌دهندگان.
+- موجودی اولیهٔ ۱۳ مرکز یا محل میزبانی ایران با سطح شواهد؛ پایش زندهٔ مراکز فعال نیست.
 
-- `GET /health`: سلامت پردازهٔ API و وجود تنظیمات اتصال دیتابیس.
-- `GET /api/dashboard?hours=168`: منابع، cadence هر منبع، وضعیت تازگی، کیفیت تاریخچه و مشاهدات بازهٔ درخواستی (۶ تا ۱۶۸ ساعت).
-- تاریخچهٔ مشاهدات به‌صورت صفحه‌بندی‌شده خوانده می‌شود تا محدودیت ردیف‌های REST باعث حذف خاموش بخشی از بازه نشود.
-- `GET /api/censorship`: همهٔ دامنه‌های دارای نتیجهٔ تأییدشده یا ناهنجاری OONI در ۹۰ روز اخیر، همراه با پوشش شبکه‌ها و تازگی داده.
-- تحلیل آماری دو پنجرهٔ زمانی هم‌طول ۳۰ دقیقه‌ای، با آستانهٔ cadence مخصوص هر منبع.
-- تحلیل یادگیری ماشین در پاسخ داشبورد: Hybrid Isolation Forest بدون‌نظارت؛ ویژگی تغییر بر حسب زمان واقعی نرمال می‌شود و پیش‌بینی فقط با دادهٔ تازه و نمونهٔ کافی فعال است.
-- صفحهٔ «کیفیت و پوشش داده» تعداد نمونهٔ معتبر، پوشش بازه، طول تاریخچه، cadence، شکاف‌ها و سن آخرین مشاهده را جداگانه گزارش می‌کند.
-- همهٔ Snapshotهای صفحه با یک درخواست خوانده می‌شوند؛ بازخوانی خودکار هر ۵ دقیقه و هنگام بازگشت تب به حالت visible انجام می‌شود.
-- آخرین پاسخ موفق در `localStorage` برای نمایش فوری بازدیدهای بعدی نگهداری می‌شود؛ شبکه در پس‌زمینه تازه‌سازی می‌شود.
-- فایل‌های استاتیک از CDN ارائه می‌شوند و بارگذاری فونت خارجی از Google Fonts به مسیر اولیه وابسته نیست.
-- جدول‌های `sources`، `observations` و `collector_runs` با RLS محافظت شده‌اند.
-- نقش‌های عمومی فقط دسترسی خواندن Viewهای داشبورد را دارند؛ جدول اعتبارنامهٔ Collector برای نقش‌های عمومی قابل خواندن نیست.
+## معماری production
 
-## راه‌اندازی دیتابیس و Collector
+```text
+Supabase pg_cron / pg_net
+  ├─ هر ۱۰ دقیقه: netguard-collector (IODA)
+  ├─ هر ۱۰ دقیقه: netguard-censorship-collector (OONI)
+  ├─ هر ۱۰ دقیقه: netguard-provider-collector
+  └─ دقیقه‌های 03,13,23,33,43,53:
+       POST محافظت‌شده به FastAPI برای ساخت Snapshot
 
-فایل‌های SQL به‌ترتیب اجرا می‌شوند:
+Browser → Supabase REST SELECT → netguard_snapshots
+          Publishable Key + RLS + cache مرورگر
+```
 
-1. `sql/001_initial_schema.sql`
-2. `sql/002_collector_scheduler.sql`
-3. `sql/003_schedule_ioda_collector.sql`
-4. `sql/004_censorship_monitoring.sql`
-5. `sql/005_censorship_coverage_and_enrichment.sql`
-6. `sql/006_data_quality_and_source_cadence.sql`
-7. `sql/007_ooni_asn_coverage.sql`
+Frontend: React/Vite روی Render Static Site. Backend: FastAPI روی Render Free برای API خواندنی و تولید Snapshot. Database: Supabase PostgreSQL. Collectorها سه Supabase Edge Function مستقل‌اند. بازدیدکننده باعث شروع جمع‌آوری نمی‌شود.
 
-تابع Edge در `supabase/functions/netguard-collector/index.ts` نگهداری می‌شود.
+شش Snapshot: dashboard_24، dashboard_72، dashboard_168، censorship، providers_status و iran_datacenters. مرورگر فقط دادهٔ آماده را می‌خواند و هر پنج دقیقه یا هنگام بازگشت تب تازه‌سازی می‌کند.
 
-سه نام Secret در Supabase Vault استفاده می‌شود: `netguard_project_url`، `netguard_publishable_key` و `netguard_collector_token`. مقدارها محرمانه‌اند و نباید در Git یا فایل‌های عمومی ذخیره شوند. خود تابع از کلید Secret داخلی محیط Edge Function برای نوشتن در دیتابیس استفاده می‌کند؛ کلید سطح‌بالا به مرورگر یا سرویس فرانت‌اند داده نمی‌شود.
+## API
 
-## راه‌اندازی محلی
+- GET /health — سلامت پردازه و وجود تنظیمات؛ نه آزمون کامل پایگاه داده.
+- GET /api/dashboard?hours=24|72|168
+- GET /api/censorship
+- GET /api/providers/status
+- GET /api/iran/datacenters
+- POST /internal/collect-snapshots — فقط با x-netguard-token معتبر.
+
+## اجرای محلی
 
 ```bash
 python -m venv .venv
@@ -53,42 +52,35 @@ pip install -r requirements.txt
 cp .env.example .env
 uvicorn app.main:app --reload
 
+# ترمینال دوم
 cd frontend
 npm install
+npm test
 npm run dev
 ```
 
-برای API محلی، `SUPABASE_URL` و `SUPABASE_PUBLISHABLE_KEY` را در محیط اجرا تنظیم کنید. برای اجرای دستی Collector پایتون در توسعه، کلید نوشتن باید فقط در محیط سرور محلی نگهداری شود؛ این مسیر در production فعال نیست.
+Frontend به VITE_SUPABASE_URL و VITE_SUPABASE_PUBLISHABLE_KEY نیاز دارد. FastAPI برای خواندن Snapshot از SUPABASE_URL و SUPABASE_PUBLISHABLE_KEY استفاده می‌کند. Collector دستی scripts/collect_ioda.py فقط برای توسعه است و به SUPABASE_SECRET_KEY سمت سرور نیاز دارد؛ production از Edge Functionها استفاده می‌کند.
 
-## Deploy
+## امنیت و عملیات
 
-- Render API: `pip install -r requirements.txt` و `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
-- Render Dashboard: `cd frontend && npm install && npm run build`، خروجی `frontend/dist`.
-- متغیرهای عمومی `VITE_SUPABASE_URL` و `VITE_SUPABASE_PUBLISHABLE_KEY` در Static Site تنظیم می‌شوند؛ Publishable Key برای انتشار در مرورگر طراحی شده و فقط با RLS و مجوز SELECT استفاده می‌شود.
-- `SUPABASE_URL`، `SUPABASE_PUBLISHABLE_KEY` و توکن جمع‌آوری در سرویس API باقی می‌مانند؛ هیچ Secret یا Service Role Key در مرورگر قرار نمی‌گیرد.
-- GitHub Actions تست‌های Python و build فرانت‌اند را روی شاخه‌های فعال اجرا می‌کند.
+- RLS روی جدول‌های exposed فعال است؛ نقش‌های عمومی فقط SELECT روی داده‌های عمومی دارند.
+- جدول اعتبارنامهٔ Collector policy عمومی ندارد.
+- Secret Key و Service Role Key در مرورگر قرار نمی‌گیرند.
+- RPC netguard_save_snapshot با SECURITY DEFINER در schema عمومی قابل فراخوانی است، اما توکن داخلی بلند را با hash ذخیره‌شده تطبیق می‌دهد و فقط شش dataset مجاز را می‌پذیرد. Supabase Advisor به دلیل callable بودن تابع هشدار می‌دهد؛ این رفتار برای مسیر نوشتن Snapshot فعلی عمدی است و باید با هر تغییر معماری دوباره بررسی شود.
+- GitHub Actions تست‌های Python و تست/Build فرانت‌اند را اجرا می‌کند.
 
 ## محدودیت‌های نسخهٔ اول
 
-- داده‌های فعلی IODA در این نسخه در سطح ملی‌اند؛ از آن‌ها وضعیت شهر، استان یا ISP استنتاج نمی‌شود.
-- داده‌های OONI در صفحهٔ مستقل وب‌سایت‌های فیلترشده استفاده می‌شوند و در ارزیابی پایداری زیرساخت با سیگنال‌های IODA ادغام نمی‌شوند.
-- تشخیص انحراف آماری «مورد نیازمند بررسی» است، نه اثبات قطعی خاموشی، فیلترینگ، تحریم یا علت اختلال.
-- فهرست دامنه‌ها به allowlist ثابت محدود نیست و همهٔ موارد دارای نتیجهٔ `confirmed` یا `anomaly` در دادهٔ OONI طی ۹۰ روز را نشان می‌دهد. ناهنجاری به‌تنهایی اثبات فیلترینگ نیست.
-- پوشش OONI به شبکه‌های داوطلب و آزمون‌های اجراشده محدود است؛ نبود دامنه در فهرست به معنی دسترسی آزاد نیست.
-- مدل Isolation Forest برای تشخیص ناهنجاری بدون‌نظارت فعال است. برآورد ۳۰ دقیقه‌ای شاخص آزمایشی است، نه احتمال کالیبره‌شدهٔ اختلال.
-- اجرای زمان‌بندی‌شده هر پنج دقیقه هدف سیستم است، نه SLA پایش ۲۴ساعته؛ دسترس‌پذیری تابع سهمیه و وضعیت سرویس‌های رایگان و خود منبع IODA است.
+- ارزیابی ملی است؛ دو شاخص اصلی BGP و Ping از IODA می‌آیند و probe مستقل از چند استان/ISP وجود ندارد.
+- دادهٔ ملی به شهر یا اپراتور تعمیم داده نمی‌شود.
+- OONI فقط آزمون‌های probeهای داوطلب را پوشش می‌دهد؛ نبود نتیجه به معنی دسترسی آزاد نیست.
+- خطای endpoint یا anomaly به‌تنهایی اثبات فیلترینگ، تحریم یا قطعی نیست.
+- وضعیت جهانی ارائه‌دهندگان دسترسی از داخل ایران را ثابت نمی‌کند.
+- موجودی دیتاسنترها پایش زندهٔ عملیاتی نیست.
+- پیش‌بینی، امتداد آزمایشی روند است نه احتمال کالیبره‌شده؛ مدل بازیابی تا داشتن رخدادهای تاریخی برچسب‌خورده عددی نمی‌دهد.
+- cadence ده‌دقیقه‌ای هدف عملیاتی است نه SLA؛ Render Free و منابع بالادستی بر آن اثر دارند.
+- فایل LICENSE در مخزن تعریف نشده است؛ پیش از اعطای حق استفادهٔ مجدد، صاحب پروژه باید مجوز را انتخاب کند.
 
-## اصول کیفیت داده
+## گام بعدی
 
-- دادهٔ گم‌شده صفر نیست.
-- زمان مشاهده از زمان دریافت جدا نگهداری می‌شود.
-- وضعیت هر منبع می‌تواند تازه، قدیمی، دارای خطا یا نامشخص باشد.
-- cadence هر منبع از تنظیمات ثبت‌شده خوانده می‌شود؛ در دادهٔ فعلی Ping فعال حدود هر ۱۰ دقیقه و BGP/Merit حدود هر ۵ دقیقه است.
-- پوشش نمونه، طول بازهٔ تاریخی، شکاف اندازه‌گیری و تازگی آخرین مشاهده چهار مفهوم جدا هستند و در یک درصد ادغام نمی‌شوند.
-- ارزیابی فقط دادهٔ تازه و پنجره‌های زمانی هم‌طول را در تشخیص وضعیت جاری دخالت می‌دهد؛ رخدادهای قدیمی در دفتر رخدادها می‌مانند اما وضعیت اکنون را بالا نگه نمی‌دارند.
-- مقادیر سیگنال‌هایی با واحد متفاوت مستقیماً با هم مقایسه نمی‌شوند.
-
-
-## مدل هوشمند
-
-جزئیات الگوریتم، ویژگی‌ها، حداقل تاریخچه و محدودیت‌های پیش‌بینی در [مستند مدل هوشمند](docs/INTELLIGENCE_FA.md) آمده است.
+MVP ملی بسته می‌شود. نسخهٔ بعدی باید probeهای مستقل در چند استان و اپراتور راه‌اندازی کند؛ فقط پس از فراهم شدن vantage point واقعی، نقشهٔ استانی و مقایسهٔ ISP ساخته می‌شود. نقشهٔ راه در docs/ROADMAP_FA.md قرار دارد.
