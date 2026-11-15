@@ -10,28 +10,21 @@ services:
     autoDeployTrigger: checksPass
     envVars:
       - key: SUPABASE_URL
-        value: https://fsglerccgxktvcpybuzk.supabase.co
+        value: https://your-project.supabase.co
       - key: SUPABASE_PUBLISHABLE_KEY
-        value: sb_publishable_UXBLLdcNecHqtiqTtM0Jjg_aVOcAGJD
-      - key: NETGUARD_COUNTRY_CODE
-        value: IR
-      - key: IODA_LOOKBACK_HOURS
-        value: "4"
-      - key: IODA_MAX_POINTS
-        value: "240"
-      - key: COLLECTOR_INTERVAL_SECONDS
-        value: "600"
+        sync: false
       - key: NETGUARD_COLLECTOR_TOKEN
         sync: false
 
   - type: web
     name: netguard-dashboard
     runtime: static
+    plan: free
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     autoDeployTrigger: checksPass
     envVars:
       - key: VITE_SUPABASE_URL
-        value: https://fsglerccgxktvcpybuzk.supabase.co
+        value: https://your-project.supabase.co
       - key: VITE_SUPABASE_PUBLISHABLE_KEY
-        value: sb_publishable_UXBLLdcNecHqtiqTtM0Jjg_aVOcAGJD
+        sync: false
