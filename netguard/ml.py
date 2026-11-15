@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
-from math import ceil, isfinite, log1p, log2
+from math import ceil, exp, isfinite, log1p, log2
 from random import Random
 from statistics import median
 from typing import Any
 
-MODEL_NAME = "Isolation Forest"
+MODEL_NAME = "Hybrid Isolation Forest"
 FEATURE_NAMES = ("سطح سیگنال", "تغییر کوتاه‌مدت", "فاصله از خط مبنا")
 MIN_RAW_POINTS = 45
 MIN_TRAINING_POINTS = 32
@@ -140,7 +140,14 @@ def _signal_model(source, observations):
     if len(rows) < MIN_RAW_POINTS or len(features) - 1 < MIN_TRAINING_POINTS:
         return result
     seed = sum((index + 1) * ord(char) for index, char in enumerate(source_id))
-    score, split_counts = _isolation_score(features[-1], features[:-1], seed)
+    forest_score, split_counts = _isolation_score(features[-1], features[:-1], seed)
+    latest_features = features[-1]
+    robust_distance = max(
+        abs(latest_features[1]) / 10.0,
+        abs(latest_features[2]) / 3.0,
+    )
+    robust_score = 0.5 + 0.5 * (1.0 - exp(-robust_distance))
+    score = 0.55 * forest_score + 0.45 * robust_score
     dominant = max(range(len(split_counts)), key=lambda index: split_counts[index])
     flagged = score >= ANOMALY_THRESHOLD
     if flagged:
@@ -160,6 +167,8 @@ def _signal_model(source, observations):
         "dominant_feature": FEATURE_NAMES[dominant],
         "dominant_feature_label": FEATURE_NAMES[dominant],
         "feature_split_counts": {FEATURE_NAMES[i]: split_counts[i] for i in range(len(FEATURE_NAMES))},
+        "isolation_forest_score": round(forest_score, 3),
+        "robust_deviation_score": round(robust_score, 3),
         "interpretation": interpretation,
     })
     return result
@@ -239,5 +248,5 @@ def analyze_intelligence(sources: list[dict[str, Any]], observations: list[dict[
             "calibrated_probability": None,
             "note": note,
         },
-        "method_note": "Isolation Forest بدون‌نظارت روی سه ویژگیِ سطح سیگنال، تغییر کوتاه‌مدت و فاصله از خط مبنا. آموزش فقط با تاریخچهٔ همان شاخص انجام می‌شود؛ دادهٔ ساختگی یا برچسب رخداد مصنوعی تولید نمی‌شود.",
+        "method_note": "ترکیب Isolation Forest بدون‌نظارت و فاصلهٔ مقاوم روی سه ویژگیِ سطح سیگنال، تغییر کوتاه‌مدت و فاصله از خط مبنا. آموزش فقط با تاریخچهٔ همان شاخص انجام می‌شود؛ دادهٔ ساختگی یا برچسب رخداد مصنوعی تولید نمی‌شود.",
     }
