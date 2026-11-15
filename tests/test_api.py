@@ -56,24 +56,35 @@ def test_dashboard_rejects_out_of_range_window():
 
 
 
-def test_censorship_api_returns_cached_ooni_results(monkeypatch):
+def test_censorship_api_separates_ooni_evidence_from_test_candidates(monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test")
 
     def fake_read_view(client, project_url, key, view, params):
         if view == "censored_domains":
             return [
-                {"domain": "youtube.com", "confirmed_blocked": True, "confirmed_measurements": 3, "anomaly_measurements": 1, "measurement_count": 4},
-                {"domain": "example-news.net", "confirmed_blocked": True, "confirmed_measurements": 1, "anomaly_measurements": 0, "measurement_count": 1},
+                {"domain": "youtube.com", "category_code": "MMED", "confirmed_blocked": True,
+                 "confirmed_measurements": 3, "anomaly_measurements": 1, "measurement_count": 4},
+                {"domain": "example-news.net", "category_code": "NEWS", "confirmed_blocked": False,
+                 "confirmed_measurements": 0, "anomaly_measurements": 1, "measurement_count": 1},
+                {"domain": "excluded.example", "category_code": "PORN", "confirmed_blocked": True,
+                 "confirmed_measurements": 1, "anomaly_measurements": 0, "measurement_count": 1},
+            ]
+        if view == "censorship_test_domains":
+            return [
+                {"domain": "candidate.example", "category_code": "NEWS",
+                 "source_url": "https://github.com/citizenlab/test-lists/blob/master/lists/ir.csv"},
+                {"domain": "excluded-test.example", "category_code": "GMB",
+                 "source_url": "https://github.com/citizenlab/test-lists/blob/master/lists/ir.csv"},
             ]
         if view == "censorship_sync_runs":
             return [{
-                "status": "success",
-                "finished_at": "2026-11-15T10:00:00Z",
-                "records_received": 4,
+                "status": "partial", "finished_at": "2026-11-15T10:00:00Z",
+                "records_received": 5, "test_list_records_received": 820,
             }]
         if view == "censorship_coverage":
-            return [{"domain_count": 2, "measurement_count": 5, "probe_networks": 2, "confirmed_measurements": 4, "anomaly_measurements": 1}]
+            return [{"domain_count": 3, "measurement_count": 6, "probe_networks": 2,
+                     "confirmed_measurements": 4, "anomaly_measurements": 2}]
         raise AssertionError(f"Unexpected view: {view}")
 
     monkeypatch.setattr("app.main._read_view", fake_read_view)
@@ -82,16 +93,58 @@ def test_censorship_api_returns_cached_ooni_results(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["domains"][0]["domain"] == "youtube.com"
-    assert {item["domain"] for item in payload["domains"]} == {"youtube.com", "example-news.net"}
-    assert payload["total_domains_observed"] == 2
-    assert payload["coverage"]["probe_networks"] == 2
-    assert payload["domains"][0]["confirmed_blocked"] is True
-    assert payload["domains"][0]["source_url"].startswith(
+    domains = {item["domain"]: item for item in payload["domains"]}
+    assert set(domains) == {"youtube.com", "example-news.net", "candidate.example"}
+    assert domains["youtube.com"]["confirmed_blocked"] is True
+    assert domains["youtube.com"]["candidate_only"] is False
+    assert domains["youtube.com"]["source_url"].startswith(
         "https://explorer.ooni.org/search?probe_cc=IR&domain="
     )
-    assert payload["sync"]["status"] == "success"
+    assert domains["candidate.example"]["candidate_only"] is True
+    assert domains["candidate.example"]["has_measurements"] is False
+    assert domains["candidate.example"]["classification_label"] == (
+        "در فهرست آزمون؛ هنوز نتیجهٔ تازه‌ای نداریم"
+    )
+    assert payload["total_domains_observed"] == 2
+    assert payload["total_test_domains"] == 1
+    assert payload["candidate_domains_not_recently_tested"] == 1
+    assert payload["coverage"]["probe_networks"] == 2
+    assert payload["sync"]["status"] == "partial"
+    assert payload["sync"]["test_list_records_received"] == 820
     assert payload["lookback_days"] == 90
+
+
+def test_provider_status_endpoint_returns_official_provider_snapshots(monkeypatch):
+    import app.main as main
+
+    monkeypatch.setattr(main, "_fetch_statuspage_provider", lambda provider: {
+        "id": provider["id"], "name": provider["name"], "group": provider["group"],
+        "status": "operational", "status_label": "عادی", "available": True,
+        "description": provider["description"], "url": provider["url"],
+        "data_center_count": 12, "components_attention": 1,
+        "affected_locations": [{"name": "Example City - (EXM)", "status_label": "اختلال بخشی"}],
+        "incidents": [], "technical_components": [], "checked_at": "2026-11-15T10:00:00Z",
+    })
+    monkeypatch.setattr(main, "_fetch_google_cloud_status", lambda: {
+        "id": "google-cloud", "name": "Google Cloud و Vertex AI", "group": "infrastructure",
+        "status": "operational", "status_label": "عادی", "available": True,
+        "description": "آزمون", "url": "https://status.cloud.google.com/",
+        "data_center_count": 0, "components_attention": 0,
+        "affected_locations": [], "incidents": [], "technical_components": [],
+        "checked_at": "2026-11-15T10:00:00Z",
+    })
+    main._PROVIDER_CACHE.update({"expires_at": 0, "payload": None})
+
+    with TestClient(app) as client:
+        response = client.get("/api/providers/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert len(payload["providers"]) == 9
+    cloudflare = next(item for item in payload["providers"] if item["id"] == "cloudflare")
+    assert cloudflare["data_center_count"] == 12
+    assert cloudflare["affected_locations"][0]["name"] == "Example City - (EXM)"
+    assert "دسترسی به آن از داخل ایران" in payload["scope_note"]
 
 
 def test_read_view_all_paginates_and_preserves_stable_order(monkeypatch):
