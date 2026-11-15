@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from netguard.analysis import analyze_dashboard
+from netguard.ml import analyze_intelligence
 
 logger = logging.getLogger("netguard.api")
 
@@ -125,6 +126,7 @@ def dashboard(
         ) from None
 
     analysis, events = analyze_dashboard(sources, observations)
+    analysis["intelligence"] = analyze_intelligence(sources, observations)
     return {
         "sources": sources,
         "observations": observations,
@@ -133,27 +135,6 @@ def dashboard(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "window_hours": hours,
     }
-
-
-PUBLIC_INTEREST_DOMAINS = frozenset({
-    "facebook.com",
-    "youtube.com",
-    "instagram.com",
-    "twitter.com",
-    "x.com",
-    "discord.com",
-    "tiktok.com",
-    "vk.com",
-    "clubhouse.com",
-    "reddit.com",
-    "telegram.org",
-    "t.me",
-    "whatsapp.com",
-    "linkedin.com",
-    "pinterest.com",
-    "medium.com",
-    "9gag.com",
-})
 
 
 @app.get("/api/censorship")
@@ -171,7 +152,7 @@ def censorship() -> dict[str, Any]:
                 {
                     "select": "*",
                     "order": "confirmed_measurements.desc,last_observed_at.desc",
-                    "limit": "500",
+                    "limit": "5000",
                 },
             )
             runs = _read_view(
@@ -185,6 +166,10 @@ def censorship() -> dict[str, Any]:
                     "limit": "1",
                 },
             )
+            coverage_rows = _read_view(
+                client, project_url, key, "censorship_coverage",
+                {"select": "*", "limit": "1"},
+            )
     except (httpx.HTTPError, ValueError) as exc:
         logger.warning("OONI censorship data read failed (%s)", type(exc).__name__)
         raise HTTPException(
@@ -192,11 +177,8 @@ def censorship() -> dict[str, Any]:
             detail="Censorship monitoring data is temporarily unavailable.",
         ) from None
 
-    total_domains_observed = len(domains)
-    domains = [
-        item for item in domains
-        if item.get("domain") in PUBLIC_INTEREST_DOMAINS
-    ]
+    coverage = coverage_rows[0] if coverage_rows else {}
+    total_domains_observed = int(coverage.get("domain_count") or len(domains))
     for item in domains:
         domain = item.get("domain")
         if isinstance(domain, str) and domain:
@@ -204,13 +186,19 @@ def censorship() -> dict[str, Any]:
                 "https://explorer.ooni.org/search?probe_cc=IR&domain="
                 + quote(domain, safe="")
             )
-
+        item["classification_label"] = (
+            "مسدودیت تأییدشده" if item.get("confirmed_blocked")
+            else "ناهنجاری؛ نیازمند بررسی"
+        )
     return {
         "domains": domains,
         "total_domains_observed": total_domains_observed,
+        "coverage": coverage,
         "scope_note": (
-            "این نمای عمومی سرویس‌های عمومی منتخب را نشان می‌دهد؛ "
-            "تعداد کل دامنه‌های مشاهده‌شده فقط به‌صورت آماری گزارش می‌شود."
+            "همهٔ دامنه‌های دارای نتیجهٔ تأییدشده یا ناهنجاری در آزمون Web Connectivity "
+            "OONI طی ۹۰ روز اخیر نمایش داده می‌شوند؛ این فهرست کل وب‌سایت‌های فیلترشدهٔ ایران "
+            "نیست و فقط شبکه‌هایی را پوشش می‌دهد که در آزمون‌ها مشارکت کرده‌اند. "
+            "نبود یک دامنه در این فهرست، اثبات دسترسی آزاد نیست."
         ),
         "sync": runs[0] if runs else None,
         "generated_at": datetime.now(timezone.utc).isoformat(),
