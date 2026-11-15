@@ -114,7 +114,7 @@ async function fetchMeasurements(classification: "confirmed" | "anomaly", since:
 
       const reportId = typeof item.report_id === "string" ? item.report_id : null;
       const rawAsn = item.probe_asn;
-      const asnMatch = typeof rawAsn === "string" ? rawAsn.trim().match(/^(?:AS)?(\\d+)$/i) : null;
+      const asnMatch = typeof rawAsn === "string" ? rawAsn.trim().match(/^(?:AS)?(\d+)$/i) : null;
       const probeAsnNumber = typeof rawAsn === "number" ? rawAsn : Number(asnMatch?.[1]);
       const probeAsn = Number.isSafeInteger(probeAsnNumber) && probeAsnNumber > 0 ? probeAsnNumber : null;
       const categoryCode = typeof item.category_code === "string" ? item.category_code : null;
