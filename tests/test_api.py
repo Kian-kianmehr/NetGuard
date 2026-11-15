@@ -25,7 +25,9 @@ def test_dashboard_requires_public_supabase_configuration(monkeypatch):
     assert response.status_code == 503
 
 
-def test_dashboard_reads_the_expected_views(monkeypatch):
+def test_dashboard_snapshot_builder_reads_the_expected_views(monkeypatch):
+    from app.main import _build_dashboard_snapshot
+
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test")
     calls = []
@@ -37,16 +39,38 @@ def test_dashboard_reads_the_expected_views(monkeypatch):
         return []
 
     monkeypatch.setattr("app.main._read_view", fake_read_view)
+    payload = _build_dashboard_snapshot(24)
+
+    assert payload["sources"][0]["source_id"] == "ioda:IR:bgp"
+    assert payload["observations"] == []
+    assert {call[2] for call in calls} == {"dashboard_sources", "dashboard_observations"}
+    assert all(call[1] == "sb_publishable_test" for call in calls)
+
+
+def test_dashboard_api_reads_only_the_persisted_snapshot(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test")
+    calls = []
+
+    def fake_read_view(client, project_url, key, view, params):
+        calls.append((view, params))
+        return [{
+            "payload": {"sources": [{"source_id": "ioda:IR:bgp"}], "observations": [],
+                        "analysis": {}, "events": [], "window_hours": 24},
+            "collected_at": "2026-11-15T10:00:00Z",
+            "status": "success", "source_count": 3, "error_code": None,
+        }]
+
+    monkeypatch.setattr("app.main._read_view", fake_read_view)
     with TestClient(app) as client:
         response = client.get("/api/dashboard?hours=24")
 
     assert response.status_code == 200
     assert response.json()["sources"][0]["source_id"] == "ioda:IR:bgp"
-    assert response.json()["observations"] == []
-    assert {call[2] for call in calls} == {
-        "dashboard_sources", "dashboard_observations"
-    }
-    assert all(call[1] == "sb_publishable_test" for call in calls)
+    assert calls[0][0] == "netguard_snapshots"
+    assert calls[0][1]["dataset_key"] == "eq.dashboard_24"
+
+
 
 
 def test_dashboard_rejects_out_of_range_window():
@@ -56,7 +80,7 @@ def test_dashboard_rejects_out_of_range_window():
 
 
 
-def test_censorship_api_separates_ooni_evidence_from_test_candidates(monkeypatch):
+def test_censorship_snapshot_builder_separates_ooni_evidence_from_test_candidates(monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test")
 
@@ -88,11 +112,8 @@ def test_censorship_api_separates_ooni_evidence_from_test_candidates(monkeypatch
         raise AssertionError(f"Unexpected view: {view}")
 
     monkeypatch.setattr("app.main._read_view", fake_read_view)
-    with TestClient(app) as client:
-        response = client.get("/api/censorship")
-
-    assert response.status_code == 200
-    payload = response.json()
+    from app.main import _build_censorship_snapshot
+    payload = _build_censorship_snapshot()
     domains = {item["domain"]: item for item in payload["domains"]}
     assert set(domains) == {"youtube.com", "example-news.net", "candidate.example"}
     assert domains["youtube.com"]["confirmed_blocked"] is True
@@ -174,3 +195,37 @@ def test_read_view_all_paginates_and_preserves_stable_order(monkeypatch):
         ("2", "2", "observed_at.asc,source_id.asc"),
         ("2", "4", "observed_at.asc,source_id.asc"),
     ]
+
+
+def test_iran_datacenters_api_reads_persisted_inventory(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test")
+    calls = []
+
+    def fake_read_view(client, project_url, key, view, params):
+        calls.append((view, params))
+        return [{
+            "payload": {
+                "sites": [{"site_id": "asia-milad", "name": "Asiatech Milad Tower",
+                           "monitoring_status": "unmonitored"}],
+                "total_sites": 1, "directly_monitored": 0,
+            },
+            "collected_at": "2026-11-15T10:00:00Z",
+            "status": "success", "source_count": 1, "error_code": None,
+        }]
+
+    monkeypatch.setattr("app.main._read_view", fake_read_view)
+    with TestClient(app) as client:
+        response = client.get("/api/iran/datacenters")
+
+    assert response.status_code == 200
+    assert response.json()["total_sites"] == 1
+    assert response.json()["directly_monitored"] == 0
+    assert calls[0][1]["dataset_key"] == "eq.iran_datacenters"
+
+
+def test_internal_snapshot_collector_rejects_requests_without_secret(monkeypatch):
+    monkeypatch.delenv("NETGUARD_COLLECTOR_TOKEN", raising=False)
+    with TestClient(app) as client:
+        response = client.post("/internal/collect-snapshots")
+    assert response.status_code == 401
