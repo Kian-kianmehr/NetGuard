@@ -287,3 +287,29 @@ def test_batched_dashboard_snapshot_builder_reads_shared_history_once_and_preser
     }
     assert snapshots["dashboard_24"]["analysis"]["intelligence"]["observation_count"] == 1
     assert snapshots["dashboard_168"]["analysis"]["intelligence"]["observation_count"] == 3
+
+def test_snapshot_api_caches_repeated_reads_briefly(monkeypatch):
+    import app.main as main
+
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test")
+    monkeypatch.setattr(main, "_SNAPSHOT_CACHE", {})
+    calls = []
+
+    def fake_read_view(client, project_url, key, view, params):
+        calls.append((view, params))
+        return [{
+            "payload": {"sources": [], "observations": [], "analysis": {}, "events": []},
+            "collected_at": "2026-11-15T10:00:00Z",
+            "status": "success", "source_count": 3, "error_code": None,
+        }]
+
+    monkeypatch.setattr(main, "_read_view", fake_read_view)
+    with TestClient(app) as client:
+        first = client.get("/api/dashboard?hours=24")
+        second = client.get("/api/dashboard?hours=24")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["snapshot_at"] == second.json()["snapshot_at"]
+    assert len(calls) == 1
