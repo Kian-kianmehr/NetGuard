@@ -182,16 +182,24 @@ function Chart({ rows = [], compact = false }) {
     <div className="axis"><span>{time(valid[0].observed_at)}</span><span>{time(valid.at(-1).observed_at)}</span></div>
   </div>;
 }
+function sourcePlain(signal) {
+  if (signal === "bgp") return "بررسی می‌کند چه تعداد از مسیرهای اینترنت در شبکهٔ جهانی دیده می‌شوند.";
+  if (signal === "ping-slash24") return "بررسی می‌کند چه تعداد از نشانی‌های نمونه در اینترنت پاسخ می‌دهند.";
+  if (signal === "merit-nt") return "تغییرات مشاهده‌شده در ترافیک و نشانی‌های شبکه را دنبال می‌کند.";
+  return "یک بخش از وضعیت زیرساخت اینترنت را اندازه می‌گیرد.";
+}
 function SourceTable({ rows = [] }) {
   if (!rows.length) return <Empty title="منبع فعالی در پاسخ API نیست" />;
   return <div className="table-wrap"><table>
-    <thead><tr><th>منبع</th><th>تازگی داده</th><th>آخرین مشاهده</th><th>فاصلهٔ نمونه‌گیری</th><th>آخرین اجرا</th><th>مقدار آخر</th></tr></thead>
+    <thead><tr><th>چه چیزی بررسی می‌شود؟</th><th>وضعیت دریافت</th><th>آخرین اندازه‌گیری</th><th>فاصلهٔ بررسی</th><th>وضعیت به‌روزرسانی</th><th>مقدار آخر</th></tr></thead>
     <tbody>{rows.map((source) => <tr key={source.source_id}>
-      <td><b>{source.display_name}</b><small>{source.provider} · {source.signal}</small></td>
+      <td><b>{source.display_name}</b><small>{sourcePlain(source.signal)}</small><details className="technical-details"><summary>نام فنی و منبع</summary><span>{source.provider} · {source.signal}</span></details></td>
       <td><Badge value={source.freshness_status}/></td>
-      <td>{time(source.last_observed_at)}<small>{source.observation_age_seconds == null ? "سن داده نامشخص" : number(Math.floor(source.observation_age_seconds / 60), 0) + " دقیقه پیش"}</small></td>
-      <td><b>{source.expected_interval_seconds ? number(source.expected_interval_seconds / 60, 0) + " دقیقه" : "—"}</b><small>{source.stale_after_seconds ? "حد هشدار " + number(source.stale_after_seconds / 60, 0) + " دقیقه" : "آستانه نامشخص"}</small></td>
-      <td>{time(source.last_run_started_at)}<small>{source.last_run_status || "بدون اجرا"}{source.last_run_duration_ms != null ? " · " + number(source.last_run_duration_ms, 0) + " ms" : ""}{source.last_run_records_received != null ? " · " + number(source.last_run_records_received, 0) + " ردیف" : ""}{source.last_run_error_code ? " · " + source.last_run_error_code : ""}</small></td>
+      <td>{time(source.last_observed_at)}<small>{source.observation_age_seconds == null ? "زمان مشاهده نامشخص" : number(Math.floor(source.observation_age_seconds / 60), 0) + " دقیقه پیش"}</small></td>
+      <td><b>{source.expected_interval_seconds ? number(source.expected_interval_seconds / 60, 0) + " دقیقه" : "—"}</b></td>
+      <td>{time(source.last_run_started_at)}<small>{source.last_run_status === "success" ? "دریافت موفق" : source.last_run_status === "error" ? "خطا در دریافت" : source.last_run_status === "no_data" ? "دادهٔ تازه‌ای نبود" : "وضعیت اجرا نامشخص"}</small>
+        <details className="technical-details"><summary>جزئیات فنی دریافت</summary><span>{source.stale_after_seconds ? "حد هشدار " + number(source.stale_after_seconds / 60, 0) + " دقیقه" : ""}{source.last_run_duration_ms != null ? " · " + number(source.last_run_duration_ms, 0) + " میلی‌ثانیه" : ""}{source.last_run_records_received != null ? " · " + number(source.last_run_records_received, 0) + " ردیف" : ""}{source.last_run_error_code ? " · " + source.last_run_error_code : ""}</span></details>
+      </td>
       <td><b>{number(source.latest_value)}</b><small>{source.unit}</small></td>
     </tr>)}</tbody>
   </table></div>;
@@ -231,30 +239,26 @@ function QualityBar({ value }) {
 
 function SourceQualityCard({ item }) {
   return <article className="source-quality-card">
-    <div className="source-quality-head">
-      <div><small>{item.signal}</small><h3>{item.display_name}</h3></div>
-      <Badge value={item.freshness_status}/>
-    </div>
-    <div className="quality-main-value"><b>{number(item.sample_coverage_percent, 1)}٪</b><span>پوشش نمونه در بازه</span></div>
+    <div className="source-quality-head"><div><small>آنچه این شاخص می‌سنجد</small><h3>{item.display_name}</h3></div><Badge value={item.freshness_status}/></div>
+    <p className="provider-simple-copy">{sourcePlain(item.signal)} پوشش نشان می‌دهد چند بررسی از تعداد برنامه‌ریزی‌شده واقعاً ثبت شده است.</p>
+    <div className="quality-main-value"><b>{number(item.sample_coverage_percent, 1)}٪</b><span>بررسی‌های ثبت‌شده</span></div>
     <QualityBar value={item.sample_coverage_percent}/>
-    <div className="quality-mini-grid">
-      <div><small>فاصلهٔ مورد انتظار</small><b>{number(item.expected_interval_minutes, 0)} دقیقه</b></div>
-      <div><small>نمونهٔ معتبر</small><b>{number(item.valid_samples, 0)} / {number(item.expected_samples_in_window, 0)}</b></div>
-      <div><small>طول تاریخچه</small><b>{number(item.observed_span_hours, 1)} ساعت</b></div>
-      <div><small>آخرین مشاهده</small><b>{item.observation_age_seconds == null ? "—" : number(item.observation_age_seconds / 60, 0) + " دقیقه قبل"}</b></div>
-      <div><small>میانهٔ فاصله‌ها</small><b>{item.median_gap_seconds == null ? "—" : number(item.median_gap_seconds / 60, 1) + " دقیقه"}</b></div>
-      <div><small>صدک ۹۰ فاصله</small><b>{item.p90_gap_seconds == null ? "—" : number(item.p90_gap_seconds / 60, 1) + " دقیقه"}</b></div>
-      <div><small>نمونهٔ ۲ ساعت اخیر</small><b>{number(item.samples_last_2h, 0)}</b></div>
-      <div><small>نمونهٔ ۳۰ دقیقه اخیر</small><b>{number(item.samples_last_30m, 0)}</b></div>
-      <div><small>شکاف‌های غیرمنتظره</small><b>{number(item.gaps_over_expected_threshold, 0)}</b></div>
-    </div>
-    <div className="source-quality-foot">
-      <span>آخرین جمع‌آوری: {time(item.last_collected_at)}</span>
-      <span>آخرین اجرای Collector: {item.last_run_status || "نامشخص"}{item.last_run_error_code ? " · " + item.last_run_error_code : ""}</span>
-    </div>
+    <details className="technical-details"><summary>جزئیات فنی و کیفیت تاریخچه</summary>
+      <div className="quality-mini-grid">
+        <div><small>فاصلهٔ مورد انتظار</small><b>{number(item.expected_interval_minutes, 0)} دقیقه</b></div>
+        <div><small>نمونهٔ معتبر</small><b>{number(item.valid_samples, 0)} / {number(item.expected_samples_in_window, 0)}</b></div>
+        <div><small>طول تاریخچه</small><b>{number(item.observed_span_hours, 1)} ساعت</b></div>
+        <div><small>آخرین مشاهده</small><b>{item.observation_age_seconds == null ? "—" : number(item.observation_age_seconds / 60, 0) + " دقیقه قبل"}</b></div>
+        <div><small>میانهٔ فاصله‌ها</small><b>{item.median_gap_seconds == null ? "—" : number(item.median_gap_seconds / 60, 1) + " دقیقه"}</b></div>
+        <div><small>صدک ۹۰ فاصله</small><b>{item.p90_gap_seconds == null ? "—" : number(item.p90_gap_seconds / 60, 1) + " دقیقه"}</b></div>
+        <div><small>نمونهٔ ۲ ساعت اخیر</small><b>{number(item.samples_last_2h, 0)}</b></div>
+        <div><small>نمونهٔ ۳۰ دقیقه اخیر</small><b>{number(item.samples_last_30m, 0)}</b></div>
+        <div><small>شکاف‌های غیرمنتظره</small><b>{number(item.gaps_over_expected_threshold, 0)}</b></div>
+      </div>
+      <div className="source-quality-foot"><span>آخرین جمع‌آوری: {time(item.last_collected_at)}</span><span>آخرین اجرای جمع‌آوری: {item.last_run_status || "نامشخص"}{item.last_run_error_code ? " · " + item.last_run_error_code : ""}</span></div>
+    </details>
   </article>;
 }
-
 
 const providerStatusMap = {
   operational: ["عادی", "good"], under_maintenance: ["تعمیرات برنامه‌ریزی‌شده", "neutral"],
