@@ -31,5 +31,7 @@ services:
     staticPublishPath: frontend/dist
     autoDeployTrigger: checksPass
     envVars:
-      - key: VITE_API_URL
-        value: https://netguard-api-oan9.onrender.com
+      - key: VITE_SUPABASE_URL
+        value: https://fsglerccgxktvcpybuzk.supabase.co
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_UXBLLdcNecHqtiqTtM0Jjg_aVOcAGJD
