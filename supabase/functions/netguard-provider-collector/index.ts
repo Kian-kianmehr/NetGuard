@@ -67,7 +67,7 @@ async function fetchProvider(p: typeof PROVIDERS[number]) {
       none:"operational", minor:"degraded_performance", major:"major_outage",
       critical:"major_outage", maintenance:"under_maintenance",
     };
-    let status = indicatorMap[indicator] ?? "unknown";
+    const status = indicatorMap[indicator] ?? "unknown";
     const components = (Array.isArray(raw.components) ? raw.components : [])
       .filter((c: any) => c && typeof c.name === "string")
       .map((c: any) => ({
@@ -75,25 +75,37 @@ async function fetchProvider(p: typeof PROVIDERS[number]) {
         status_label:labels[String(c.status ?? "unknown")] ?? "نامشخص",
         updated_at:c.updated_at ?? null,
       }));
+    let componentStatus = "operational";
     for (const component of components) {
-      if ((severity[component.status] ?? 0) > (severity[status] ?? 0)) status = component.status;
+      if ((severity[component.status] ?? 0) > (severity[componentStatus] ?? 0)) {
+        componentStatus = component.status;
+      }
     }
     const incidents = (Array.isArray(raw.incidents) ? raw.incidents : []).slice(0,8).map((incident: any) => {
       const update = incident.incident_updates?.[0] ?? {};
       return {
         name:incident.name ?? "رخداد اعلام‌شده", status:incident.status ?? "unknown",
         impact:incident.impact ?? "نامشخص", updated_at:update.updated_at ?? incident.updated_at ?? null,
+        affected_components:Array.isArray(incident.components)
+          ? incident.components.map((c: any) => c?.name).filter((name: any) => typeof name === "string")
+          : [],
         body:String(update.body ?? "").slice(0,360),
         url:incident.shortlink ?? p.url,
       };
     });
-    const affected = components.filter((c: any) => c.name.includes(" - (") && c.status !== "operational");
+    const affected = components.filter((c: any) =>
+      c.name.includes(" - (") && c.status !== "operational" && c.status !== "unknown"
+    );
     return {
       ...p, status, status_label:labels[status] ?? "نامشخص",
+      component_status:componentStatus,
+      component_status_label:labels[componentStatus] ?? "نامشخص",
       summary:String(raw.status?.description ?? "").slice(0,240),
       provider_updated_at:raw.page?.updated_at ?? null, checked_at:checkedAt,
       component_count:components.length,
-      components_attention:components.filter((c: any) => c.status !== "operational").length,
+      components_attention:components.filter((c: any) =>
+        c.status !== "operational" && c.status !== "unknown"
+      ).length,
       data_center_count:components.filter((c: any) => c.name.includes(" - (")).length,
       affected_locations:affected.slice(0,30), incidents,
       technical_components:components.slice(0,80), available:true,
@@ -103,6 +115,7 @@ async function fetchProvider(p: typeof PROVIDERS[number]) {
       ...p, status:"unknown", status_label:"نامشخص",
       summary:"وضعیت از صفحهٔ رسمی دریافت نشد.", provider_updated_at:null,
       checked_at:checkedAt, component_count:0, components_attention:0,
+      component_status:"unknown", component_status_label:"نامشخص",
       data_center_count:0, affected_locations:[], incidents:[],
       technical_components:[], available:false,
     };

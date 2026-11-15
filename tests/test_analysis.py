@@ -53,12 +53,13 @@ def test_large_sudden_drop_creates_explained_event():
     result, events = analyze_dashboard([source()], rows, generated_at=NOW)
     assert result["assessment"] == "watch"
     assert result["signals"][0]["current_anomaly"] is True
-    assert any(
-        event["event_type"] == "signal_anomaly"
-        and event["direction"] == "drop"
-        and event["evidence_score"] > 0
-        for event in events
-    )
+    anomaly_events = [
+        event for event in events
+        if event["event_type"] == "signal_anomaly" and event["direction"] == "drop"
+    ]
+    assert anomaly_events
+    assert any(event["evidence_score"] > 0 for event in anomaly_events)
+    assert any(event["lifecycle"] == "active" for event in anomaly_events)
 
 
 def test_stale_source_creates_operational_event_and_is_not_healthy():
@@ -71,6 +72,31 @@ def test_stale_source_creates_operational_event_and_is_not_healthy():
     assert stale_events
     assert stale_events[0]["evidence_score"] is None
     assert stale_events[0]["status_label"] == "هشدار عملیاتی؛ نه رخداد شبکه"
+
+
+def test_collector_error_is_operational_and_has_no_network_evidence_score():
+    rows = observations("ioda:IR:bgp", [1000] * 20)
+    _, events = analyze_dashboard(
+        [source(run_status="error")], rows, generated_at=NOW
+    )
+    collector_events = [event for event in events if event["event_type"] == "collector_error"]
+    assert collector_events
+    assert collector_events[0]["evidence_score"] is None
+    assert collector_events[0]["status_label"] == "هشدار عملیاتی؛ نه رخداد شبکه"
+    assert collector_events[0]["lifecycle"] == "operational"
+
+
+def test_merit_positive_spike_is_explained_as_auxiliary_not_network_drop():
+    source_id = "ioda:IR:merit-nt"
+    rows = observations(source_id, [50] * 27 + [70] * 6)
+    _, events = analyze_dashboard([source(source_id)], rows, generated_at=NOW)
+    merit_events = [
+        event for event in events
+        if event["event_type"] == "signal_anomaly" and event["direction"] == "spike"
+    ]
+    assert merit_events
+    assert "به‌تنهایی نشانهٔ افت اینترنت نیست" in merit_events[0]["description"]
+    assert "شاخص کمکی" in merit_events[0]["status_label"]
 
 
 def test_missing_and_invalid_observations_are_not_zero_filled():
@@ -110,6 +136,9 @@ def test_old_corroborated_events_do_not_keep_current_status_elevated():
     assert any(event["event_type"] == "signal_anomaly" for event in events)
     assert result["assessment"] == "no_anomaly_detected"
     assert result["anomalous_sources"] == 0
+    historical = [event for event in events if event["event_type"] == "signal_anomaly"]
+    assert historical
+    assert all(event["lifecycle"] == "resolved" for event in historical)
 
 
 

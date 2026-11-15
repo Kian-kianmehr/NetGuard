@@ -103,9 +103,9 @@ const eventSeverity = {
   warning: ["هشدار", "warn"], info: ["اطلاع", "neutral"],
 };
 const eventTypeLabel = {
-  signal_anomaly: "انحراف سیگنال",
-  source_stale: "تأخیر در داده",
-  collector_error: "خطای جمع‌آوری",
+  signal_anomaly: "انحراف آماری سیگنال",
+  source_stale: "هشدار تازگی داده",
+  collector_error: "هشدار اجرای جمع‌آوری",
 };
 
 function Badge({ value, map = freshness }) {
@@ -392,8 +392,12 @@ function EventCard({ event }) {
       {event.evidence_score != null && <div><small>امتیاز اولویت بررسی</small><b>{number(event.evidence_score, 0)} از ۱۰۰</b></div>}
     </div>
     <div className="event-bottom">
-      <div><b>{event.source_name || "NetGuard"}</b><small>{time(event.start_at || event.occurred_at)}{event.end_at && event.end_at !== event.start_at ? " تا " + time(event.end_at) : ""}</small></div>
-      <span className={"event-status " + (event.status === "suspected" ? "warn" : "")}>{event.status_label || (event.status === "suspected" ? "مشکوک؛ نیازمند تأیید" : "شناسایی‌شده")}</span>
+      <div><b>{event.source_name || "NetGuard"}</b><small>{event.event_type === "source_stale"
+        ? "آخرین مشاهده: " + time(event.last_observed_at || event.start_at) + " · آخرین بررسی: " + time(event.last_collected_at || event.occurred_at)
+        : event.event_type === "collector_error"
+          ? "آخرین اجرای ناموفق: " + time(event.occurred_at) + " · آخرین مشاهده: " + time(event.last_observed_at)
+          : time(event.start_at || event.occurred_at) + (event.end_at && event.end_at !== event.start_at ? " تا " + time(event.end_at) : "")}</small></div>
+      <span className={"event-status " + (event.lifecycle === "active" || event.status === "suspected" ? "warn" : "")}>{[event.lifecycle_label, event.status_label].filter(Boolean).join(" · ") || (event.status === "suspected" ? "مشکوک؛ نیازمند تأیید" : "وضعیت زمانی نامشخص")}</span>
     </div>
     {event.corroborating_sources?.length > 0 && <div className="corroboration"><ShieldAlert size={14}/> هم‌زمانی با {number(event.corroborating_sources.length, 0)} شاخص مستقل دیگر شناسایی شده است؛ این هم‌زمانی اثبات علت نیست.</div>}
   </article>;
@@ -441,6 +445,8 @@ function ProviderCard({ item }) {
   return <article className="provider-card">
     <div className="provider-card-head"><div><h3>{item.name}</h3><p>{item.description}</p></div><Badge value={item.status} map={providerStatusMap}/></div>
     {item.summary && <p className="provider-summary">{item.summary}</p>}
+    <p className="provider-simple-copy">منبع: صفحهٔ رسمی جهانی · دسترسی از داخل ایران مستقلاً آزمون نشده است.</p>
+    {item.components_attention > 0 && <div className="provider-locations"><b>مؤلفه‌های دارای وضعیت غیرعادی</b><span>{number(item.components_attention, 0)} مورد از {number(item.component_count, 0)} مؤلفهٔ منتشرشده</span>{item.component_status_label && <small>بالاترین شدت در مؤلفه‌ها: {item.component_status_label}</small>}</div>}
     {item.id === "cloudflare" && <div className="provider-datacenter">
       <div><b>{number(item.data_center_count, 0)}</b><span>مرکز یا نقطهٔ حضور در فهرست رسمی</span></div>
       <div><b>{number(item.components_attention, 0)}</b><span>مورد دارای وضعیت غیرعادی</span></div>
@@ -451,7 +457,9 @@ function ProviderCard({ item }) {
     </div>}
     {incidents.length > 0 && <div className="provider-incidents"><b>رخدادهای اعلام‌شده</b>
       {incidents.slice(0, 3).map((incident, index) => <div key={incident.name + index}>
-        <span>{incident.name}</span><small>{incident.impact || incident.status || ""} · {incident.body}</small>
+        <span>{incident.name}</span>
+        {incident.affected_components?.length > 0 && <small>مؤلفه‌های درگیر: {incident.affected_components.join("، ")}</small>}
+        <small>{incident.impact || incident.status || ""} · {incident.body}</small>
       </div>)}
     </div>}
     <div className="provider-card-foot"><span>بررسی نت‌گارد: {time(item.checked_at)}</span>
@@ -969,10 +977,10 @@ export default function App() {
         </table></div> : <Empty title="فهرست مکان‌های جهانی موجود نیست" note="صفحهٔ رسمی Cloudflare هنوز اجزای مکان‌محور قابل نمایش ارائه نکرده است."/>}
         <div className="notice"><Info size={17}/><div><b>تفاوت با وضعیت اینترنت ایران</b><p>وضعیت عادی در یک مرکز خارجی فقط سلامت اعلام‌شدهٔ همان شرکت را نشان می‌دهد. برای فهمیدن اینکه کاربران ایران به آن مرکز یا سرویس دسترسی دارند، باید آزمون اتصال از داخل ایران داشته باشیم.</p></div></div>
       </Panel>
-      <Panel tag="سرویس‌های جهانی" title="زیرساخت ابری و میزبانی" note="صفحه‌های رسمی این شرکت‌ها رخدادهای اعلام‌شده در سطح سرویس را نشان می‌دهند؛ این بخش directory مراکز داده نیست.">
+      <Panel tag="سرویس‌های جهانی" title="زیرساخت ابری و میزبانی" note="اطلاعات از صفحه‌های رسمی جهانی است، نه آزمون اتصال از داخل ایران. وضعیت کلی صفحه و وضعیت مؤلفه‌های دارای مشکل جداگانه نمایش داده می‌شوند؛ این بخش فهرست مراکز داده نیست.">
         <div className="provider-grid">{infra.filter((item) => item.id !== "cloudflare").map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
       </Panel>
-      <Panel tag="ابزارهای توسعه" title="سرویس‌های کدنویسی و همکاری" note="وضعیت جهانی ابزارهای توسعه؛ این اطلاعات دسترسی مستقیم از شبکه‌های ایران را نشان نمی‌دهد.">
+      <Panel tag="ابزارهای توسعه" title="سرویس‌های کدنویسی و همکاری" note="وضعیت اعلام‌شدهٔ جهانی سرویس‌ها؛ برای سنجش دسترسی از داخل ایران به آزمون اتصال مستقل نیاز است.">
         <div className="provider-grid">{developer.map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
       </Panel>
       <div className="toolbar-note">آخرین بررسی جهانی: {time(providerData.checked_at)} · فهرست داخل ایران: {time(datacenterData.snapshot_at)} · snapshotها هر ۱۰ دقیقه ذخیره می‌شوند و بازدید صفحه باعث جمع‌آوری تازه نمی‌شود.</div>
@@ -1012,12 +1020,12 @@ export default function App() {
     }) : <Empty title="سیگنالی برای تحلیل موجود نیست" note="اتصال منبع داده یا پاسخ API را بررسی کنید."/>}
   </div>;
   else if (page === "events") body = <div className="stack">
-    <div className="intro page-intro"><small><AlertTriangle size={14}/> دفتر رخدادها</small><h2>رخدادهای شناسایی‌شده</h2><p>انحراف آماری، تأخیر داده و خطای جمع‌آوری از هم جدا هستند. رخداد چندسیگناله همچنان «مشکوک» است و خودکار تأیید قطعی نمی‌شود.</p></div>
+    <div className="intro page-intro"><small><AlertTriangle size={14}/> دفتر رخدادها</small><h2>رخدادهای شناسایی‌شده</h2><p>انحراف آماری، تأخیر داده و خطای جمع‌آوری جدا هستند. هر مورد وضعیت زمانی مستقل دارد: در جریان، پایان‌یافته یا سابقهٔ تاریخی. «مشکوک» نیز درجهٔ تأیید شواهد است، نه وضعیت زمانی رخداد.</p></div>
     <div className="metrics">
-      <Stat icon={AlertTriangle} label="کل رخدادها" value={number(events.length, 0)} hint="رخدادهای پنجرهٔ انتخابی"/>
-      <Stat icon={ShieldAlert} label="شدت بالا یا بحرانی" value={number(events.filter((event) => ["critical", "high"].includes(event.severity)).length, 0)} hint="نیازمند توجه"/>
-      <Stat icon={Signal} label="رخداد چندسیگناله" value={number(events.filter((event) => event.status === "suspected").length, 0)} hint="نیازمند تأیید مستقل"/>
-      <Stat icon={Clock3} label="مشکلات جمع‌آوری" value={number(events.filter((event) => ["source_stale", "collector_error"].includes(event.event_type)).length, 0)} hint="عملیاتی، نه الزاماً اختلال شبکه"/>
+      <Stat icon={AlertTriangle} label="رخدادهای جاری" value={number(events.filter((event) => event.lifecycle === "active").length, 0)} hint="ناهنجاری با دادهٔ تازه"/>
+      <Stat icon={Clock3} label="رخدادهای پایان‌یافته" value={number(events.filter((event) => event.lifecycle === "resolved").length, 0)} hint="در تاریخچهٔ بازهٔ انتخابی"/>
+      <Stat icon={ShieldAlert} label="شدت بالا یا بحرانی" value={number(events.filter((event) => ["critical", "high"].includes(event.severity)).length, 0)} hint="در کل بازهٔ انتخابی"/>
+      <Stat icon={Signal} label="هشدارهای عملیاتی" value={number(events.filter((event) => ["source_stale", "collector_error"].includes(event.event_type)).length, 0)} hint="وضعیت داده و جمع‌آوری؛ نه رخداد شبکه"/>
     </div>
     <div className="toolbar">
       <div className="range-tabs">

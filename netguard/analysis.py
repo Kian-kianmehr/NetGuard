@@ -635,6 +635,47 @@ def analyze_dashboard(
         )
 
         source_events = _history_events(source, rows, interval_seconds=interval)
+        latest_time = latest["_time"] if latest else None
+        for event in source_events:
+            event_end = _parse_time(event.get("end_at"))
+            later_observations = [
+                row for row in rows
+                if event_end is not None and row["_time"] > event_end
+            ]
+            lifecycle_window = max(stale_after, interval * 3, 900)
+            age_after_event = (
+                (now - event_end).total_seconds() if event_end is not None else None
+            )
+            age_to_latest = (
+                (latest_time - event_end).total_seconds()
+                if latest_time is not None and event_end is not None else None
+            )
+            if (
+                current_anomaly
+                and age_to_latest is not None
+                and 0 <= age_to_latest <= lifecycle_window
+            ):
+                event["lifecycle"] = "active"
+                event["lifecycle_label"] = "در جریان؛ ناهنجاری جاری است"
+            elif data_state == "usable" and later_observations and not current_anomaly:
+                event["lifecycle"] = "resolved"
+                event["lifecycle_label"] = "پایان‌یافته در داده‌های جدیدتر"
+            elif later_observations or (
+                age_after_event is not None and age_after_event > lifecycle_window
+            ):
+                event["lifecycle"] = "historical"
+                event["lifecycle_label"] = "سابقهٔ ناهنجاری؛ وضعیت فعلی جداگانه سنجیده می‌شود"
+            else:
+                event["lifecycle"] = "unknown"
+                event["lifecycle_label"] = "زمان وضعیت فعلی نامشخص"
+            event["last_observed_at"] = source.get("last_observed_at")
+            event["last_collected_at"] = source.get("last_collected_at")
+            if source.get("signal") == "merit-nt" and event.get("direction") == "spike":
+                event["status_label"] = "انحراف در شاخص کمکی؛ نه شاهد مستقیم افت اینترنت"
+                event["description"] += (
+                    " این شاخص کمکی است؛ افزایش آن به‌تنهایی نشانهٔ افت اینترنت نیست "
+                    "و می‌تواند از تغییر الگوی ترافیک یا پوشش تلسکوپ اثر بگیرد."
+                )
         events.extend(source_events)
 
         if data_state == "stale":
@@ -661,6 +702,10 @@ def analyze_dashboard(
                 "corroboration": "operational",
                 "status": "detected",
                 "status_label": "هشدار عملیاتی؛ نه رخداد شبکه",
+                "lifecycle": "operational",
+                "lifecycle_label": "دادهٔ منبع قدیمی",
+                "last_observed_at": source.get("last_observed_at"),
+                "last_collected_at": source.get("last_collected_at"),
                 "scope": "country",
             })
         elif source.get("last_run_status") in ("error", "no_data"):
@@ -682,12 +727,16 @@ def analyze_dashboard(
                 "end_at": source.get("last_run_started_at"),
                 "occurred_at": source.get("last_run_started_at"),
                 "severity": "warning",
-                "evidence_score": 60,
+                "evidence_score": None,
                 "robust_z_score": None,
                 "sample_count": sample_count,
                 "corroboration": "operational",
                 "status": "detected",
-                "status_label": "مشکل جمع‌آوری",
+                "status_label": "هشدار عملیاتی؛ نه رخداد شبکه",
+                "lifecycle": "operational",
+                "lifecycle_label": "اجرای جمع‌آوری ناموفق",
+                "last_observed_at": source.get("last_observed_at"),
+                "last_collected_at": source.get("last_collected_at"),
                 "scope": "country",
             })
 
