@@ -163,3 +163,33 @@ def test_one_hour_trend_labels_improvement_when_both_primary_signals_rise():
         [source(first), source(second)], rows, generated_at=NOW
     )
     assert result["public_summary"]["trend_state"] == "improving"
+
+
+def test_quality_report_separates_window_coverage_and_observed_span():
+    bgp = "ioda:IR:bgp"
+    ping = "ioda:IR:ping-slash24"
+    rows = observations(bgp, [1000 + (index % 2) for index in range(36)])
+    rows += observations(ping, [800 + (index % 2) for index in range(36)])
+    result, _ = analyze_dashboard(
+        [source(bgp), source(ping)], rows, generated_at=NOW, window_hours=168
+    )
+    quality = result["data_quality"]
+    assert quality["window_hours"] == 168
+    assert quality["valid_observations"] == 72
+    assert quality["window_coverage_percent"] < 10
+    details = {item["signal"]: item for item in quality["source_details"]}
+    assert details["bgp"]["expected_interval_seconds"] == 300
+    assert details["ping-slash24"]["expected_interval_seconds"] == 600
+    assert details["bgp"]["observed_span_hours"] > 2
+    assert details["ping-slash24"]["median_gap_seconds"] == 300
+
+
+def test_quality_report_does_not_treat_missing_samples_as_zero():
+    bgp = "ioda:IR:bgp"
+    sparse = observations(bgp, [1000, 1000, 1000, 1000], step=1800)
+    result, _ = analyze_dashboard([source(bgp)], sparse, generated_at=NOW, window_hours=24)
+    quality = result["data_quality"]["source_details"][0]
+    assert quality["valid_samples"] == 4
+    assert quality["invalid_samples"] == 0
+    assert quality["gaps_over_expected_threshold"] >= 1
+    assert result["signals"][0]["current_anomaly"] is False
