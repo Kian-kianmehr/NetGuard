@@ -389,7 +389,7 @@ function EventCard({ event }) {
       {event.change_percent != null && <div><small>تغییر نسبت به مبنا</small><b className={event.change_percent < 0 ? "negative" : "positive"}>{event.change_percent > 0 ? "+" : ""}{number(event.change_percent)}٪</b></div>}
       {event.baseline_value != null && <div><small>خط مبنا</small><b>{number(event.baseline_value)} <em>{event.unit}</em></b></div>}
       {event.observed_value != null && <div><small>مقدار مشاهده‌شده</small><b>{number(event.observed_value)} <em>{event.unit}</em></b></div>}
-      <div><small>امتیاز شواهد</small><b>{number(event.evidence_score, 0)} از ۱۰۰</b></div>
+      {event.evidence_score != null && <div><small>امتیاز اولویت بررسی</small><b>{number(event.evidence_score, 0)} از ۱۰۰</b></div>}
     </div>
     <div className="event-bottom">
       <div><b>{event.source_name || "NetGuard"}</b><small>{time(event.start_at || event.occurred_at)}{event.end_at && event.end_at !== event.start_at ? " تا " + time(event.end_at) : ""}</small></div>
@@ -857,21 +857,21 @@ export default function App() {
       <div className="metrics">
         <Stat icon={BrainCircuit} label="مدل" value={intelligence.model_name || "در حال آماده‌سازی"} hint={intelligence.model_status_label || "تاریخچهٔ کافی لازم است"}/>
         <Stat icon={Gauge} label="امتیاز نشانه‌های افت" value={forecast.risk_index == null ? "—" : <span dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</span>} hint="امتیاز آزمایشی؛ نه درصد احتمال اختلال"/>
-        <Stat icon={Activity} label="شاخص‌های آموزش‌دیده" value={number(intelligence.trained_signals, 0)} hint="مدل جداگانه برای هر شاخص"/>
+        <Stat icon={Activity} label="مدل‌های آموزش‌دیده" value={number(intelligence.trained_signals, 0)} hint="مدل مستقل با تاریخچهٔ آموزشی کافی؛ تازگی داده جداگانه سنجیده می‌شود"/>
         <Stat icon={AlertTriangle} label="رفتارهای غیرمعمول" value={number(modelSignals.filter((item) => item.is_anomaly).length, 0)} hint="نیازمند بررسی چندمنبعی"/>
         <Stat icon={Clock3} label="افق‌های برآورد" value="۱۵، ۳۰، ۶۰ دقیقه" hint="امتداد آزمایشی روند"/>
       </div>
       <Panel tag="پیش‌بینی آزمایشی" title="ریسک افت در افق ۳۰ دقیقه" note={forecast.note || "برآورد پس از دریافت دادهٔ کافی نمایش داده می‌شود."}>
-        {forecast.available ? <>
-          <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>امتیاز نشانه‌های افت در دو شاخص اصلی</small><strong dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</strong><span>{forecast.risk_label}</span></div><p>این امتیاز از تغییرات اخیر دو شاخص اصلی ساخته می‌شود. صفر یعنی در همین محاسبه نشانهٔ کافی از افت پیدا نشده؛ نه اینکه خطر صفر باشد یا قطعی رخ ندهد.</p></div>
-          <div className="forecast-grid">{forecast.components.map((item) => <article key={item.signal}>
-            <small>{item.signal === "bgp" ? "مسیرهای قابل مشاهدهٔ اینترنت" : "پاسخ‌گویی نشانی‌های نمونه"}</small>
+        {forecast.available ? <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>امتیاز نشانه‌های افت با تأیید هم‌زمان دو شاخص اصلی</small><strong dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</strong><span>{forecast.risk_label}</span></div><p>این امتیاز فقط وقتی منتشر می‌شود که هر دو شاخص اصلی دادهٔ تازه و نمونهٔ کافی داشته باشند؛ صفر نیز به معنی نبود خطر قطعی نیست.</p></div> : <div className="notice"><Info size={17}/><div><b>امتیاز ترکیبی ملی فعلاً قابل انتشار نیست</b><p>{forecast.note || "برای جمع‌بندی هم‌زمان، دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی لازم است."} بااین‌حال، هر شاخصی که به‌تنهایی شرایط محاسبه را داشته باشد، جداگانه در پایین نمایش داده می‌شود.</p></div></div>}
+        {(forecast.components || []).some((item) => item.available) ? <>
+          <div className="forecast-grid">{forecast.components.filter((item) => item.available).map((item) => <article key={item.signal}>
+            <small>{item.signal === "bgp" ? "دیدپذیری مسیرهای اینترنت (BGP)" : "پاسخ‌گویی شبکه در پایش فعال"}</small>
             <div className="forecast-horizons">{(item.horizon_projections || []).map((point) => <div key={point.minutes}><small>{number(point.minutes, 0)} دقیقه</small><b className={point.projected_change_percent < 0 ? "negative" : "positive"}>{point.projected_change_percent > 0 ? "+" : ""}{number(point.projected_change_percent)}٪</b><span>مقدار تخمینی: {number(point.projected_value)}</span></div>)}</div>
             <span>آخرین مشاهده: {number((item.observation_age_seconds || 0) / 60, 0)} دقیقه قبل · مقدار فعلی {number(item.current_value)}</span>
-            <span>امتیاز ناهنجاری: {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span>
+            <span>تغییر مشاهده‌شده در ۳۰ دقیقه: {number(item.projected_change_30m_percent)}٪ · امتیاز ناهنجاری: {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span>
           </article>)}</div>
-          <p className="forecast-method-note">مقادیر ۱۵، ۳۰ و ۶۰ دقیقه، امتداد سادهٔ روند دو پنجرهٔ ۳۰ دقیقه‌ای اخیر هستند؛ مدل پیش‌بینی آموزش‌دیده یا احتمال آماری محسوب نمی‌شوند.</p>
-        </> : <Empty title="هنوز برآورد هم‌زمان ممکن نیست" note={forecast.note || "برای هر دو شاخص اصلی باید تاریخچهٔ معتبر بیشتری جمع شود."}/>}
+          <p className="forecast-method-note">این مقادیر امتداد خطی روند دو پنجرهٔ ۳۰ دقیقه‌ای هستند، نه احتمال آماری یا پیش‌بینی قطعی. خروجی تک‌شاخصی جای امتیاز ترکیبی دو شاخص را نمی‌گیرد.</p>
+        </> : <Empty title="برای هیچ شاخصی برآورد مستقل آماده نیست" note="برای هر شاخص باید دادهٔ تازه و نمونهٔ کافی در دو پنجرهٔ ۳۰ دقیقه‌ای موجود باشد."/>}
       </Panel>
       <Panel tag="تحلیل شواهد" title="فرضیه‌های علت احتمالی" note={cause.scope_note || "این تحلیل علت قطعی اختلال را تعیین نمی‌کند."}>
         <div className="cause-card">
