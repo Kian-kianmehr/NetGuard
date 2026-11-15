@@ -61,6 +61,26 @@ def test_forecast_is_explicitly_not_a_calibrated_probability():
     assert all(item["method"] == "linear_trend_extension" for item in projections)
 
 
+def test_forecast_uses_fresh_ping_when_bgp_observation_is_too_old():
+    sources, rows = [], []
+    for source_id, signal, base in (
+        ("ioda:IR:bgp", "bgp", 1000),
+        ("ioda:IR:ping-slash24", "ping-slash24", 900),
+    ):
+        source, source_rows = make_data([base] * 48, source_id, signal)
+        sources.append(source)
+        rows.extend(source_rows)
+    latest = datetime.fromisoformat(max(row["observed_at"] for row in rows))
+    result = analyze_intelligence(sources, rows, now=latest + timedelta(minutes=20))
+    forecast = result["forecast"]
+    by_signal = {item["signal"]: item for item in forecast["components"]}
+    assert forecast["available"] is False
+    assert forecast["risk_index"] is None
+    assert by_signal["bgp"]["available"] is False
+    assert "سه فاصلهٔ معمول" in by_signal["bgp"]["reason"]
+    assert by_signal["ping-slash24"]["available"] is True
+
+
 def test_cause_analysis_requires_correlated_primary_signals():
     sources, rows = [], []
     for source_id, signal, base in (
