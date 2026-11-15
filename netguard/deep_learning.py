@@ -99,15 +99,15 @@ def forecast_series(
     x_train_raw, y_train_raw = x_raw[:split], y_raw[:split]
     x_valid_raw, y_valid_raw = x_raw[split:], y_raw[split:]
 
-    train_distribution = np.concatenate((x_train_raw.reshape(-1), y_train_raw.reshape(-1)))
+    train_distribution = x_train_raw.reshape(-1)
     center = float(np.median(train_distribution))
     mad = float(np.median(np.abs(train_distribution - center)))
     scale = max(1.4826 * mad, abs(center) * 0.01, 1.0)
 
     x_train = np.clip((x_train_raw - center) / scale, -8.0, 8.0)
-    y_train = np.clip((y_train_raw - center) / scale, -8.0, 8.0)
+    y_train = np.clip((y_train_raw - x_train_raw[:, -1:]) / scale, -8.0, 8.0)
     x_valid = np.clip((x_valid_raw - center) / scale, -8.0, 8.0)
-    y_valid = np.clip((y_valid_raw - center) / scale, -8.0, 8.0)
+    y_valid = np.clip((y_valid_raw - x_valid_raw[:, -1:]) / scale, -8.0, 8.0)
 
     rng = np.random.default_rng(20261115)
     input_size = SEQUENCE_LENGTH
@@ -189,7 +189,7 @@ def forecast_series(
         predict_normalized(row) for row in x_valid
     ], dtype=np.float64)
     neural_mae = float(np.mean(np.abs(validation_predictions - y_valid.reshape(-1))))
-    baseline_mae = float(np.mean(np.abs(x_valid[:, -1] - y_valid.reshape(-1))))
+    baseline_mae = float(np.mean(np.abs(y_valid.reshape(-1))))
     # Permit a small tolerance for near-constant signals, but reject a model
     # that is materially worse than simply carrying the last observation.
     if neural_mae > baseline_mae * 1.20 + 0.02:
@@ -210,8 +210,8 @@ def forecast_series(
     max_steps = max(1, ceil(max(horizons) / interval_minutes))
     recursive_predictions = []
     for _ in range(max_steps):
-        next_value = predict_normalized(sequence[-SEQUENCE_LENGTH:])
-        next_value = max(-8.0, min(8.0, next_value))
+        predicted_delta = predict_normalized(sequence[-SEQUENCE_LENGTH:])
+        next_value = max(-8.0, min(8.0, sequence[-1] + predicted_delta))
         sequence.append(next_value)
         recursive_predictions.append(max(0.0, center + next_value * scale))
 
