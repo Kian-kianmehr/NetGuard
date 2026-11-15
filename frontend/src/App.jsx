@@ -15,6 +15,12 @@ const NAV = [
   ["method", "روش‌شناسی", BookOpen],
 ];
 const API = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+const PUBLIC_INTEREST_DOMAINS = new Set([
+  "facebook.com", "youtube.com", "instagram.com", "twitter.com", "x.com",
+  "discord.com", "tiktok.com", "vk.com", "clubhouse.com", "reddit.com",
+  "telegram.org", "t.me", "whatsapp.com", "linkedin.com", "pinterest.com",
+  "medium.com", "9gag.com",
+]);
 const number = (value, digits = 1) => value == null || !Number.isFinite(Number(value))
   ? "—"
   : new Intl.NumberFormat("fa-IR", { maximumFractionDigits: digits }).format(Number(value));
@@ -240,7 +246,16 @@ export default function App() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "دریافت فهرست سایت‌ها ناموفق بود.");
-      setCensorship({ ...payload, error: "", busy: false });
+      const publicDomains = (payload.domains || []).filter((item) =>
+        PUBLIC_INTEREST_DOMAINS.has(item.domain)
+      );
+      setCensorship({
+        ...payload,
+        domains: publicDomains,
+        scope_note: payload.scope_note || "نمای عمومی فقط سرویس‌های عمومی منتخب را نشان می‌دهد.",
+        error: "",
+        busy: false,
+      });
     } catch (error) {
       setCensorship((value) => ({
         ...value, busy: false, error: error.message || "فهرست سایت‌ها در دسترس نیست.",
