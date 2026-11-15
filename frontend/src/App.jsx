@@ -446,7 +446,7 @@ function ProviderCard({ item }) {
     <div className="provider-card-head"><div><h3>{item.name}</h3><p>{item.description}</p></div><Badge value={item.status} map={providerStatusMap}/></div>
     {item.summary && <p className="provider-summary">{item.summary}</p>}
     <p className="provider-simple-copy">منبع: صفحهٔ رسمی جهانی · دسترسی از داخل ایران مستقلاً آزمون نشده است.</p>
-    {item.components_attention > 0 && <div className="provider-locations"><b>مؤلفه‌های دارای وضعیت غیرعادی</b><span>{number(item.components_attention, 0)} مورد از {number(item.component_count, 0)} مؤلفهٔ منتشرشده</span>{item.component_status_label && <small>بالاترین شدت در مؤلفه‌ها: {item.component_status_label}</small>}</div>}
+    {item.components_attention > 0 && item.component_count > 0 && <div className="provider-locations"><b>مؤلفه‌های دارای وضعیت غیرعادی</b><span>{number(item.components_attention, 0)} مورد از {number(item.component_count, 0)} مؤلفهٔ منتشرشده</span>{item.component_status_label && <small>بالاترین شدت در مؤلفه‌ها: {item.component_status_label}</small>}</div>}
     {item.id === "cloudflare" && <div className="provider-datacenter">
       <div><b>{number(item.data_center_count, 0)}</b><span>مرکز یا نقطهٔ حضور در فهرست رسمی</span></div>
       <div><b>{number(item.components_attention, 0)}</b><span>مورد دارای وضعیت غیرعادی</span></div>
@@ -865,7 +865,7 @@ export default function App() {
       <div className="metrics">
         <Stat icon={BrainCircuit} label="مدل" value={intelligence.model_name || "در حال آماده‌سازی"} hint={intelligence.model_status_label || "تاریخچهٔ کافی لازم است"}/>
         <Stat icon={Gauge} label="امتیاز نشانه‌های افت" value={forecast.risk_index == null ? "—" : <span dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</span>} hint="امتیاز آزمایشی؛ نه درصد احتمال اختلال"/>
-        <Stat icon={Activity} label="مدل‌های آموزش‌دیده" value={number(intelligence.trained_signals, 0)} hint="مدل مستقل با تاریخچهٔ آموزشی کافی؛ تازگی داده جداگانه سنجیده می‌شود"/>
+        <Stat icon={Activity} label="شاخص‌های آمادهٔ امتیازدهی" value={number(intelligence.trained_signals, 0)} hint={"از " + number(modelSignals.length, 0) + " شاخص؛ دادهٔ تازه و تاریخچهٔ کافی لازم است"}/>
         <Stat icon={AlertTriangle} label="رفتارهای غیرمعمول" value={number(modelSignals.filter((item) => item.is_anomaly).length, 0)} hint="نیازمند بررسی چندمنبعی"/>
         <Stat icon={Clock3} label="افق‌های برآورد" value="۱۵، ۳۰، ۶۰ دقیقه" hint="امتداد آزمایشی روند"/>
       </div>
