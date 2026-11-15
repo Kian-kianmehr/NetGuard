@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownRight, BookOpen, CheckCircle2, CircleHelp,
   Clock3, Database, Globe2, Info, RadioTower, RefreshCw, ShieldAlert,
-  ShieldCheck, Signal, Sparkles, TrendingDown, TrendingUp, Zap
+  ShieldCheck, Signal, TrendingDown, TrendingUp
 } from "lucide-react";
 
 const NAV = [
   ["overview", "نمای کلی", Globe2],
-  ["analysis", "تحلیل هوشمند", Sparkles],
+  ["analysis", "تحلیل وضعیت", Activity],
   ["signals", "سیگنال‌ها", Signal],
   ["events", "رخدادها", AlertTriangle],
   ["sources", "منابع داده", Database],
@@ -260,7 +260,7 @@ export default function App() {
       )}
     </div>
     <div className="columns">
-      <Panel tag="تحلیل هوشمند" title={analysis.assessment_label || "منتظر داده"} note={analysis.summary || "تحلیل پس از دریافت تاریخچهٔ کافی نمایش داده می‌شود."}>
+      <Panel tag="تحلیل وضعیت" title={analysis.assessment_label || "منتظر داده"} note={analysis.summary || "تحلیل پس از دریافت تاریخچهٔ کافی نمایش داده می‌شود."}>
         <div className="inline-meta"><Badge value={analysis.assessment} map={Object.fromEntries(Object.entries(assessmentTone).map(([key, tone]) => [key, [analysis.assessment_label || key, tone]]))}/><span>پوشش داده: {number(analysis.data_coverage_percent, 0)}٪</span></div>
         <button className="text-action" onClick={() => setPage("analysis")}>مشاهدهٔ تحلیل کامل <ArrowDownRight size={15}/></button>
       </Panel>
@@ -275,12 +275,12 @@ export default function App() {
     const AssessmentIcon = assessmentIcon[analysis.assessment] || CircleHelp;
     const tone = assessmentTone[analysis.assessment] || "neutral";
     body = <div className="stack">
-      <div className="intro page-intro"><small><Sparkles size={14}/> موتور تحلیل هوشمند NetGuard</small><h2>تحلیل وضعیت شبکه</h2><p>ارزیابی توضیح‌پذیر از رفتار سیگنال‌های ملی، کفایت داده و رخدادهای شناسایی‌شده.</p></div>
+      <div className="intro page-intro"><small><Activity size={14}/> گزارش پایش ملی</small><h2>ارزیابی وضعیت شبکه</h2><p>ارزیابی توضیح‌پذیر از رفتار سیگنال‌های ملی، کفایت داده و رخدادهای شناسایی‌شده.</p></div>
       <PublicAssessment summary={analysis.public_summary}/>
       <section className={"analysis-hero " + tone}>
         <div className="analysis-mark"><AssessmentIcon size={27}/></div>
         <div className="analysis-main"><small>ارزیابی فعلی</small><h2>{analysis.assessment_label || "دادهٔ کافی نیست"}</h2><p>{analysis.summary || "پس از دریافت دادهٔ معتبر، تحلیل نمایش داده می‌شود."}</p>
-          <div className="analysis-stamp"><span><Clock3 size={13}/> {time(analysis.generated_at || data.generated_at)}</span><span><Zap size={13}/> {analysis.engine || "NetGuard Analytics"}</span></div>
+          <div className="analysis-stamp"><span><Clock3 size={13}/> {time(analysis.generated_at || data.generated_at)}</span><span><RadioTower size={13}/> بررسی چندمنبعی</span></div>
         </div>
         <div className="coverage-ring" style={{ "--coverage": (analysis.data_coverage_percent || 0) + "%" }}><b>{number(analysis.data_coverage_percent, 0)}٪</b><small>کفایت داده</small></div>
       </section>
@@ -290,7 +290,7 @@ export default function App() {
         <Stat icon={RadioTower} label="منابع تازه" value={number(analysis.fresh_sources, 0)} hint="بر اساس زمان مشاهده"/>
         <Stat icon={Activity} label="رخدادهای پنجره" value={number(analysis.events_count, 0)} hint="رخدادهای شناسایی‌شده"/>
       </div>
-      <Panel tag="خروجی مدل" title="یافته‌های اصلی" note="هر یافته به دادهٔ مشخص متصل است و نتیجهٔ قطعی دربارهٔ علت اختلال ارائه نمی‌کند.">
+      <Panel tag="نتیجهٔ بررسی شاخص‌ها" title="یافته‌های اصلی" note="هر یافته به دادهٔ مشخص متصل است و نتیجهٔ قطعی دربارهٔ علت اختلال ارائه نمی‌کند.">
         {signals.length ? <div className="finding-list">{signals.map((signal) =>
           <article className="finding" key={signal.source_id}>
             <div className="finding-top"><div><b>{signal.display_name}</b><small>{signal.provider} · {signal.signal}</small></div><Badge value={signal.data_state} map={{usable:["دادهٔ قابل استفاده","good"],insufficient:["تاریخچه ناکافی","neutral"],stale:["داده قدیمی","warn"],limited:["داده محدود","neutral"]}}/></div>
@@ -307,11 +307,11 @@ export default function App() {
         <Panel tag="منطق تحلیل" title="چطور به این نتیجه رسیدیم؟">
           <ol className="method-steps">{(analysis.method || []).map((method, index) => <li key={method}><i>{number(index + 1, 0)}</i><span>{method}</span></li>)}</ol>
         </Panel>
-        <Panel tag="محدودیت مدل" title="تفسیر درست نتیجه">
+        <Panel tag="محدودیت‌های ارزیابی" title="تفسیر درست نتیجه">
           <ul className="caveats">{(analysis.limitations || []).map((item) => <li key={item}>{item}</li>)}</ul>
         </Panel>
       </div>
-      <div className="notice"><Info size={17}/><div><b>دربارهٔ هوش مصنوعی این نسخه</b><p>این نسخه از تشخیص ناهنجاری توضیح‌پذیر بر پایهٔ میانه، MAD و هم‌زمانی شاخص‌های مستقل استفاده می‌کند. برای حفظ اجرای رایگان، داده به API مدل زبانی خارجی فرستاده نمی‌شود؛ امتیاز شواهد نیز احتمال وقوع اختلال نیست.</p></div></div>
+      <div className="notice"><Info size={17}/><div><b>مبنای ارزیابی</b><p>NetGuard رفتار هر شاخص را با سابقهٔ همان شاخص مقایسه می‌کند، تغییرات هم‌زمان را میان منابع مستقل می‌سنجد و داده‌های ناقص یا قدیمی را جداگانه در نظر می‌گیرد. نتیجهٔ آماری به‌تنهایی علت اختلال را اثبات نمی‌کند.</p></div></div>
     </div>;
   }
   else if (page === "signals") body = <div className="stack">

@@ -7,7 +7,7 @@ from statistics import median
 from typing import Any
 
 
-ENGINE_NAME = "NetGuard Explainable Anomaly Engine v1"
+ASSESSMENT_NAME = "NetGuard Network Assessment"
 MIN_BASELINE_POINTS = 12
 MIN_CHANGE_PERCENT = 25.0
 MIN_ROBUST_Z = 3.5
@@ -659,8 +659,8 @@ def analyze_dashboard(
     ) if source_count else 0
 
     analysis = {
-        "engine": ENGINE_NAME,
-        "engine_type": "explainable_robust_statistics",
+        "engine": ASSESSMENT_NAME,
+        "engine_type": "network_assessment",
         "assessment": assessment,
         "assessment_label": {
             "elevated_attention": "هشدار چندسیگناله",
@@ -684,7 +684,7 @@ def analyze_dashboard(
             "جداسازی تازگی داده از وضعیت واقعی شبکه",
         ],
         "limitations": [
-            "این نسخه از تحلیل آماری توضیح‌پذیر و محلی استفاده می‌کند؛ مدل زبانی خارجی یا API پولی فراخوانی نمی‌شود.",
+            "ارزیابی با مقایسهٔ آماری هر شاخص با سابقهٔ خودش و بررسی هم‌زمانی شاخص‌های مستقل انجام می‌شود.",
             "امتیاز شواهد احتمال وقوع اختلال نیست و به‌عنوان احتمال کالیبره‌شده تفسیر نمی‌شود.",
             "داده‌ها در سطح ملی‌اند و وضعیت شهر، استان یا اپراتور را مشخص نمی‌کنند.",
             "یک سیگنال منفرد یا کاهش یک شاخص، فیلترینگ، تحریم یا قطعی را اثبات نمی‌کند.",
