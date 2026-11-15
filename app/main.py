@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from time import monotonic
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote
@@ -227,8 +228,19 @@ def _build_dashboard_snapshots(client: httpx.Client) -> dict[str, dict[str, Any]
     return snapshots
 
 
+_SNAPSHOT_CACHE_TTL_SECONDS = 60
+_SNAPSHOT_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_SNAPSHOT_CACHE_LOCK = __import__("threading").Lock()
+
+
 def _read_snapshot(dataset_key: str, *, stale_after_seconds: int) -> dict[str, Any]:
     project_url, key = _supabase_config()
+    cache_key = f"{project_url}:{dataset_key}"
+    now = monotonic()
+    with _SNAPSHOT_CACHE_LOCK:
+        cached = _SNAPSHOT_CACHE.get(cache_key)
+        if cached and now - cached[0] < _SNAPSHOT_CACHE_TTL_SECONDS:
+            return dict(cached[1])
     try:
         with httpx.Client(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
             rows = _read_view(
@@ -254,6 +266,8 @@ def _read_snapshot(dataset_key: str, *, stale_after_seconds: int) -> dict[str, A
         payload["is_stale"] = (datetime.now(timezone.utc) - collected).total_seconds() > stale_after_seconds
     except (TypeError, ValueError):
         payload["is_stale"] = True
+    with _SNAPSHOT_CACHE_LOCK:
+        _SNAPSHOT_CACHE[cache_key] = (monotonic(), payload)
     return payload
 
 
