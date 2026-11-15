@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from netguard.analysis import analyze_dashboard
 
@@ -35,6 +35,11 @@ def observations(source_id, values, step=300):
     ]
 
 
+def after_latest_observation(rows):
+    latest = max(datetime.fromisoformat(row["observed_at"].replace("Z", "+00:00")) for row in rows)
+    return latest + timedelta(minutes=5)
+
+
 def test_observations_far_behind_source_cadence_are_limited_and_operational():
     item = source()
     item["expected_interval_seconds"] = 300
@@ -68,7 +73,9 @@ def test_stable_series_is_not_reported_as_an_anomaly():
 def test_large_sudden_drop_creates_explained_event():
     values = [1000 + (index % 3) for index in range(27)] + [500, 480, 470, 450, 430, 410]
     rows = observations("ioda:IR:bgp", values)
-    result, events = analyze_dashboard([source()], rows, generated_at=NOW)
+    item = source()
+    item["last_observed_at"] = rows[-1]["observed_at"]
+    result, events = analyze_dashboard([item], rows, generated_at=after_latest_observation(rows))
     assert result["assessment"] == "watch"
     assert result["signals"][0]["current_anomaly"] is True
     anomaly_events = [
@@ -133,8 +140,13 @@ def test_two_independent_simultaneous_drops_are_only_suspected():
     second = "ioda:IR:ping-slash24"
     rows = observations(first, [1000] * 27 + [500, 480, 470, 450, 430, 410])
     rows += observations(second, [800] * 27 + [400, 390, 380, 360, 340, 320])
+    sources = [source(first), source(second)]
+    for item in sources:
+        item["last_observed_at"] = max(
+            row["observed_at"] for row in rows if row["source_id"] == item["source_id"]
+        )
     result, events = analyze_dashboard(
-        [source(first), source(second)], rows, generated_at=NOW
+        sources, rows, generated_at=after_latest_observation(rows)
     )
     assert result["assessment"] == "elevated_attention"
     flagged = [event for event in events if event["event_type"] == "signal_anomaly"]
@@ -196,7 +208,8 @@ def test_public_summary_does_not_call_a_single_signal_a_national_outage():
     first = "ioda:IR:bgp"
     values = [1000] * 27 + [500, 480, 470, 450, 430, 410]
     result, _ = analyze_dashboard(
-        [source(first)], observations(first, values), generated_at=NOW
+        [source(first)], observations(first, values),
+        generated_at=after_latest_observation(observations(first, values))
     )
     public = result["public_summary"]
     assert public["condition"] == "attention"
@@ -210,7 +223,8 @@ def test_one_hour_trend_labels_improvement_when_both_primary_signals_rise():
     rows = observations(first, [1000] * 12 + [1100] * 12)
     rows += observations(second, [800] * 12 + [900] * 12)
     result, _ = analyze_dashboard(
-        [source(first), source(second)], rows, generated_at=NOW
+        [source(first), source(second)], rows,
+        generated_at=after_latest_observation(rows)
     )
     assert result["public_summary"]["trend_state"] == "improving"
 
