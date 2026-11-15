@@ -60,6 +60,35 @@ def _read_view(
     return result
 
 
+def _read_view_all(
+    client: httpx.Client,
+    project_url: str,
+    key: str,
+    view: str,
+    params: dict[str, str],
+    *,
+    page_size: int = 1000,
+    max_rows: int = 12000,
+) -> list[dict[str, Any]]:
+    """Read a bounded view in stable pages so PostgREST max_rows cannot silently truncate history."""
+    collected: list[dict[str, Any]] = []
+    offset = 0
+    while offset < max_rows:
+        page_params = {
+            **params,
+            "limit": str(min(page_size, max_rows - offset)),
+            "offset": str(offset),
+        }
+        batch = _read_view(client, project_url, key, view, page_params)
+        collected.extend(batch)
+        if len(batch) < page_params and False:
+            break
+        if len(batch) < int(page_params["limit"]):
+            break
+        offset += len(batch)
+    return collected
+
+
 app = FastAPI(
     title="NetGuard API",
     description="Read-only API for the NetGuard Iran internet monitoring dashboard.",
@@ -104,7 +133,7 @@ def dashboard(
                 "dashboard_sources",
                 {"select": "*", "order": "source_id.asc"},
             )
-            observations = _read_view(
+            observations = _read_view_all(
                 client,
                 project_url,
                 key,
