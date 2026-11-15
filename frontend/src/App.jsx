@@ -7,6 +7,7 @@ import {
 
 const NAV = [
   ["overview", "نمای کلی", Globe2],
+  ["quality", "کیفیت و پوشش داده", Database],
   ["censorship", "سایت‌های فیلترشده", ShieldAlert],
   ["intelligence", "مدل هوشمند و پیش‌بینی", BrainCircuit],
   ["analysis", "تحلیل وضعیت", Activity],
@@ -218,6 +219,39 @@ function EventCard({ event }) {
   </article>;
 }
 
+
+function QualityBar({ value }) {
+  const safe = Math.max(0, Math.min(100, Number(value) || 0));
+  return <div className="quality-bar" role="img" aria-label={"پوشش " + number(safe, 1) + " درصد"}>
+    <span style={{ width: safe + "%" }}/>
+  </div>;
+}
+
+function SourceQualityCard({ item }) {
+  return <article className="source-quality-card">
+    <div className="source-quality-head">
+      <div><small>{item.signal}</small><h3>{item.display_name}</h3></div>
+      <Badge value={item.freshness_status}/>
+    </div>
+    <div className="quality-main-value"><b>{number(item.sample_coverage_percent, 1)}٪</b><span>پوشش نمونه در بازه</span></div>
+    <QualityBar value={item.sample_coverage_percent}/>
+    <div className="quality-mini-grid">
+      <div><small>فاصلهٔ مورد انتظار</small><b>{number(item.expected_interval_minutes, 0)} دقیقه</b></div>
+      <div><small>نمونهٔ معتبر</small><b>{number(item.valid_samples, 0)} / {number(item.expected_samples_in_window, 0)}</b></div>
+      <div><small>طول تاریخچه</small><b>{number(item.observed_span_hours, 1)} ساعت</b></div>
+      <div><small>آخرین مشاهده</small><b>{item.observation_age_seconds == null ? "—" : number(item.observation_age_seconds / 60, 0) + " دقیقه قبل"}</b></div>
+      <div><small>میانهٔ فاصله‌ها</small><b>{item.median_gap_seconds == null ? "—" : number(item.median_gap_seconds / 60, 1) + " دقیقه"}</b></div>
+      <div><small>صدک ۹۰ فاصله</small><b>{item.p90_gap_seconds == null ? "—" : number(item.p90_gap_seconds / 60, 1) + " دقیقه"}</b></div>
+      <div><small>نمونهٔ ۲ ساعت اخیر</small><b>{number(item.samples_last_2h, 0)}</b></div>
+      <div><small>شکاف‌های غیرمنتظره</small><b>{number(item.gaps_over_expected_threshold, 0)}</b></div>
+    </div>
+    <div className="source-quality-foot">
+      <span>آخرین جمع‌آوری: {time(item.last_collected_at)}</span>
+      <span>آخرین اجرای Collector: {item.last_run_status || "نامشخص"}</span>
+    </div>
+  </article>;
+}
+
 export default function App() {
   const [page, setPage] = useState("overview");
   const [windowHours, setWindowHours] = useState(168);
@@ -302,6 +336,8 @@ export default function App() {
   }, {}), [data.observations]);
   const analysis = data.analysis || {};
   const signals = analysis.signals || [];
+  const dataQuality = analysis.data_quality || {};
+  const qualitySources = dataQuality.source_details || [];
   const events = data.events || [];
   const counts = data.sources.reduce((result, source) => {
     result[source.freshness_status] = (result[source.freshness_status] || 0) + 1;
