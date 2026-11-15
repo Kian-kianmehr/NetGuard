@@ -196,9 +196,130 @@ def _forecast_component(signal, rows, model):
     }
 
 
+def _signal_trend(source: dict[str, Any], observations: list[dict[str, Any]]) -> dict[str, Any]:
+    signal = source.get("signal")
+    source_id = str(source.get("source_id") or "")
+    rows = _valid_rows(source_id, observations)
+    result = {
+        "signal": signal,
+        "source_id": source_id,
+        "display_name": source.get("display_name") or source_id,
+        "sample_count": len(rows),
+        "change_percent": None,
+        "status": "insufficient_history",
+    }
+    if len(rows) < 12:
+        return result
+    recent = median([value for _, value in rows[-6:]])
+    previous = median([value for _, value in rows[-12:-6]])
+    if abs(previous) < 1e-9:
+        return result
+    result.update({
+        "change_percent": round((recent - previous) / abs(previous) * 100.0, 1),
+        "status": "ready",
+    })
+    return result
+
+
+def _cause_analysis(trends: list[dict[str, Any]]) -> dict[str, Any]:
+    by_signal = {item.get("signal"): item for item in trends}
+    bgp = by_signal.get("bgp", {})
+    ping = by_signal.get("ping-slash24", {})
+    merit = by_signal.get("merit-nt", {})
+
+    def declining(item: dict[str, Any]) -> bool:
+        value = item.get("change_percent")
+        return isinstance(value, (int, float)) and value <= -8.0
+
+    bgp_drop = declining(bgp)
+    ping_drop = declining(ping)
+    merit_drop = declining(merit)
+    corroborating = [
+        name for name, active in (
+            ("BGP", bgp_drop),
+            ("Ping", ping_drop),
+            ("Merit", merit_drop),
+        ) if active
+    ]
+
+    if bgp_drop and ping_drop:
+        hypothesis = "widespread_connectivity_degradation"
+        label = "افت هم‌زمان دیدپذیری مسیرها و پاسخ‌گویی شبکه"
+        strength = "strong" if merit_drop else "corroborated"
+        description = (
+            "دو شاخص مستقلِ BGP و پایش فعال هم‌زمان افت کرده‌اند. این الگو با اختلال گستردهٔ اتصال سازگار است؛ "
+            "اما به‌تنهایی محل، علت فیزیکی، فیلترینگ یا قطع کامل اینترنت را اثبات نمی‌کند."
+        )
+    elif bgp_drop:
+        hypothesis = "routing_visibility_change"
+        label = "کاهش دیدپذیری مسیرهای BGP"
+        strength = "limited"
+        description = (
+            "افت اصلی در دیدپذیری مسیرهای BGP دیده می‌شود، بدون تأیید هم‌زمان از شاخص Ping. "
+            "تغییر مسیر، اختلال در دیدپذیری یا کیفیت داده از توضیح‌های ممکن‌اند."
+        )
+    elif ping_drop:
+        hypothesis = "active_reachability_change"
+        label = "کاهش پاسخ‌گویی در پایش فعال"
+        strength = "limited"
+        description = (
+            "شاخص Ping افت کرده، اما BGP آن را تأیید نمی‌کند. مشکل در دسترس‌پذیری نمونه‌های آزمون، "
+            "تغییر رفتار شبکه یا محدودیت پوشش اندازه‌گیری از احتمال‌های قابل بررسی‌اند."
+        )
+    elif merit_drop:
+        hypothesis = "telemetry_or_traffic_change"
+        label = "تغییر در سیگنال تلسکوپ شبکه"
+        strength = "weak"
+        description = (
+            "تغییر فقط در سیگنال Merit دیده شده است. این داده به‌تنهایی برای نتیجه‌گیری دربارهٔ قطعی یا فیلترینگ کافی نیست."
+        )
+    else:
+        hypothesis = "insufficient_evidence"
+        label = "علت مشخصی از داده‌های فعلی قابل استنتاج نیست"
+        strength = "none"
+        description = (
+            "افت هم‌زمان و معناداری در سیگنال‌های بررسی‌شده دیده نمی‌شود، یا تاریخچهٔ معتبر کافی در دسترس نیست. "
+            "این وضعیت اثبات سلامت کامل شبکه نیست."
+        )
+
+    alternatives = []
+    if bgp_drop and not ping_drop:
+        alternatives = ["اختلال دیدپذیری یا مسیریابی", "تغییر پوشش یا کیفیت دادهٔ BGP"]
+    elif ping_drop and not bgp_drop:
+        alternatives = ["تغییر دسترس‌پذیری نمونه‌های پایش فعال", "ناپایداری مسیر یا مقصدهای آزمون"]
+    elif bgp_drop and ping_drop:
+        alternatives = ["اختلال گستردهٔ اتصال", "مسئلهٔ هم‌زمان در چند منبع اندازه‌گیری"]
+    elif merit_drop:
+        alternatives = ["تغییر ترافیک مشاهده‌شده", "تغییر پوشش یا رفتار تلسکوپ شبکه"]
+
+    return {
+        "status": "hypothesis" if strength != "none" else "insufficient_evidence",
+        "hypothesis_id": hypothesis,
+        "hypothesis_label": label,
+        "evidence_strength": strength,
+        "evidence_strength_label": {
+            "strong": "قوی‌تر؛ سه سیگنال هم‌جهت",
+            "corroborated": "هم‌راستا؛ دو سیگنال اصلی",
+            "limited": "محدود؛ فقط یک سیگنال اصلی",
+            "weak": "ضعیف؛ فقط سیگنال کمکی",
+            "none": "شواهد ناکافی",
+        }[strength],
+        "description": description,
+        "corroborating_signals": corroborating,
+        "observed_changes": trends,
+        "alternative_explanations": alternatives,
+        "scope_note": (
+            "این‌ها فرضیه‌های مبتنی بر الگوی سیگنال‌های ملی‌اند، نه تشخیص علت قطعی. "
+            "داده‌های موجود برای تفکیک فیلترینگ، خرابی زیرساخت، مشکل اپراتور یا محدودیت جغرافیایی کافی نیستند."
+        ),
+    }
+
+
 def analyze_intelligence(sources: list[dict[str, Any]], observations: list[dict[str, Any]]) -> dict[str, Any]:
     models = [_signal_model(source, observations) for source in sources]
     trained = [item for item in models if item["status"] == "ready"]
+    trends = [_signal_trend(source, observations) for source in sources]
+    causes = _cause_analysis(trends)
     grouped = defaultdict(list)
     for source in sources:
         signal = source.get("signal")
@@ -238,6 +359,16 @@ def analyze_intelligence(sources: list[dict[str, Any]], observations: list[dict[
         "trained_signals": len(trained),
         "minimum_raw_points": MIN_RAW_POINTS,
         "signals": models,
+        "cause_analysis": causes,
+        "recovery_estimate": {
+            "available": False,
+            "estimated_duration_minutes": None,
+            "status": "insufficient_labeled_events",
+            "note": (
+                "برای تخمین زمان بازیابی به تاریخچهٔ رخدادهای تأییدشده با زمان شروع و پایان، "
+                "و ارزیابی خارج از نمونه نیاز است. دادهٔ فعلی چنین برچسبی ندارد؛ بنابراین زمان بازیابی عددسازی نمی‌شود."
+            ),
+        },
         "forecast": {
             "available": available,
             "horizon_minutes": 30,
