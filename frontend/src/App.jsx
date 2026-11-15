@@ -1,4 +1,4 @@
-import { deriveLimitedNationalVerdict } from "./public-status.js";
+import { deriveDisplayNationalSummary, deriveLimitedNationalVerdict } from "./public-status.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownRight, BookOpen, BrainCircuit, CheckCircle2, CircleHelp,
@@ -131,49 +131,50 @@ function Stat({ icon: Icon = Activity, label, value, hint, tone = "default" }) {
   </article>;
 }
 
-function PublicAssessment({ summary }) {
+function PublicAssessment({ summary, signals = [] }) {
   if (!summary) return null;
-  const tone = summary.tone || "neutral";
+  const verdict = deriveDisplayNationalSummary(summary, signals);
+  const tone = verdict.tone || "neutral";
   return <section className={"public-assessment " + tone}>
     <div className="public-assessment-head">
       <div>
         <small>جمع‌بندی ساده · وضعیت فعلی اینترنت ایران</small>
-        <h2>{summary.title}</h2>
-        <p>{summary.summary}</p>
+        <h2>{verdict.title}</h2>
+        <p>{verdict.summary}</p>
       </div>
-      <span className="public-verdict">{summary.condition_label}</span>
+      <span className="public-verdict">{verdict.condition_label}</span>
     </div>
     <div className="public-verdict-grid">
       <article>
         <small>آیا نشانهٔ قطع گسترده هست؟</small>
-        <b>{summary.outage_label}</b>
-        <p>{summary.outage_detail}</p>
+        <b>{verdict.outage_label}</b>
+        <p>{verdict.outage_detail}</p>
       </article>
       <article>
         <small>وضعیت پایداری زیرساخت</small>
-        <b>{summary.stability_label}</b>
+        <b>{verdict.stability_label}</b>
         <p>این ارزیابی از دو شاخص اصلیِ مسیرهای اینترنت و پاسخ‌گویی شبکه‌ها استفاده می‌کند.</p>
       </article>
       <article>
         <small>کیفیت اینترنت برای کاربران</small>
-        <b>{summary.quality_label}</b>
-        <p>{summary.quality_detail}</p>
+        <b>{verdict.quality_label}</b>
+        <p>{verdict.quality_detail}</p>
       </article>
       <article>
         <small>روند یک ساعت اخیر</small>
-        <b>{summary.trend_label}</b>
-        <p>{summary.trend_detail}</p>
+        <b>{verdict.trend_label}</b>
+        <p>{verdict.trend_detail}</p>
       </article>
       <article>
         <small>میزان اطمینان به این جمع‌بندی</small>
-        <b>{summary.confidence_label}</b>
-        <p>{summary.confidence_detail}</p>
+        <b>{verdict.confidence_label}</b>
+        <p>{verdict.confidence_detail}</p>
       </article>
     </div>
     <div className="public-explanation">
       <b>این نتیجه از کجا آمده؟</b>
-      <ul>{(summary.reasoning || []).map((item) => <li key={item}>{item}</li>)}</ul>
-      <p>{summary.scope_note}</p>
+      <ul>{(verdict.reasoning || []).map((item) => <li key={item}>{item}</li>)}</ul>
+      <p>{verdict.scope_note}</p>
     </div>
   </section>;
 }
@@ -730,7 +731,7 @@ export default function App() {
     const tone = assessmentTone[analysis.assessment] || "neutral";
     body = <div className="stack">
       <div className="intro page-intro"><small><Activity size={14}/> گزارش پایش ملی</small><h2>ارزیابی وضعیت شبکه</h2><p>این بخش می‌گوید آیا نشانه‌ای از اختلال گسترده دیده می‌شود، چه شواهدی داریم و تا چه اندازه می‌توان به نتیجه اعتماد کرد.</p></div>
-      <PublicAssessment summary={analysis.public_summary}/>
+      <PublicAssessment summary={analysis.public_summary} signals={analysis.signals}/>
       <section className={"analysis-hero " + tone}>
         <div className="analysis-mark"><AssessmentIcon size={27}/></div>
         <div className="analysis-main"><small>ارزیابی فعلی</small><h2>{analysis.assessment_label || "دادهٔ کافی نیست"}</h2><p>{analysis.summary || "پس از دریافت دادهٔ معتبر، تحلیل نمایش داده می‌شود."}</p>

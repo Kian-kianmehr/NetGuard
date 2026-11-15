@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveLimitedNationalVerdict } from "../src/public-status.js";
+import { deriveDisplayNationalSummary, deriveLimitedNationalVerdict } from "../src/public-status.js";
 
 const pingStable = {
   signal: "ping-slash24",
@@ -42,4 +42,11 @@ test("two fresh primary signals with no anomaly can be described as stable with 
     ping: pingStable,
   });
   assert.equal(result.condition, "stable_limited");
+});
+
+test("analysis view uses the same qualified verdict as the public report", () => {
+  const summary = { condition: "unknown", title: "old indeterminate title", tone: "neutral" };
+  const result = deriveDisplayNationalSummary(summary, [bgpStale, pingStable]);
+  assert.equal(result.condition, "stable_limited");
+  assert.equal(result.title, "وضعیت کلی اینترنت فعلاً پایدار است");
 });
