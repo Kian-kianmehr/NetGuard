@@ -2,14 +2,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownRight, BookOpen, BrainCircuit, CheckCircle2, CircleHelp,
   Clock3, Database, Gauge, Globe2, Info, Network, RadioTower, RefreshCw, ShieldAlert,
-  ShieldCheck, Signal, TrendingDown, TrendingUp
+  ShieldCheck, Signal, TrendingDown, TrendingUp, Server, Cloud
 } from "lucide-react";
 
 const NAV = [
   ["overview", "نمای کلی", Globe2],
   ["quality", "کیفیت و پوشش داده", Database],
-  ["censorship", "سایت‌های فیلترشده", ShieldAlert],
-  ["intelligence", "مدل هوشمند و پیش‌بینی", BrainCircuit],
+  ["censorship", "سایت‌ها و فیلترینگ", ShieldAlert],
+  ["providers", "دیتاسنترها و هوش مصنوعی", Server],
+  ["intelligence", "پیش‌بینی و تحلیل هوشمند", BrainCircuit],
   ["analysis", "تحلیل وضعیت", Activity],
   ["signals", "سیگنال‌ها", Signal],
   ["events", "رخدادها", AlertTriangle],
@@ -254,12 +255,51 @@ function SourceQualityCard({ item }) {
   </article>;
 }
 
+
+const providerStatusMap = {
+  operational: ["عادی", "good"], under_maintenance: ["تعمیرات برنامه‌ریزی‌شده", "neutral"],
+  degraded_performance: ["افت کیفیت", "warn"], partial_outage: ["اختلال بخشی", "danger"],
+  major_outage: ["اختلال گسترده", "danger"], unknown: ["نامشخص", "neutral"],
+};
+function ProviderCard({ item }) {
+  const locations = item.affected_locations || [];
+  const incidents = item.incidents || [];
+  return <article className="provider-card">
+    <div className="provider-card-head"><div><h3>{item.name}</h3><p>{item.description}</p></div><Badge value={item.status} map={providerStatusMap}/></div>
+    {item.summary && <p className="provider-summary">{item.summary}</p>}
+    {item.id === "cloudflare" && <div className="provider-datacenter">
+      <div><b>{number(item.data_center_count, 0)}</b><span>مرکز یا نقطهٔ حضور در فهرست رسمی</span></div>
+      <div><b>{number(item.components_attention, 0)}</b><span>مورد دارای وضعیت غیرعادی</span></div>
+    </div>}
+    {locations.length > 0 && <div className="provider-locations"><b>مکان‌هایی با وضعیت غیرعادی</b>
+      {locations.slice(0, 8).map((location) => <span key={location.name}>{location.name} · {location.status_label}</span>)}
+      {locations.length > 8 && <small>و {number(locations.length - 8, 0)} مورد دیگر</small>}
+    </div>}
+    {incidents.length > 0 && <div className="provider-incidents"><b>رخدادهای اعلام‌شده</b>
+      {incidents.slice(0, 3).map((incident, index) => <div key={incident.name + index}>
+        <span>{incident.name}</span><small>{incident.impact || incident.status || ""} · {incident.body}</small>
+      </div>)}
+    </div>}
+    <div className="provider-card-foot"><span>بررسی نت‌گارد: {time(item.checked_at)}</span>
+      {item.provider_updated_at && <span>آخرین تغییر صفحهٔ رسمی: {time(item.provider_updated_at)}</span>}
+      <a href={item.url} target="_blank" rel="noreferrer">صفحهٔ رسمی وضعیت ↗</a>
+    </div>
+    {(item.technical_components?.length > 0 || incidents.length > 0) && <details className="technical-details">
+      <summary>جزئیات فنی سرویس‌ها و مؤلفه‌ها</summary>
+      {item.technical_components?.length > 0 && <div className="provider-tech-list">{item.technical_components.slice(0, 24).map((component) =>
+        <span key={component.name}>{component.name} · {component.status_label}</span>)}</div>}
+      {incidents.map((incident, index) => <p key={incident.name + "-full-" + index}>{incident.name}: {incident.body}</p>)}
+    </details>}
+  </article>;
+}
+
 export default function App() {
   const [page, setPage] = useState("overview");
   const [windowHours, setWindowHours] = useState(168);
   const [eventFilter, setEventFilter] = useState("all");
   const [siteFilter, setSiteFilter] = useState("all");
   const [siteQuery, setSiteQuery] = useState("");
+  const [providerData, setProviderData] = useState({ providers: [], checked_at: null, error: "", busy: true });
   const [censorship, setCensorship] = useState({
     domains: [], sync: null, generated_at: null, error: "", busy: true,
   });
@@ -294,6 +334,19 @@ export default function App() {
       setCensorship((value) => ({
         ...value, busy: false, error: error.message || "فهرست سایت‌ها در دسترس نیست.",
       }));
+    }
+  }, []);
+
+  const loadProviders = useCallback(async () => {
+    try {
+      const response = await fetch(API + "/api/providers/status", {
+        headers: { Accept: "application/json" }, cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "دریافت وضعیت سرویس‌ها ناموفق بود.");
+      setProviderData({ ...payload, error: "", busy: false });
+    } catch (error) {
+      setProviderData((value) => ({ ...value, error: error.message || "وضعیت سرویس‌ها دریافت نشد.", busy: false }));
     }
   }, []);
 
@@ -332,6 +385,12 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [loadCensorship]);
 
+  useEffect(() => {
+    loadProviders();
+    const timer = window.setInterval(loadProviders, 5 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [loadProviders]);
+
   const groups = useMemo(() => data.observations.reduce((accumulator, row) => {
     (accumulator[row.source_id] ||= []).push(row);
     return accumulator;
@@ -353,13 +412,15 @@ export default function App() {
     eventFilter === "all" || event.severity === eventFilter
   ), [events, eventFilter]);
   const confirmedSites = censorship.domains.filter((site) => site.confirmed_blocked);
-  const possibleSites = censorship.domains.filter((site) => !site.confirmed_blocked);
+  const possibleSites = censorship.domains.filter((site) => site.has_measurements && !site.confirmed_blocked);
+  const candidateSites = censorship.domains.filter((site) => site.candidate_only);
   const filteredDomains = useMemo(() => {
     const query = siteQuery.trim().toLowerCase();
     return censorship.domains.filter((site) => {
       const matchesFilter = siteFilter === "all"
         || (siteFilter === "confirmed" && site.confirmed_blocked)
-        || (siteFilter === "possible" && !site.confirmed_blocked);
+        || (siteFilter === "possible" && site.has_measurements && !site.confirmed_blocked)
+        || (siteFilter === "candidates" && site.candidate_only);
       return matchesFilter && (!query || String(site.domain || "").toLowerCase().includes(query));
     });
   }, [censorship.domains, siteFilter, siteQuery]);
