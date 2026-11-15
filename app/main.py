@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from netguard.analysis import analyze_dashboard
@@ -114,10 +114,7 @@ def health() -> dict[str, Any]:
     return {"status": "ok", "database_configured": configured}
 
 
-@app.get("/api/dashboard")
-def dashboard(
-    hours: int = Query(default=168, ge=6, le=168),
-) -> dict[str, Any]:
+def _build_dashboard_snapshot(hours: int = 168) -> dict[str, Any]:
     project_url, key = _supabase_config()
     now = datetime.now(timezone.utc)
     since = (now - timedelta(hours=hours)).isoformat()
@@ -169,6 +166,51 @@ def dashboard(
     }
 
 
+def _read_snapshot(dataset_key: str, *, stale_after_seconds: int) -> dict[str, Any]:
+    project_url, key = _supabase_config()
+    try:
+        with httpx.Client(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
+            rows = _read_view(
+                client, project_url, key, "netguard_snapshots",
+                {"select": "payload,collected_at,status,source_count,error_code",
+                 "dataset_key": f"eq.{dataset_key}", "limit": "1"},
+            )
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("Snapshot read failed for %s (%s)", dataset_key, type(exc).__name__)
+        raise HTTPException(status_code=502, detail="دادهٔ ذخیره‌شده فعلاً در دسترس نیست.") from None
+    if not rows:
+        raise HTTPException(status_code=503, detail="هنوز نخستین snapshot این بخش ثبت نشده است.")
+    row = rows[0]
+    payload = row.get("payload") or {}
+    payload["snapshot_at"] = row.get("collected_at")
+    payload.setdefault("checked_at", row.get("collected_at"))
+    payload["snapshot_status"] = row.get("status")
+    payload["source_count"] = row.get("source_count", 0)
+    payload["snapshot_error"] = row.get("error_code")
+    payload["stale_after_seconds"] = stale_after_seconds
+    try:
+        collected = datetime.fromisoformat(str(row.get("collected_at")).replace("Z", "+00:00"))
+        payload["is_stale"] = (datetime.now(timezone.utc) - collected).total_seconds() > stale_after_seconds
+    except (TypeError, ValueError):
+        payload["is_stale"] = True
+    return payload
+
+
+def _save_snapshot(
+    client: httpx.Client, project_url: str, key: str, token: str,
+    dataset_key: str, payload: dict[str, Any], source_count: int,
+) -> None:
+    response = client.post(
+        f"{project_url}/rest/v1/rpc/netguard_save_snapshot",
+        headers={**_auth_headers(key), "Content-Type": "application/json"},
+        json={
+            "p_token": token, "p_dataset_key": dataset_key, "p_payload": payload,
+            "p_status": "success", "p_source_count": source_count, "p_error_code": None,
+        },
+    )
+    response.raise_for_status()
+
+
 
 _RESTRICTED_TEST_CATEGORIES = {"ALDR", "GMB", "PORN", "DATE", "XED"}
 _CATEGORY_LABELS = {
@@ -183,8 +225,12 @@ _CATEGORY_LABELS = {
     "LGBT": "جامعه و حقوق مدنی", "PROV": "ارائه‌دهندگان خدمات",
 }
 
-@app.get("/api/censorship")
-def censorship() -> dict[str, Any]:
+@app.get("/api/dashboard")
+def dashboard(hours: int = Query(default=168, ge=6, le=168)) -> dict[str, Any]:
+    return _read_snapshot(f"dashboard_{hours}", stale_after_seconds=900)
+
+
+def _build_censorship_snapshot() -> dict[str, Any]:
     """Return OONI evidence and the safe Citizen Lab test candidates separately."""
     project_url, key = _supabase_config()
     timeout = httpx.Timeout(15.0, connect=5.0)
@@ -287,6 +333,11 @@ def censorship() -> dict[str, Any]:
         "lookback_days": 90,
         "test_list_source": "https://github.com/citizenlab/test-lists/blob/master/lists/ir.csv",
     }
+
+
+@app.get("/api/censorship")
+def censorship() -> dict[str, Any]:
+    return _read_snapshot("censorship", stale_after_seconds=1800)
 
 
 _PROVIDER_STATUSPAGES = (
@@ -491,28 +542,86 @@ def _fetch_google_cloud_status() -> dict[str, Any]:
         }
 
 
-@app.get("/api/providers/status")
-def providers_status() -> dict[str, Any]:
-    """Return the latest persisted provider snapshot; never contact upstream status pages on a user request."""
+def _build_iran_datacenters_snapshot() -> dict[str, Any]:
     project_url, key = _supabase_config()
-    timeout = httpx.Timeout(8.0, connect=4.0)
     try:
-        with httpx.Client(timeout=timeout) as client:
-            rows = _read_view(
-                client, project_url, key, "netguard_snapshots",
-                {"select": "payload,collected_at,status,source_count,error_code",
-                 "dataset_key": "eq.providers_status", "limit": "1"},
+        with httpx.Client(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
+            sites = _read_view(
+                client, project_url, key, "iran_datacenters",
+                {"select": "site_id,name,operator,city,province,asset_type,evidence_level,source_name,source_url,monitoring_status,status_label,last_checked_at,notes",
+                 "order": "city.asc,name.asc", "limit": "500"},
             )
     except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("Provider snapshot read failed (%s)", type(exc).__name__)
-        raise HTTPException(status_code=502, detail="وضعیت ذخیره‌شدهٔ سرویس‌ها فعلاً در دسترس نیست.") from None
-    if not rows:
-        raise HTTPException(status_code=503, detail="هنوز نخستین نوبت پایش سرویس‌ها ثبت نشده است.")
-    row = rows[0]
-    payload = row.get("payload") or {}
-    payload["checked_at"] = row.get("collected_at")
-    payload["snapshot_status"] = row.get("status")
-    payload["source_count"] = row.get("source_count", 0)
-    payload["error_code"] = row.get("error_code")
-    payload["stale_after_seconds"] = 900
-    return payload
+        logger.warning("Iran datacenter inventory read failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="فهرست مراکز دادهٔ ایران فعلاً در دسترس نیست.") from None
+    for site in sites:
+        site["live_status_available"] = False
+        site["status_label"] = site.get("status_label") or "پایش مستقیم فعال نیست"
+    return {
+        "sites": sites,
+        "total_sites": len(sites),
+        "directly_monitored": sum(1 for site in sites if site.get("live_status_available")),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "scope_note": (
+            "این فهرست، موجودی اولیهٔ مراکز و مکان‌های میزبانیِ مستندشده یا ثبت‌شده در دایرکتوری‌هاست. "
+            "در حال حاضر برای این سایت‌ها نقطهٔ سنجش مستقل داخل ایران در NetGuard نداریم؛ بنابراین "
+            "وضعیت عملیاتی آن‌ها نامشخص است و از روی سالم بودن وب‌سایت اپراتور نتیجه‌گیری نمی‌شود."
+        ),
+    }
+
+
+@app.get("/api/iran/datacenters")
+def iran_datacenters() -> dict[str, Any]:
+    return _read_snapshot("iran_datacenters", stale_after_seconds=1800)
+
+
+@app.get("/api/providers/status")
+def providers_status() -> dict[str, Any]:
+    return _read_snapshot("providers_status", stale_after_seconds=900)
+
+
+
+
+@app.post("/internal/collect-snapshots")
+def collect_snapshots(x_netguard_token: str = Header(default="")) -> dict[str, Any]:
+    expected = os.getenv("NETGUARD_COLLECTOR_TOKEN", "")
+    if not expected or not x_netguard_token or not __import__("hmac").compare_digest(x_netguard_token, expected):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    project_url, key = _supabase_config()
+    completed: list[str] = []
+    failures: list[dict[str, str]] = []
+    try:
+        with httpx.Client(timeout=httpx.Timeout(35.0, connect=6.0), follow_redirects=True) as client:
+            for hours in (24, 72, 168):
+                dataset_key = f"dashboard_{hours}"
+                try:
+                    payload = _build_dashboard_snapshot(hours)
+                    _save_snapshot(client, project_url, key, x_netguard_token, dataset_key, payload, len(payload.get("sources", [])))
+                    completed.append(dataset_key)
+                except Exception as exc:
+                    logger.exception("Snapshot build failed for %s", dataset_key)
+                    failures.append({"dataset": dataset_key, "error": type(exc).__name__})
+            try:
+                payload = _build_censorship_snapshot()
+                _save_snapshot(client, project_url, key, x_netguard_token, "censorship", payload, len(payload.get("domains", [])))
+                completed.append("censorship")
+            except Exception as exc:
+                logger.exception("Snapshot build failed for censorship")
+                failures.append({"dataset": "censorship", "error": type(exc).__name__})
+            try:
+                payload = _build_iran_datacenters_snapshot()
+                _save_snapshot(client, project_url, key, x_netguard_token, "iran_datacenters", payload, len(payload.get("sites", [])))
+                completed.append("iran_datacenters")
+            except Exception as exc:
+                logger.exception("Snapshot build failed for Iranian data centers")
+                failures.append({"dataset": "iran_datacenters", "error": type(exc).__name__})
+    except httpx.HTTPError as exc:
+        logger.exception("Snapshot persistence failed")
+        raise HTTPException(status_code=502, detail="snapshot_persistence_failed") from None
+    return {
+        "status": "success" if not failures else "partial",
+        "completed": completed, "failures": failures,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+

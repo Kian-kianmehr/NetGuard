@@ -20,7 +20,9 @@ services:
       - key: IODA_MAX_POINTS
         value: "240"
       - key: COLLECTOR_INTERVAL_SECONDS
-        value: "300"
+        value: "600"
+      - key: NETGUARD_COLLECTOR_TOKEN
+        sync: false
 
   - type: web
     name: netguard-dashboard
