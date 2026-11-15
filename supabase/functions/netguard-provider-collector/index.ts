@@ -31,7 +31,7 @@ async function db(key: string, method: string, body?: unknown, query = "") {
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(10000),
   });
-  if (!response.ok) throw new Error(`snapshot_db_http_${response.status}`);
+  if (!response.ok) { const detail = (await response.text()).slice(0, 400); throw new Error(`snapshot_db_http_${response.status}_${detail}`); }
   return response;
 }
 async function sha256(value: string) {
