@@ -1,3 +1,4 @@
+import { deriveLimitedNationalVerdict } from "./public-status.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownRight, BookOpen, BrainCircuit, CheckCircle2, CircleHelp,
@@ -185,6 +186,7 @@ function PublicStatus({ summary, checkedAt }) {
 
   const states = {
     stable: ["پایدار", "good", "شاخص‌های اصلی در محدودهٔ معمول هستند و وضعیت کلی اینترنت پایدار و عادی است."],
+    stable_limited: ["فعلاً پایدار", "good", "در آخرین شاخص تازه افت غیرعادی دیده نشده، اما به دلیل محدودیت داده، اطمینان ارزیابی ملی پایین‌تر است."],
     attention: ["نیازمند توجه", "warn", "در یکی از شاخص‌های اصلی تغییر غیرعادی دیده شده؛ هنوز شواهد کافی برای نتیجه‌گیری دربارهٔ کل شبکه وجود ندارد."],
     possible_disruption: ["احتمال اختلال", "danger", "هر دو شاخص اصلی افت هم‌زمان نشان داده‌اند؛ این وضعیت نیازمند بررسی بیشتر است."],
     unknown: ["وضعیت نامشخص", "neutral", "برای نتیجهٔ قابل اتکا، دادهٔ تازه و تاریخچهٔ کافی از هر دو شاخص اصلی در دسترس نیست."],
@@ -239,12 +241,12 @@ function PublicSituationReport({ summary, signals = [], intelligence, censorship
     return `${label}: ${number(item.latest_value)} ${item.unit || ""}؛ آخرین مشاهده ${time(item.last_observed_at)}؛ ${freshnessText}. ${contextOnly ? "این شاخص فقط شاهد کمکی است و به‌تنهایی وضعیت اینترنت را تعیین نمی‌کند." : trendText}`;
   };
 
-  // When the national verdict is indeterminate, still describe the actual stored
-  // measurements instead of replacing them with a "wait for enough data" message.
+  // An indeterminate backend verdict can still support a qualified national status
+  // when one fresh primary signal is usable and shows no anomaly.
+  const limitedVerdict = deriveLimitedNationalVerdict({ bgp, ping });
   const bestEffortSummary = {
     ...(summary || {}),
-    tone: "neutral",
-    title: "آخرین داده‌های ذخیره‌شده چه تصویری نشان می‌دهند؟",
+    ...limitedVerdict,
     summary: [
       hasValue(ping)
         ? `در آخرین مشاهدهٔ شاخص پاسخ‌گویی شبکه، مقدار ${number(ping.latest_value)} ثبت شده و ${ping.trend_1h_label || "روند یک‌ساعته قابل محاسبه نیست"}؛ ${ping.current_anomaly ? "این شاخص انحرافی نیازمند بررسی نشان می‌دهد." : "انحرافی بالاتر از آستانهٔ تشخیص ثبت نشده است."}`
@@ -252,21 +254,15 @@ function PublicSituationReport({ summary, signals = [], intelligence, censorship
       hasValue(bgp)
         ? `شاخص دیدپذیری مسیرهای اینترنت مقدار ${number(bgp.latest_value)} را در ${time(bgp.last_observed_at)} ثبت کرده، اما ${bgp.freshness_status === "stale" ? "این مشاهده از حد تازگی عبور کرده است." : "تازگی این مشاهده باید همراه سایر شاخص‌ها سنجیده شود."}`
         : "مقدار ذخیره‌شدهٔ شاخص دیدپذیری BGP موجود نیست.",
-      "این‌ها آخرین مشاهدات ذخیره‌شده‌اند؛ به دلیل محدودیت تازگی یا پوشش برخی منابع، از آن‌ها نتیجهٔ قطعی دربارهٔ سلامت یا قطع سراسری نمی‌گیریم."
+      limitedVerdict.summary,
     ].filter(Boolean).join(" "),
-    condition_label: "ارزیابی ملی با اطمینان محدود",
-    outage_label: "قطع گسترده تأیید نشده",
-    outage_detail: "این عبارت به معنی اثبات سلامت کامل اینترنت نیست. شاخص‌های موجود باید با دادهٔ تازه و مستقل بیشتری تکمیل شوند.",
-    stability_label: hasValue(ping)
-      ? (ping.current_anomaly ? "در شاخص پایش فعال نشانهٔ غیرعادی دیده شده" : "در آخرین شاخص پایش فعال افت غیرعادی دیده نشده")
-      : "شاخص پایش فعال در Snapshot موجود نیست",
     trend_label: ping?.trend_1h_label || bgp?.trend_1h_label || "روند از داده‌های موجود قابل محاسبه نیست",
     trend_detail: [
       ping?.trend_1h_label ? `پایش فعال: ${ping.trend_1h_label}.` : null,
       bgp?.trend_1h_label ? `دیدپذیری BGP: ${bgp.trend_1h_label}.` : null,
     ].filter(Boolean).join(" ") || "برای تعیین روند باید نمونه‌های زمانی بیشتری در دسترس باشد.",
-    confidence_label: "محدود",
-    confidence_detail: "نتایج زیر از مقادیر ذخیره‌شده نمایش داده می‌شوند، اما قدیمی بودن یا کم بودن نمونه‌های یک منبع، اطمینان به جمع‌بندی ملی را کاهش می‌دهد.",
+    confidence_label: limitedVerdict.confidence_label,
+    confidence_detail: "نتایج از مقادیر ذخیره‌شده نمایش داده می‌شوند؛ قدیمی بودن یا کم بودن نمونه‌های یک منبع، اطمینان به جمع‌بندی ملی را کاهش می‌دهد.",
     reasoning: [
       signalSentence(bgp, "دیدپذیری مسیرهای اینترنت"),
       signalSentence(ping, "پاسخ‌گویی شبکه در پایش فعال"),
