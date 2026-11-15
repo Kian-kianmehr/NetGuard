@@ -58,7 +58,7 @@ def test_forecast_is_explicitly_not_a_calibrated_probability():
         ("ioda:IR:bgp", "bgp", 1000),
         ("ioda:IR:ping-slash24", "ping-slash24", 800),
     ):
-        source, source_rows = make_data([base] * 42 + [base * 0.95] * 6, source_id, signal)
+        source, source_rows = make_data([base] * 150 + [base * 0.95] * 6, source_id, signal)
         sources.append(source)
         rows.extend(source_rows)
     forecast = analyze_intelligence(sources, rows)["forecast"]
@@ -69,7 +69,7 @@ def test_forecast_is_explicitly_not_a_calibrated_probability():
     projections = forecast["components"][0]["horizon_projections"]
     assert [item["minutes"] for item in projections] == [15, 30, 60]
     assert projections[1]["projected_change_percent"] == forecast["components"][0]["projected_change_30m_percent"]
-    assert all(item["method"] == "linear_trend_extension" for item in projections)
+    assert all(item["method"] == "neural_mlp_recursive" for item in projections)
 
 
 def test_forecast_uses_fresh_ping_when_bgp_observation_is_too_old():
