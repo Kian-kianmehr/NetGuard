@@ -574,6 +574,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{
 .forecast-horizons>div>small{color:#8298af;font-size:9px}
 .forecast-horizons>div>b{font-size:17px;line-height:1.4}
 .forecast-horizons>div>span{font-size:9px;color:#8fa4b9;line-height:1.7}
+.forecast-horizons>div>em{font-size:9px;color:#a8becd;font-style:normal;line-height:1.7}
 .forecast-method-note{margin:12px 0 0;padding:10px 12px;border-radius:9px;background:#172638;color:#9bb0c3;font-size:10px;line-height:1.9}
 .ai-signal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .ai-signal-grid article{min-width:0;padding:13px;border:1px solid #26394f;border-radius:10px;background:#101d2d}
