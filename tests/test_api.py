@@ -144,7 +144,7 @@ def test_provider_status_endpoint_returns_official_provider_snapshots(monkeypatc
     cloudflare = next(item for item in payload["providers"] if item["id"] == "cloudflare")
     assert cloudflare["data_center_count"] == 12
     assert cloudflare["affected_locations"][0]["name"] == "Example City - (EXM)"
-    assert "دسترسی به آن از داخل ایران" in payload["scope_note"]
+    assert "دسترسی از داخل ایران" in payload["scope_note"]
 
 
 def test_read_view_all_paginates_and_preserves_stable_order(monkeypatch):
