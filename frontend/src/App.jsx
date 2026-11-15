@@ -1,4 +1,5 @@
 import { describeCoverage, deriveDisplayNationalSummary, deriveLimitedNationalVerdict } from "./public-status.js";
+import { fetchJsonWithRetry } from "./snapshot-client.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownRight, BookOpen, BrainCircuit, CheckCircle2, CircleHelp,
@@ -594,18 +595,22 @@ export default function App() {
         select: "dataset_key,payload,collected_at,status,source_count,error_code",
         dataset_key: `in.(${keys.join(",")})`,
       });
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/netguard_snapshots?${query}`, {
-        headers: {
-          Accept: "application/json",
-          apikey: SUPABASE_PUBLISHABLE_KEY,
-          Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+      const payload = await fetchJsonWithRetry(
+        `${SUPABASE_URL}/rest/v1/netguard_snapshots?${query}`,
+        {
+          headers: {
+            Accept: "application/json",
+            apikey: SUPABASE_PUBLISHABLE_KEY,
+            Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          cache: "no-store",
         },
-        cache: "no-store",
-      });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(payload?.message || payload?.details || `خواندن Snapshot ناموفق بود (${response.status}).`);
-      }
+        {
+          timeoutMs: 7000,
+          maxAttempts: 2,
+          retryDelayMs: 350,
+        }
+      );
       if (!Array.isArray(payload) || !payload.some((row) => keys.includes(row.dataset_key))) {
         throw new Error("Snapshot درخواستی از پایگاه داده دریافت نشد.");
       }
