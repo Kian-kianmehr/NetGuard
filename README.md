@@ -4,14 +4,14 @@
 
 ## معماری نسخهٔ اول
 
-- **Dashboard:** React + Vite، رابط فارسی و راست‌چین روی Render Static Site؛ شامل نمای عمومی، تحلیل تخصصی، فهرست OONI و صفحهٔ مستقل کیفیت داده.
-- **API:** FastAPI فقط‌خواندنی روی Render Free Web Service.
-- **Database:** Supabase PostgreSQL با Row Level Security.
+- **Dashboard:** React + Vite روی Render Static Site و CDN؛ فرانت‌اند Snapshotهای عمومی را با یک درخواست فقط‌خواندنی مستقیماً از Supabase دریافت می‌کند.
+- **API و پردازش:** FastAPI روی Render Free Web Service فقط برای ساخت و ذخیرهٔ Snapshotهای ازپیش‌محاسبه‌شده؛ این سرویس در مسیر بازدیدکننده قرار ندارد.
+- **Database:** Supabase PostgreSQL با Row Level Security؛ جدول Snapshot فقط برای نقش عمومی قابل خواندن است.
 - **Collectors:** دو تابع Edge مستقل برای داده‌های IODA و آزمون‌های دسترسی OONI.
 - **Scheduler:** دریافت IODA هر پنج دقیقه و همگام‌سازی OONI هر شش ساعت با `pg_cron` و `pg_net`.
 - **Data sources:** سه سیگنال ملی IODA (`bgp`، `ping-slash24` و `merit-nt`) و اندازه‌گیری‌های Web Connectivity پروژهٔ OONI از شبکه‌های داخل ایران.
 
-Collector از خوابیدن Web Service در Render مستقل است؛ برنامهٔ زمان‌بندی در خود Supabase اجرا می‌شود. API فقط Viewهای عمومی داشبورد را می‌خواند و عملیات نوشتن را انجام نمی‌دهد.
+Collectorها مستقل از Web Service در Render و از طریق زمان‌بندی Supabase اجرا می‌شوند. ساخت و تحلیل Snapshotها در پردازش زمان‌بندی‌شده انجام می‌شود؛ بازدیدکننده نه Collector را اجرا می‌کند و نه منتظر تحلیل زنده می‌ماند. مسیر نمایش عمومی فقط یک درخواست مستقیم به ردیف‌های آمادهٔ `netguard_snapshots` می‌فرستد. مرورگر صرفاً از Publishable Key استفاده می‌کند و RLS دسترسی را به خواندن محدود می‌کند.
 
 ## داده‌ها و API
 
@@ -22,7 +22,9 @@ Collector از خوابیدن Web Service در Render مستقل است؛ برن
 - تحلیل آماری دو پنجرهٔ زمانی هم‌طول ۳۰ دقیقه‌ای، با آستانهٔ cadence مخصوص هر منبع.
 - تحلیل یادگیری ماشین در پاسخ داشبورد: Hybrid Isolation Forest بدون‌نظارت؛ ویژگی تغییر بر حسب زمان واقعی نرمال می‌شود و پیش‌بینی فقط با دادهٔ تازه و نمونهٔ کافی فعال است.
 - صفحهٔ «کیفیت و پوشش داده» تعداد نمونهٔ معتبر، پوشش بازه، طول تاریخچه، cadence، شکاف‌ها و سن آخرین مشاهده را جداگانه گزارش می‌کند.
-- داشبورد هر ۶۰ ثانیه API را بازخوانی می‌کند.
+- همهٔ Snapshotهای صفحه با یک درخواست خوانده می‌شوند؛ بازخوانی خودکار هر ۵ دقیقه و هنگام بازگشت تب به حالت visible انجام می‌شود.
+- آخرین پاسخ موفق در `localStorage` برای نمایش فوری بازدیدهای بعدی نگهداری می‌شود؛ شبکه در پس‌زمینه تازه‌سازی می‌شود.
+- فایل‌های استاتیک از CDN ارائه می‌شوند و بارگذاری فونت خارجی از Google Fonts به مسیر اولیه وابسته نیست.
 - جدول‌های `sources`، `observations` و `collector_runs` با RLS محافظت شده‌اند.
 - نقش‌های عمومی فقط دسترسی خواندن Viewهای داشبورد را دارند؛ جدول اعتبارنامهٔ Collector برای نقش‌های عمومی قابل خواندن نیست.
 
@@ -62,8 +64,8 @@ npm run dev
 
 - Render API: `pip install -r requirements.txt` و `uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
 - Render Dashboard: `cd frontend && npm install && npm run build`، خروجی `frontend/dist`.
-- متغیر `VITE_API_URL` در Static Site به URL سرویس API اشاره می‌کند.
-- `SUPABASE_URL` و `SUPABASE_PUBLISHABLE_KEY` فقط در محیط سرویس API استفاده می‌شوند.
+- متغیرهای عمومی `VITE_SUPABASE_URL` و `VITE_SUPABASE_PUBLISHABLE_KEY` در Static Site تنظیم می‌شوند؛ Publishable Key برای انتشار در مرورگر طراحی شده و فقط با RLS و مجوز SELECT استفاده می‌شود.
+- `SUPABASE_URL`، `SUPABASE_PUBLISHABLE_KEY` و توکن جمع‌آوری در سرویس API باقی می‌مانند؛ هیچ Secret یا Service Role Key در مرورگر قرار نمی‌گیرد.
 - GitHub Actions تست‌های Python و build فرانت‌اند را روی شاخه‌های فعال اجرا می‌کند.
 
 ## محدودیت‌های نسخهٔ اول
