@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any, Literal
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -226,7 +226,9 @@ _CATEGORY_LABELS = {
 }
 
 @app.get("/api/dashboard")
-def dashboard(hours: Literal[24, 72, 168] = 168) -> dict[str, Any]:
+def dashboard(hours: int = 168) -> dict[str, Any]:
+    if hours not in (24, 72, 168):
+        raise HTTPException(status_code=422, detail="Only precomputed windows are available: 24, 72, or 168 hours.")
     return _read_snapshot(f"dashboard_{hours}", stale_after_seconds=900)
 
 
