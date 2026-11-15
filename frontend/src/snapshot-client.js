@@ -38,7 +38,10 @@ export async function fetchJsonWithRetry(
         ...options,
         signal: controller.signal,
       });
-      const payload = await response.json().catch(() => null);
+      const payload = await response.json().catch((error) => {
+        if (controller.signal.aborted) throw error;
+        return null;
+      });
 
       if (!response.ok) {
         const error = new Error(
