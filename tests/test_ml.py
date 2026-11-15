@@ -3,12 +3,12 @@ from datetime import datetime, timedelta, timezone
 from netguard.ml import analyze_intelligence
 
 
-def make_data(values, source_id, signal):
+def make_data(values, source_id, signal, step_minutes=5):
     start = datetime(2026, 11, 15, tzinfo=timezone.utc)
     source = {"source_id": source_id, "signal": signal, "display_name": source_id}
     rows = [{
         "source_id": source_id,
-        "observed_at": (start + timedelta(minutes=5 * index)).isoformat(),
+        "observed_at": (start + timedelta(minutes=step_minutes * index)).isoformat(),
         "value": value,
         "quality": "valid",
     } for index, value in enumerate(values)]
@@ -87,3 +87,33 @@ def test_recovery_duration_is_not_invented_without_labeled_events():
     result = analyze_intelligence([source], rows)
     assert result["recovery_estimate"]["available"] is False
     assert result["recovery_estimate"]["estimated_duration_minutes"] is None
+
+
+def test_forecast_rejects_sparse_time_windows_even_with_many_total_rows():
+    sources, rows = [], []
+    for source_id, signal, base in (
+        ("ioda:IR:bgp", "bgp", 1000),
+        ("ioda:IR:ping-slash24", "ping-slash24", 900),
+    ):
+        source, source_rows = make_data([base] * 60, source_id, signal, step_minutes=60)
+        sources.append(source)
+        rows.extend(source_rows)
+    forecast = analyze_intelligence(sources, rows)["forecast"]
+    assert forecast["available"] is False
+    assert forecast["risk_index"] is None
+    assert any(item["available"] is False for item in forecast["components"])
+
+
+def test_stale_primary_signal_blocks_forecast_even_when_history_is_long():
+    sources, rows = [], []
+    for source_id, signal, base in (
+        ("ioda:IR:bgp", "bgp", 1000),
+        ("ioda:IR:ping-slash24", "ping-slash24", 900),
+    ):
+        source, source_rows = make_data([base] * 60, source_id, signal)
+        sources.append(source)
+        rows.extend(source_rows)
+    sources[0]["freshness_status"] = "stale"
+    forecast = analyze_intelligence(sources, rows)["forecast"]
+    assert forecast["available"] is False
+    assert forecast["components"][0]["reason"] == "دادهٔ تازه برای این شاخص موجود نیست"
