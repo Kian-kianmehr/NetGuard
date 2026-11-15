@@ -79,6 +79,12 @@ def test_dashboard_rejects_out_of_range_window():
     assert response.status_code == 422
 
 
+def test_dashboard_rejects_windows_without_precomputed_snapshots():
+    with TestClient(app) as client:
+        response = client.get("/api/dashboard?hours=48")
+    assert response.status_code == 422
+
+
 
 def test_censorship_snapshot_builder_separates_ooni_evidence_from_test_candidates(monkeypatch):
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
