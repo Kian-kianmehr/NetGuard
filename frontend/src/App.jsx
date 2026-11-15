@@ -753,7 +753,8 @@ export default function App() {
         <Stat icon={Database} label="منابع اصلی قابل استفاده" value={number(analysis.public_summary?.checked_primary_signals, 0) + " / 2"} hint="BGP و پایش فعال"/>
         <Stat icon={Gauge} label="پوشش بازه" value={number(analysis.data_quality?.window_coverage_percent, 1) + "٪"} hint="نمونه‌های معتبر نسبت به انتظار"/>
         <Stat icon={AlertTriangle} label="منابع دارای انحراف" value={number(analysis.anomalous_sources, 0)} hint="انحراف از خط مبنای هر سیگنال" tone={analysis.anomalous_sources ? "warn" : "default"}/>
-        <Stat icon={RadioTower} label="منابع تازه" value={number(analysis.fresh_sources, 0)} hint="بر اساس زمان مشاهده"/>
+        <Stat icon={RadioTower} label="منابع تازه" value={number(analysis.fresh_sources, 0)} hint="بر اساس آستانهٔ تازگی منبع"/>
+        <Stat icon={Clock3} label="منابع عقب‌مانده از cadence" value={number(analysis.data_quality?.sources_delayed, 0)} hint="آخرین مشاهده بیش از سه فاصلهٔ معمول نمونه‌برداری عقب است"/>
         <Stat icon={Activity} label="رخدادهای پنجره" value={number(analysis.events_count, 0)} hint="رخدادهای شناسایی‌شده"/>
       </div>
       <Panel tag="کیفیت داده" title="پوشش و پیوستگی تاریخچه" note="این درصد نشانهٔ سلامت اینترنت نیست؛ فقط پوشش داده در پنجرهٔ انتخابی را اندازه می‌گیرد.">
