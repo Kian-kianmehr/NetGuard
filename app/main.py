@@ -142,7 +142,7 @@ def dashboard(
                         "geographic_scope,quality"
                     ),
                     "observed_at": f"gte.{since}",
-                    "order": "observed_at.asc",
+                    "order": "observed_at.asc,source_id.asc",
                     "limit": "6000",
                 },
             )
