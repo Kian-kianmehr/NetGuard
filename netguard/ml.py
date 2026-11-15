@@ -305,6 +305,17 @@ def _forecast_component(
     change = (recent_median - previous_median) / abs(previous_median) * 100.0
     change = max(-80.0, min(80.0, change))
     projected = max(0.0, latest * (1.0 + change / 100.0))
+    horizon_projections = []
+    for minutes in (15, 30, 60):
+        multiplier = minutes / FORECAST_WINDOW_MINUTES
+        horizon_change = max(-80.0, min(80.0, change * multiplier))
+        horizon_value = max(0.0, latest * (1.0 + horizon_change / 100.0))
+        horizon_projections.append({
+            "minutes": minutes,
+            "projected_value": round(horizon_value, 2),
+            "projected_change_percent": round(horizon_change, 1),
+            "method": "linear_trend_extension",
+        })
     return {
         "signal": signal,
         "available": True,
@@ -313,6 +324,7 @@ def _forecast_component(
         "recent_window_median": round(recent_median, 2),
         "projected_value_30m": round(projected, 2),
         "projected_change_30m_percent": round(change, 1),
+        "horizon_projections": horizon_projections,
         "anomaly_score": model.get("score"),
         "sample_count": len(rows),
         "previous_window_samples": len(previous),
@@ -548,6 +560,8 @@ def analyze_intelligence(
         },
         "method_note": (
             "ترکیب Isolation Forest بدون‌نظارت و انحراف مقاوم؛ تغییر هر نمونه بر حسب زمان واقعی "
-            "به نرخ ساعتی تبدیل می‌شود و فاصله از خط مبنا در پنجرهٔ ۶۰ دقیقه‌ای سنجیده می‌شود."
+            "به نرخ ساعتی تبدیل می‌شود و فاصله از خط مبنا در پنجرهٔ ۶۰ دقیقه‌ای سنجیده می‌شود. "
+            "نمایش افق‌های ۱۵، ۳۰ و ۶۰ دقیقه‌ای، امتداد خطی آزمایشی روند دو پنجرهٔ ۳۰ دقیقه‌ای است؛ "
+            "این برآوردها احتمال آماری کالیبره‌شده نیستند."
         ),
     }

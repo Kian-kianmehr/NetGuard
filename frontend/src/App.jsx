@@ -9,8 +9,8 @@ const NAV = [
   ["overview", "نمای کلی", Globe2],
   ["quality", "کیفیت و پوشش داده", Database],
   ["censorship", "سایت‌ها و فیلترینگ", ShieldAlert],
-  ["providers", "دیتاسنترها و هوش مصنوعی", Server],
-  ["intelligence", "پیش‌بینی و تحلیل هوشمند", BrainCircuit],
+  ["providers", "دیتاسنترهای ایران و جهان", Server],
+  ["intelligence", "هوش مصنوعی و پیش‌بینی", BrainCircuit],
   ["analysis", "تحلیل وضعیت", Activity],
   ["signals", "سیگنال‌ها", Signal],
   ["events", "رخدادها", AlertTriangle],
@@ -150,6 +150,56 @@ function PublicStatus({ summary, checkedAt }) {
       <article><small>اطمینان ارزیابی</small><b>{summary.confidence_label || "نامشخص"}</b></article>
     </div>
     <div className="public-status-note">سرعت و کیفیت تجربهٔ شخصی کاربران مستقیماً اندازه‌گیری نمی‌شود.</div>
+  </section>;
+}
+
+function PublicSituationReport({ summary, intelligence, censorship, providers, datacenters, dataQuality, checkedAt }) {
+  const forecast = intelligence?.forecast || {};
+  const providerList = Array.isArray(providers) ? providers : (providers?.providers || []);
+  const infrastructure = providerList.filter((item) => item.group === "infrastructure");
+  const affectedInfrastructure = infrastructure.filter((item) =>
+    ["degraded_performance", "partial_outage", "major_outage"].includes(item.status)
+  );
+  const cloudflare = infrastructure.find((item) => item.id === "cloudflare");
+  const domesticCount = Number(datacenters?.total_sites || 0);
+  const directlyMonitored = Number(datacenters?.directly_monitored || 0);
+  const measuredDomains = Number(censorship?.total_domains_observed || 0);
+  const confirmedDomains = Number(censorship?.confirmed_domain_count || 0);
+  const anomalyDomains = Number(censorship?.anomaly_domain_count || 0);
+  const forecastText = forecast.available
+    ? `در افق آزمایشی ${number(forecast.horizon_minutes || 30, 0)} دقیقه، امتیاز نشانه‌های افت ${number(forecast.risk_index, 0)} از ۱۰۰ است: ${forecast.risk_label || "بدون برچسب"}.`
+    : "برای پیش‌بینی کوتاه‌مدت هنوز دادهٔ تازه و هم‌زمان از هر دو شاخص اصلی کافی نیست.";
+  const providerText = infrastructure.length
+    ? `${number(infrastructure.length, 0)} سرویس زیرساختی بین‌المللی بررسی می‌شوند؛ ${number(affectedInfrastructure.length, 0)} مورد در صفحهٔ رسمی خود نشانهٔ افت یا اختلال اعلام کرده‌اند.`
+    : "اطلاعات وضعیت سرویس‌های زیرساختی جهانی هنوز در دسترس نیست.";
+  const tone = summary?.tone || "neutral";
+  return <section className={"public-assessment " + tone}>
+    <div className="public-assessment-head">
+      <div>
+        <small>گزارش عمومی نت‌گارد · وضعیت اینترنت داخل ایران</small>
+        <h2>{summary?.title || "در انتظار دادهٔ کافی برای ارزیابی"}</h2>
+        <p>{summary?.summary || "پس از دریافت دادهٔ کافی از شاخص‌های اصلی، ارزیابی ملی در این بخش نمایش داده می‌شود."}</p>
+      </div>
+      <span className="public-verdict">{summary?.condition_label || "در حال بررسی"}</span>
+    </div>
+    <div className="situation-grid">
+      <article><small>اتصال و مسیرهای اینترنت</small><b>{summary?.stability_label || "نامشخص"}</b><p>{summary?.outage_detail || "برای بررسی اختلال گسترده باید چند شاخص مستقل و تازه در دسترس باشند."}</p></article>
+      <article><small>دسترسی به وب‌سایت‌ها</small><b>{number(confirmedDomains, 0)} دامنه با شاهد مسدودسازی</b><p>{measuredDomains ? `در ${number(measuredDomains, 0)} دامنه نتیجهٔ آزمون OONI وجود دارد؛ ${number(anomalyDomains, 0)} مورد دیگر نشانهٔ اختلال دارند، اما لزوماً فیلترشده نیستند.` : "نتایج آزمون دسترسی هنوز در این گزارش بارگذاری نشده‌اند."}</p></article>
+      <article><small>مراکز داده داخل ایران</small><b>{number(domesticCount, 0)} مرکز یا محل میزبانی ثبت‌شده</b><p>{directlyMonitored ? `${number(directlyMonitored, 0)} مورد پایش مستقیم دارند.` : "برای مراکز فهرست‌شده هنوز سنجش زندهٔ مستقل NetGuard از داخل ایران نداریم؛ بنابراین وضعیت عملیاتی آن‌ها نامشخص است."}</p></article>
+      <article><small>زیرساخت خارج از ایران</small><b>{number(cloudflare?.data_center_count, 0)} نقطهٔ حضور Cloudflare</b><p>{providerText} این وضعیت‌ها جهانی‌اند و به‌تنهایی دسترسی از داخل ایران را ثابت نمی‌کنند.</p></article>
+      <article><small>روند یک ساعت اخیر</small><b>{summary?.trend_label || "نامشخص"}</b><p>{summary?.trend_detail || "برای مقایسهٔ روند به نمونه‌های کافی در دو پنجرهٔ زمانی نیاز است."}</p></article>
+      <article><small>چشم‌انداز کوتاه‌مدت</small><b>{forecast.available ? `امتیاز نشانه‌های افت: ${number(forecast.risk_index, 0)} از ۱۰۰` : "پیش‌بینی در دسترس نیست"}</b><p>{forecastText} این امتیاز احتمال قطعی یا پیش‌بینی قطعی خاموشی نیست.</p></article>
+      <article><small>کیفیت و اطمینان داده</small><b>{summary?.confidence_label || "نامشخص"} · پوشش {number(dataQuality?.window_coverage_percent, 0)}٪</b><p>{summary?.confidence_detail || "تازگی و کامل بودن داده‌ها بر میزان اطمینان اثر می‌گذارد."}</p></article>
+    </div>
+    <div className="public-explanation">
+      <b>جمع‌بندی را چطور بخوانیم؟</b>
+      <ul>
+        {(summary?.reasoning || []).map((item) => <li key={item}>{item}</li>)}
+        <li>آزمون‌های OONI دربارهٔ دسترسی به دامنه‌های آزمایش‌شده‌اند؛ همهٔ سایت‌ها یا همهٔ اپراتورها را پوشش نمی‌دهند.</li>
+        <li>وضعیت جهانی شرکت‌ها و فهرست دیتاسنترها جای اندازه‌گیری مستقیم از شهرها و اپراتورهای داخل ایران را نمی‌گیرد.</li>
+      </ul>
+      <p>{summary?.scope_note || "این گزارش بر شواهد عمومی و ملی تکیه دارد و کیفیت اتصال تک‌تک کاربران را اندازه نمی‌گیرد."} آخرین مشاهدهٔ شاخص‌های اصلی: {time(checkedAt)} · آخرین آزمون OONI: {time(censorship?.sync?.finished_at)} · آخرین بررسی زیرساخت جهانی: {time(providers?.checked_at)}.</p>
+    </div>
   </section>;
 }
 
@@ -301,6 +351,7 @@ export default function App() {
   const [page, setPage] = useState("overview");
   const [windowHours, setWindowHours] = useState(168);
   const [eventFilter, setEventFilter] = useState("all");
+  const [showOverviewDetails, setShowOverviewDetails] = useState(false);
   const [siteFilter, setSiteFilter] = useState("all");
   const [siteQuery, setSiteQuery] = useState("");
   const [providerData, setProviderData] = useState({ providers: [], checked_at: null, error: "", busy: true });
@@ -457,15 +508,16 @@ export default function App() {
 
   let body;
   if (page === "overview") body = <>
-    <PublicStatus summary={analysis.public_summary} checkedAt={lastPrimaryObservation}/>
+    <PublicSituationReport summary={analysis.public_summary} intelligence={analysis.intelligence} censorship={censorship} providers={providerData} datacenters={datacenterData} dataQuality={dataQuality} checkedAt={lastPrimaryObservation}/>
     <div className="hero">
       <div><small>سلامت سامانهٔ پایش · ایران</small><h2>{overall}</h2>
         <p>{number(fresh, 0)} منبع تازه · {number(attention, 0)} منبع قدیمی یا خطادار</p>
         <div className="meta"><span>آخرین مشاهده: {time(data.sources.map((source) => source.last_observed_at).filter(Boolean).sort().at(-1))}</span><span>آخرین دریافت API: {time(data.generated_at)}</span></div>
       </div><div className="orb"><Globe2 size={40}/><b>IR</b></div>
     </div>
-    <div className="plain-explanation"><b>نت‌گارد به زبان ساده</b><p>نت‌گارد تغییرات اینترنت را از چند منبع مستقل بررسی می‌کند، نشانه‌های اختلال را پیدا می‌کند، دسترسی به وب‌سایت‌ها را با آزمون‌های واقعی می‌سنجد و وضعیت سرویس‌های ابری و هوش مصنوعی را از صفحه‌های رسمی آن‌ها می‌خواند. هیچ شاخصی به‌تنهایی تجربهٔ همهٔ کاربران را نشان نمی‌دهد.</p></div>
-    <details className="technical-details"><summary>نمایش جزئیات فنی داشبورد</summary>
+    <div className="plain-explanation"><b>این گزارش چه چیزهایی را کنار هم می‌گذارد؟</b><p>نت‌گارد مسیرهای قابل مشاهدهٔ اینترنت، پاسخ‌گویی شبکه، نتایج آزمون دسترسی به وب‌سایت‌ها، روند تغییرات، کیفیت داده و اعلام اختلال سرویس‌های جهانی را بررسی می‌کند. به همین دلیل به‌جای یک برچسب ساده مثل «پایدار»، توضیح می‌دهد چه چیزی مشاهده شده، چه چیزی هنوز معلوم نیست و پیش‌بینی کوتاه‌مدت چقدر محدودیت دارد.</p></div>
+    <button className="detail-toggle" type="button" aria-expanded={showOverviewDetails} onClick={() => setShowOverviewDetails((value) => !value)}>{showOverviewDetails ? "بستن جزئیات فنی داشبورد" : "نمایش جزئیات فنی داشبورد"} <span>{showOverviewDetails ? "−" : "+"}</span></button>
+    {showOverviewDetails && <section className="technical-expansion">
     <div className="section-kicker">جزئیات فنی سامانهٔ پایش</div>
     <div className="metrics">
       {[[RadioTower, "منابع ثبت‌شده", data.sources.length], [CheckCircle2, "منابع تازه", fresh], [AlertTriangle, "قدیمی یا خطادار", attention], [Activity, "مشاهدات بازه", data.observations.length]].map(([Icon, label, value]) =>
@@ -491,7 +543,7 @@ export default function App() {
       </Panel>
     </div>
     <Panel tag="سلامت ورودی داده" title="وضعیت منابع"><SourceTable rows={data.sources}/></Panel>
-    </details>
+    </section>}
   </>;
   else if (page === "quality") {
     const quality = analysis.data_quality || {};
@@ -654,17 +706,24 @@ export default function App() {
     const cause = intelligence.cause_analysis || {};
     const recovery = intelligence.recovery_estimate || {};
     body = <div className="stack">
-      <div className="intro page-intro"><small><BrainCircuit size={14}/> تحلیل یادگیری ماشین</small><h2>مدل هوشمند و برآورد کوتاه‌مدت</h2><p>مدل بدون‌نظارت، رفتار هر سیگنال را با تاریخچهٔ خودش مقایسه می‌کند؛ برآورد آینده از نتیجهٔ قطعی شبکه جداست.</p></div>
+      <div className="intro page-intro"><small><BrainCircuit size={14}/> NetGuard Intelligence</small><h2>تحلیل هوشمند و پیش‌بینی روند اینترنت</h2><p>این بخش تغییرات غیرعادی را در چند شاخص پیدا می‌کند، هم‌زمانی شواهد را می‌سنجد و امتداد کوتاه‌مدت روند را نشان می‌دهد. خروجی‌ها هشدار زودهنگام‌اند، نه اعلام قطعی خاموشی.</p></div>
       <div className="metrics">
         <Stat icon={BrainCircuit} label="مدل" value={intelligence.model_name || "در حال آماده‌سازی"} hint={intelligence.model_status_label || "تاریخچهٔ کافی لازم است"}/>
         <Stat icon={Gauge} label="امتیاز نشانه‌های افت" value={forecast.risk_index == null ? "—" : <span dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</span>} hint="امتیاز آزمایشی؛ نه درصد احتمال اختلال"/>
         <Stat icon={Activity} label="شاخص‌های آموزش‌دیده" value={number(intelligence.trained_signals, 0)} hint="مدل جداگانه برای هر شاخص"/>
-        <Stat icon={Clock3} label="افق برآورد" value="۳۰ دقیقه" hint="روند کوتاه‌مدت"/>
+        <Stat icon={AlertTriangle} label="رفتارهای غیرمعمول" value={number(modelSignals.filter((item) => item.is_anomaly).length, 0)} hint="نیازمند بررسی چندمنبعی"/>
+        <Stat icon={Clock3} label="افق‌های برآورد" value="۱۵، ۳۰، ۶۰ دقیقه" hint="امتداد آزمایشی روند"/>
       </div>
       <Panel tag="پیش‌بینی آزمایشی" title="ریسک افت در افق ۳۰ دقیقه" note={forecast.note || "برآورد پس از دریافت دادهٔ کافی نمایش داده می‌شود."}>
         {forecast.available ? <>
           <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>امتیاز نشانه‌های افت در دو شاخص اصلی</small><strong dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</strong><span>{forecast.risk_label}</span></div><p>این امتیاز از تغییرات اخیر دو شاخص اصلی ساخته می‌شود. صفر یعنی در همین محاسبه نشانهٔ کافی از افت پیدا نشده؛ نه اینکه خطر صفر باشد یا قطعی رخ ندهد.</p></div>
-          <div className="forecast-grid">{forecast.components.map((item) => <article key={item.signal}><small>{item.signal === "bgp" ? "مسیرهای قابل مشاهدهٔ اینترنت" : "پاسخ‌گویی نشانی‌های نمونه"}</small><b>{number(item.projected_change_30m_percent)}٪</b><span>تغییر برآوردی ۳۰ دقیقه پس از آخرین نمونه · مقدار فعلی {number(item.current_value)}</span><span>آخرین مشاهده: {number((item.observation_age_seconds || 0) / 60, 0)} دقیقه قبل · مقدار برآوردی {number(item.projected_value_30m)}</span><span>امتیاز ناهنجاری {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span></article>)}</div>
+          <div className="forecast-grid">{forecast.components.map((item) => <article key={item.signal}>
+            <small>{item.signal === "bgp" ? "مسیرهای قابل مشاهدهٔ اینترنت" : "پاسخ‌گویی نشانی‌های نمونه"}</small>
+            <div className="forecast-horizons">{(item.horizon_projections || []).map((point) => <div key={point.minutes}><small>{number(point.minutes, 0)} دقیقه</small><b className={point.projected_change_percent < 0 ? "negative" : "positive"}>{point.projected_change_percent > 0 ? "+" : ""}{number(point.projected_change_percent)}٪</b><span>مقدار تخمینی: {number(point.projected_value)}</span></div>)}</div>
+            <span>آخرین مشاهده: {number((item.observation_age_seconds || 0) / 60, 0)} دقیقه قبل · مقدار فعلی {number(item.current_value)}</span>
+            <span>امتیاز ناهنجاری: {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span>
+          </article>)}</div>
+          <p className="forecast-method-note">مقادیر ۱۵، ۳۰ و ۶۰ دقیقه، امتداد سادهٔ روند دو پنجرهٔ ۳۰ دقیقه‌ای اخیر هستند؛ مدل پیش‌بینی آموزش‌دیده یا احتمال آماری محسوب نمی‌شوند.</p>
         </> : <Empty title="هنوز برآورد هم‌زمان ممکن نیست" note={forecast.note || "برای هر دو شاخص اصلی باید تاریخچهٔ معتبر بیشتری جمع شود."}/>}
       </Panel>
       <Panel tag="تحلیل شواهد" title="فرضیه‌های علت احتمالی" note={cause.scope_note || "این تحلیل علت قطعی اختلال را تعیین نمی‌کند."}>
@@ -683,68 +742,71 @@ export default function App() {
       </Panel>
       <div className="plain-explanation"><b>این مدل چه فایده‌ای دارد؟</b><p>مدل رفتار معمول هر شاخص را از روی داده‌های قبلی یاد می‌گیرد. اگر رفتار تازه با گذشته فرق زیادی داشته باشد، آن را برای بررسی علامت می‌زند؛ این علامت به‌تنهایی معنی اختلال اینترنت نیست.</p></div>
       {modelSignals.some((item) => item.is_anomaly) && <div className="notice"><Info size={17}/><div><b>یک شاخص کمکی رفتار غیرمعمولی نشان داده است</b><p>این یافته برای بررسی بیشتر نگه داشته می‌شود؛ اما چون به‌تنهایی افت مسیر یا پاسخ‌گویی شبکه را ثابت نمی‌کند، مستقیماً به امتیاز نشانه‌های افت اضافه نمی‌شود.</p></div></div>}
+      <Panel tag="خروجی قابل فهم مدل‌ها" title="کدام شاخص رفتار متفاوتی نشان داده است؟" note="هر شاخص با سابقهٔ خودش سنجیده می‌شود. علامت غیرعادی فقط یک هشدار برای بررسی است و به‌تنهایی اختلال اینترنت را ثابت نمی‌کند.">
+        {modelSignals.length ? <div className="ai-signal-grid">{modelSignals.map((item) => <article key={item.source_id}><div><b>{item.display_name}</b><Badge value={item.status} map={{ready: [item.is_anomaly ? "رفتار غیرمعمول" : "در محدودهٔ معمول", item.is_anomaly ? "warn" : "good"], collecting_history: ["در حال یادگیری", "neutral"], stale_data: ["داده قدیمی", "neutral"]}}/></div><p>{item.interpretation}</p><small>{number(item.sample_count, 0)} نمونهٔ معتبر · {number(item.training_samples, 0)} نمونهٔ آموزشی</small></article>)}</div> : <Empty title="هنوز تاریخچهٔ کافی نداریم" note="مدل تا زمان جمع شدن دادهٔ واقعی، نتیجهٔ ساختگی تولید نمی‌کند."/>}
+      </Panel>
       <details className="technical-details"><summary>جزئیات فنی مدل و امتیازهای هر شاخص</summary>
       <Panel tag="مدل یادگیری ماشین" title="تشخیص رفتار غیرمعمول هر شاخص" note={intelligence.method_note || "مدل بر داده‌های مشاهده‌شده آموزش می‌بیند؛ هیچ داده یا برچسب ساختگی تولید نمی‌شود."}>
         {modelSignals.length ? <div className="ml-list">{modelSignals.map((item) => <article className="ml-row" key={item.source_id}><div className="ml-row-head"><div><b>{item.display_name}</b><small>{item.signal}</small></div><span className={item.is_anomaly ? "ml-score anomaly" : "ml-score"}>{item.score == null ? "—" : number(item.score, 3)}</span></div><p>{item.interpretation}</p><div className="ml-meta"><span>وضعیت: {item.status_label}</span><span>تاریخچه: {number(item.sample_count, 0)} نمونه</span><span>نمونهٔ آموزش: {number(item.training_samples, 0)}</span><span>ویژگی غالب: {item.dominant_feature_label}</span></div></article>)}</div> : <Empty/>}
       </Panel>
       <div className="notice"><Info size={17}/><div><b>مرز علمی مدل</b><p>این مدل رفتار غیرعادی را پیدا می‌کند، نه احتمال قطعی خاموشی را. امتیازهای مدل زمانی به احتمال واقعی تبدیل می‌شوند که با رخدادهای تأییدشده آزمایش و کالیبره شده باشند.</p></div></div>
       </details>
+      <Panel tag="وضعیت سرویس‌های هوش مصنوعی" title="دسترسی جهانی به ارائه‌دهندگان مدل‌ها" note="این اطلاعات از صفحات رسمی وضعیت شرکت‌ها می‌آید و وضعیت دسترسی به آن‌ها از داخل ایران را به‌تنهایی ثابت نمی‌کند.">
+        <div className="provider-grid">{(providerData.providers || []).filter((item) => item.group === "ai").map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
+      </Panel>
     </div>;
   }
   else if (page === "providers") {
     const providerList = providerData.providers || [];
     const infra = providerList.filter((item) => item.group === "infrastructure");
-    const ai = providerList.filter((item) => item.group === "ai");
     const developer = providerList.filter((item) => item.group === "developer");
     const cloudflare = providerList.find((item) => item.id === "cloudflare");
+    const globalNodes = (cloudflare?.technical_components || []).filter((item) => item.name && item.name.includes(" - ("));
+    const globalIssues = globalNodes.filter((item) => item.status !== "operational");
     body = <div className="stack">
-      <div className="intro page-intro"><small><Server size={14}/> پایش سرویس‌های جهانی</small><h2>دیتاسنترها، زیرساخت ابری و هوش مصنوعی</h2><p>نت‌گارد صفحه‌های رسمی وضعیت شرکت‌ها را بررسی می‌کند تا اختلال‌های اعلام‌شدهٔ جهانی را یک‌جا ببینی.</p></div>
+      <div className="intro page-intro"><small><Server size={14}/> زیرساخت و مراکز داده</small><h2>مراکز دادهٔ ایران و خارج از ایران</h2><p>این صفحه موجودی عمومی مراکز داخل کشور را از وضعیت نقاط حضور و زیرساخت جهانی جدا می‌کند. «ثبت‌شده» با «پایش زنده و سالم» یکی نیست.</p></div>
       <div className="metrics">
-        <Stat icon={Server} label="شرکت‌های بررسی‌شده" value={number(providerList.length, 0)} hint="بر اساس منابع رسمی"/>
-        <Stat icon={AlertTriangle} label="دارای اختلال اعلام‌شده" value={number(providerList.filter((item) => ["degraded_performance","partial_outage","major_outage"].includes(item.status)).length, 0)} hint="در صفحهٔ رسمی شرکت"/>
-        <Stat icon={Cloud} label="مراکز شبکهٔ Cloudflare" value={number(cloudflare?.data_center_count, 0)} hint="مکان‌های دارای وضعیت منتشرشده"/>
-        <Stat icon={Clock3} label="آخرین بررسی" value={time(providerData.checked_at, false)} hint="snapshot زمان‌بندی‌شدهٔ ۱۰ دقیقه‌ای"/>
+        <Stat icon={Server} label="مراکز و محل‌های میزبانی ایران" value={number(datacenterData.total_sites, 0)} hint="رکوردهای مستند و نامزدهای دایرکتوری"/>
+        <Stat icon={Activity} label="مراکز ایران با پایش زنده" value={number(datacenterData.directly_monitored, 0)} hint="اندازه‌گیری مستقیم NetGuard"/>
+        <Stat icon={Globe2} label="نقاط حضور Cloudflare در جهان" value={number(cloudflare?.data_center_count, 0)} hint="مؤلفه‌های مکان‌محور در صفحهٔ رسمی"/>
+        <Stat icon={AlertTriangle} label="مکان‌های جهانی غیرعادی" value={number(globalIssues.length, 0)} hint="وضعیت اعلام‌شدهٔ سرویس، نه از داخل ایران"/>
       </div>
-      <div className="notice"><Info size={17}/><div><b>محدودیت مهم</b><p>{providerData.scope_note || "این اطلاعات وضعیت جهانی سرویس‌ها را از منابع رسمی نشان می‌دهد؛ سالم بودن یک سرویس در جهان، دسترسی به آن از داخل ایران را ثابت نمی‌کند."}</p></div></div>
-      {providerData.error && <div className="warning"><AlertTriangle/><div><b>دریافت وضعیت با مشکل روبه‌رو شد</b><p>{providerData.error}</p></div></div>}
-      <Panel tag="زیرساخت داخل ایران" title="مراکز داده و مکان‌های میزبانی ایران" note={datacenterData.scope_note || "فهرست مراکز ثبت‌شده در منابع عمومی؛ وضعیت عملیاتی فقط با اندازه‌گیری مستقیم قابل تأیید است."}>
+      {providerData.error && <div className="warning"><AlertTriangle/><div><b>دریافت وضعیت جهانی با مشکل روبه‌رو شد</b><p>{providerData.error}</p></div></div>}
+      <Panel tag="داخل ایران" title="مراکز داده و مکان‌های میزبانی ایران" note={datacenterData.scope_note || "فهرست مراکز ثبت‌شده در منابع عمومی؛ وضعیت عملیاتی فقط با اندازه‌گیری مستقیم قابل تأیید است."}>
         {datacenterData.error && <div className="warning"><AlertTriangle/><div><b>دریافت فهرست ناموفق بود</b><p>{datacenterData.error}</p></div></div>}
         <div className="metrics">
-          <Stat icon={Server} label="مکان‌های ثبت‌شده" value={number(datacenterData.total_sites, 0)} hint="ترکیب رکوردهای مستند و نامزدهای دایرکتوری"/>
-          <Stat icon={Activity} label="دارای پایش مستقیم NetGuard" value={number(datacenterData.directly_monitored, 0)} hint="اندازه‌گیری مستقل از داخل ایران"/>
-          <Stat icon={Clock3} label="آخرین به‌روزرسانی فهرست" value={time(datacenterData.snapshot_at, false)} hint="snapshot ذخیره‌شده"/>
+          <Stat icon={Server} label="مکان‌های ثبت‌شده" value={number(datacenterData.total_sites, 0)} hint="رکوردهای با سطح اعتبار متفاوت"/>
+          <Stat icon={Activity} label="دارای پایش مستقیم" value={number(datacenterData.directly_monitored, 0)} hint="فعلاً نقاطی که NetGuard مستقلاً می‌سنجد"/>
+          <Stat icon={Clock3} label="آخرین snapshot" value={time(datacenterData.snapshot_at, false)} hint="زمان ذخیرهٔ فهرست"/>
         </div>
         {datacenterData.sites?.length ? <div className="table-wrap"><table>
-          <thead><tr><th>مرکز / محل میزبانی</th><th>اپراتور</th><th>شهر</th><th>سطح مستندات</th><th>وضعیت پایش</th><th>منبع</th></tr></thead>
+          <thead><tr><th>مرکز / محل میزبانی</th><th>اپراتور</th><th>شهر</th><th>اعتبار منبع</th><th>وضعیت واقعی</th><th>منبع</th></tr></thead>
           <tbody>{datacenterData.sites.map((site) => <tr key={site.site_id}>
             <td><b>{site.name}</b><small>{site.notes}</small></td>
             <td>{site.operator || "نامشخص"}</td>
             <td>{[site.city, site.province].filter(Boolean).join("، ") || "نامشخص"}</td>
-            <td>{({
-              operator_documented: "معرفی‌شده توسط اپراتور",
-              operator_listed: "در فهرست اپراتور",
-              third_party_listed: "ثبت‌شده در منبع مستقل",
-              directory_candidate: "نامزد دایرکتوری؛ نیازمند تأیید",
-            })[site.evidence_level] || "نامشخص"}</td>
-            <td><Badge value="unknown"/><small>{site.status_label}</small></td>
+            <td>{({operator_documented: "مستند اپراتور", operator_listed: "فهرست اپراتور", third_party_listed: "منبع مستقل", directory_candidate: "نامزد دایرکتوری"})[site.evidence_level] || "نامشخص"}</td>
+            <td><Badge value="unknown"/><small>{site.status_label || "پایش زنده وجود ندارد"}</small></td>
             <td><a href={site.source_url} target="_blank" rel="noreferrer">{site.source_name} ↗</a></td>
           </tr>)}</tbody>
-        </table></div> : <Empty title="فهرست دیتاسنترها هنوز ثبت نشده"/>}
-        <div className="notice"><Info size={17}/><div><b>چرا وضعیت بعضی مراکز نامشخص است؟</b><p>برای سنجش واقعی یک دیتاسنتر باید از داخل ایران به مسیرها یا نقاط آن اندازه‌گیری مستقل داشته باشیم. فهرست عمومی یا پاسخ‌دادن وب‌سایت اپراتور، سالم‌بودن خود دیتاسنتر را ثابت نمی‌کند. NetGuard این موارد را فعلاً به‌عنوان موجودی ثبت کرده و آن‌ها را سالم فرض نمی‌کند.</p><p><a href="https://covered.ir/en/sites" target="_blank" rel="noreferrer">مشاهدهٔ پایش مستقل نقاط ایرانی در Covered.ir ↗</a> <small>این مرجع بیرونی است و داده‌های آن هنوز در snapshotهای NetGuard ادغام نشده‌اند.</small></p></div></div>
+        </table></div> : <Empty title="فهرست دیتاسنترهای ایران هنوز در دسترس نیست" note={datacenterData.error || "پس از ثبت inventory، مراکز اینجا نمایش داده می‌شوند."}/>}
+        <div className="notice"><Info size={17}/><div><b>این فهرست، وضعیت روشن/خاموش مراکز نیست</b><p>برای سنجش سلامت هر مرکز باید از داخل ایران یا از چند نقطهٔ مستقل به آن آزمون بفرستیم. تا وقتی چنین probeای نداشته باشیم، وضعیت عملیاتی را نامشخص نگه می‌داریم و از روی وب‌سایت اپراتور حکم نمی‌دهیم.</p><p><a href="https://covered.ir/en/sites" target="_blank" rel="noreferrer">فهرست نقاط پایش مستقل Covered.ir ↗</a> <small>منبع بیرونی است و هنوز به پایش مستقیم NetGuard تبدیل نشده.</small></p></div></div>
       </Panel>
-      <Panel tag="شبکهٔ جهانی و مراکز شهری" title="مراکز شبکه و نقاط حضور" note="وضعیت شهرهایی که شرکت به‌طور جداگانه منتشر می‌کند؛ این اطلاعات معادل پایش همهٔ دیتاسنترهای جهان نیست.">
-        {cloudflare ? <ProviderCard item={cloudflare}/> : <Empty title="هنوز داده‌ای دریافت نشده"/>}
+      <Panel tag="خارج از ایران" title="نقاط حضور و مراکز شبکهٔ جهانی" note="Cloudflare مکان‌های شبکهٔ خود را در صفحهٔ وضعیت منتشر می‌کند. این داده فهرست کامل تمام مراکز دادهٔ جهان نیست و محل فیزیکی همهٔ سرورها را نیز مشخص نمی‌کند.">
+        {cloudflare ? <ProviderCard item={cloudflare}/> : <Empty title="اطلاعات جهانی هنوز دریافت نشده"/>}
+        {globalNodes.length ? <div className="table-wrap global-node-table"><table>
+          <thead><tr><th>شهر / نقطهٔ حضور</th><th>وضعیت رسمی</th><th>آخرین به‌روزرسانی مؤلفه</th></tr></thead>
+          <tbody>{globalNodes.slice(0, 80).map((item) => <tr key={item.name}><td>{item.name}</td><td><Badge value={item.status} map={providerStatusMap}/></td><td>{time(item.updated_at)}</td></tr>)}</tbody>
+        </table></div> : <Empty title="فهرست مکان‌های جهانی موجود نیست" note="صفحهٔ رسمی Cloudflare هنوز اجزای مکان‌محور قابل نمایش ارائه نکرده است."/>}
+        <div className="notice"><Info size={17}/><div><b>تفاوت با وضعیت اینترنت ایران</b><p>وضعیت عادی در یک مرکز خارجی فقط سلامت اعلام‌شدهٔ همان شرکت را نشان می‌دهد. برای فهمیدن اینکه کاربران ایران به آن مرکز یا سرویس دسترسی دارند، باید آزمون اتصال از داخل ایران داشته باشیم.</p></div></div>
       </Panel>
-      <Panel tag="زیرساخت ابری و میزبانی" title="سرویس‌های ابری" note="این سرویس‌ها میزبان برنامه‌ها، پایگاه‌های داده و زیرساخت وب هستند.">
+      <Panel tag="سرویس‌های جهانی" title="زیرساخت ابری و میزبانی" note="صفحه‌های رسمی این شرکت‌ها رخدادهای اعلام‌شده در سطح سرویس را نشان می‌دهند؛ این بخش directory مراکز داده نیست.">
         <div className="provider-grid">{infra.filter((item) => item.id !== "cloudflare").map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
       </Panel>
-      <Panel tag="سرویس‌های هوش مصنوعی" title="وضعیت ارائه‌دهندگان هوش مصنوعی" note="اختلال در این سرویس‌ها ممکن است بر چت‌بات‌ها، رابط‌های برنامه‌نویسی یا میزبانی مدل اثر بگذارد.">
-        <div className="provider-grid">{ai.map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
-      </Panel>
-      <Panel tag="ابزارهای توسعه" title="سرویس‌های کدنویسی و همکاری" note="اختلال در این بخش ممکن است دریافت کد یا گردش کار توسعه را تحت تأثیر قرار دهد.">
+      <Panel tag="ابزارهای توسعه" title="سرویس‌های کدنویسی و همکاری" note="وضعیت جهانی ابزارهای توسعه؛ این اطلاعات دسترسی مستقیم از شبکه‌های ایران را نشان نمی‌دهد.">
         <div className="provider-grid">{developer.map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
       </Panel>
-      <div className="toolbar-note">وضعیت سرویس‌ها در پس‌زمینه هر ۱۰ دقیقه ذخیره می‌شود؛ بازدید صفحه فقط آخرین snapshot را می‌خواند. زمان بررسی نت‌گارد و آخرین تغییر صفحهٔ رسمی شرکت از هم جدا هستند.</div>
+      <div className="toolbar-note">آخرین بررسی جهانی: {time(providerData.checked_at)} · فهرست داخل ایران: {time(datacenterData.snapshot_at)} · snapshotها هر ۱۰ دقیقه ذخیره می‌شوند و بازدید صفحه باعث جمع‌آوری تازه نمی‌شود.</div>
     </div>;
   }
   else if (page === "signals") body = <div className="stack">
