@@ -63,7 +63,7 @@ def test_censorship_api_returns_cached_ooni_results(monkeypatch):
     def fake_read_view(client, project_url, key, view, params):
         if view == "censored_domains":
             return [{
-                "domain": "example.org",
+                "domain": "youtube.com",
                 "confirmed_blocked": True,
                 "confirmed_measurements": 3,
                 "anomaly_measurements": 1,
@@ -82,7 +82,8 @@ def test_censorship_api_returns_cached_ooni_results(monkeypatch):
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["domains"][0]["domain"] == "example.org"
+    assert payload["domains"][0]["domain"] == "youtube.com"
+    assert payload["total_domains_observed"] == 1
     assert payload["domains"][0]["confirmed_blocked"] is True
     assert payload["domains"][0]["source_url"].startswith(
         "https://explorer.ooni.org/search?probe_cc=IR&domain="
