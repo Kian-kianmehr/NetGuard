@@ -193,6 +193,13 @@ def _source_quality(
         "baseline_samples": baseline["baseline_samples"],
         "recent_samples": baseline["recent_samples"],
         "freshness_status": source.get("freshness_status") or "unknown",
+        "cadence_status": (
+            "stale" if source.get("freshness_status") == "stale"
+            else "delayed" if latest_age is not None and latest_age > interval * 3
+            else "fresh" if source.get("freshness_status") == "fresh"
+            else "unknown"
+        ),
+        "cadence_delay_after_seconds": interval * 3,
         "last_run_status": source.get("last_run_status") or "unknown",
         "last_run_started_at": source.get("last_run_started_at"),
         "last_run_error_code": source.get("last_run_error_code"),
@@ -613,14 +620,24 @@ def analyze_dashboard(
         freshness_status = source.get("freshness_status") or "unknown"
         comparison = _compare_recent_windows(rows, interval)
 
+        observation_age = (
+            max(0.0, (now - latest["_time"]).total_seconds()) if latest else None
+        )
+        cadence_delay_after = interval * 3
+        is_delayed = (
+            freshness_status == "fresh"
+            and observation_age is not None
+            and observation_age > cadence_delay_after
+        )
         if freshness_status == "stale":
             data_state = "stale"
-        elif freshness_status != "fresh":
+        elif freshness_status != "fresh" or is_delayed:
             data_state = "limited"
         elif sample_count < 12 or not comparison["ready"]:
             data_state = "insufficient"
         else:
             data_state = "usable"
+        display_freshness_status = "delayed" if is_delayed else freshness_status
 
         baseline_value = comparison["baseline_value"]
         recent_value = comparison["recent_value"]
@@ -677,6 +694,43 @@ def analyze_dashboard(
                     "و می‌تواند از تغییر الگوی ترافیک یا پوشش تلسکوپ اثر بگیرد."
                 )
         events.extend(source_events)
+
+        if is_delayed and data_state != "stale":
+            events.append({
+                "event_id": f"delayed:{source_id}:{source.get('last_observed_at')}",
+                "event_type": "source_delayed",
+                "source_id": source_id,
+                "source_name": source.get("display_name") or source_id,
+                "title": "مشاهدهٔ تازه با تأخیر دریافت می‌شود",
+                "description": (
+                    f"آخرین مشاهده از {round(observation_age / 60)} دقیقه قبل است؛ "
+                    f"فاصلهٔ معمول این منبع {round(interval / 60)} دقیقه است. "
+                    "اجرای موفق جمع‌آوری به معنی انتشار مشاهدهٔ جدید از منبع بالادستی نیست."
+                ),
+                "direction": "unknown",
+                "change_percent": None,
+                "peak_change_percent": None,
+                "baseline_value": None,
+                "observed_value": source.get("latest_value"),
+                "unit": source.get("unit", ""),
+                "start_at": source.get("last_observed_at"),
+                "end_at": source.get("last_observed_at"),
+                "occurred_at": source.get("last_collected_at") or source.get("last_observed_at"),
+                "severity": "warning",
+                "evidence_score": None,
+                "robust_z_score": None,
+                "sample_count": sample_count,
+                "corroboration": "operational",
+                "status": "detected",
+                "status_label": "هشدار عملیاتی؛ نه رخداد شبکه",
+                "lifecycle": "operational",
+                "lifecycle_label": "دریافت مشاهده با تأخیر",
+                "observation_age_seconds": round(observation_age),
+                "expected_interval_seconds": interval,
+                "last_observed_at": source.get("last_observed_at"),
+                "last_collected_at": source.get("last_collected_at"),
+                "scope": "country",
+            })
 
         if data_state == "stale":
             events.append({
@@ -763,6 +817,9 @@ def analyze_dashboard(
             "source_url": source.get("source_url", ""),
             "unit": source.get("unit", ""),
             "freshness_status": freshness_status,
+            "display_freshness_status": display_freshness_status,
+            "observation_age_seconds": round(observation_age) if observation_age is not None else None,
+            "cadence_delay_after_seconds": cadence_delay_after,
             "last_observed_at": source.get("last_observed_at"),
             "last_collected_at": source.get("last_collected_at"),
             "last_run_started_at": source.get("last_run_started_at"),
@@ -787,7 +844,7 @@ def analyze_dashboard(
                 "usable": "دادهٔ تازه و مقایسه‌پذیر",
                 "insufficient": "نمونهٔ کافی در پنجره‌های اخیر نیست",
                 "stale": "دادهٔ قدیمی",
-                "limited": "جمع‌آوری یا تازگی داده نیازمند بررسی است",
+                "limited": "تازگی یا فاصلهٔ نمونه‌برداری نیازمند بررسی است",
             }[data_state],
             "event_count": len(source_events),
             "plain_title": signal_title,
@@ -897,6 +954,7 @@ def analyze_dashboard(
         "observed_span_percent": round(observed_span, 1),
         "sources_total": source_count,
         "sources_fresh": fresh_count,
+        "sources_delayed": sum(1 for item in signal_results if item["display_freshness_status"] == "delayed"),
         "sources_usable": len(usable),
         "sources_with_recent_samples": len(recent_rows),
         "sources_with_gaps": sum(1 for item in quality_rows if item["gaps_over_expected_threshold"] > 0),
