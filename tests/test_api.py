@@ -235,3 +235,55 @@ def test_internal_snapshot_collector_rejects_requests_without_secret(monkeypatch
     with TestClient(app) as client:
         response = client.post("/internal/collect-snapshots")
     assert response.status_code == 401
+
+
+
+def test_batched_dashboard_snapshot_builder_reads_shared_history_once_and_preserves_windows(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+
+    from app.main import _build_dashboard_snapshots
+
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test")
+    now = datetime.now(timezone.utc)
+    observations = [
+        {"source_id": "ioda:IR:bgp", "observed_at": (now - timedelta(hours=12)).isoformat(), "value": 10},
+        {"source_id": "ioda:IR:bgp", "observed_at": (now - timedelta(hours=48)).isoformat(), "value": 20},
+        {"source_id": "ioda:IR:bgp", "observed_at": (now - timedelta(hours=120)).isoformat(), "value": 30},
+    ]
+    reads = []
+    analyzed = []
+
+    def fake_read_view(client, project_url, key, view, params):
+        reads.append(("view", view, params))
+        return [{"source_id": "ioda:IR:bgp", "signal": "bgp"}]
+
+    def fake_read_view_all(client, project_url, key, view, params):
+        reads.append(("all", view, params))
+        return observations
+
+    def fake_analyze_dashboard(sources, rows, generated_at, window_hours):
+        analyzed.append((window_hours, [row["value"] for row in rows]))
+        return {"window_hours": window_hours}, []
+
+    def fake_analyze_intelligence(sources, rows, now):
+        return {"observation_count": len(rows)}
+
+    monkeypatch.setattr("app.main._read_view", fake_read_view)
+    monkeypatch.setattr("app.main._read_view_all", fake_read_view_all)
+    monkeypatch.setattr("app.main.analyze_dashboard", fake_analyze_dashboard)
+    monkeypatch.setattr("app.main.analyze_intelligence", fake_analyze_intelligence)
+
+    snapshots = _build_dashboard_snapshots(object())
+
+    assert set(snapshots) == {"dashboard_24", "dashboard_72", "dashboard_168"}
+    assert len([item for item in reads if item[0] == "view"]) == 1
+    history_reads = [item for item in reads if item[0] == "all"]
+    assert len(history_reads) == 1
+    assert history_reads[0][1] == "dashboard_observations"
+    assert history_reads[0][2]["observed_at"].startswith("gte.")
+    assert {hours: values for hours, values in analyzed} == {
+        24: [10], 72: [10, 20], 168: [10, 20, 30]
+    }
+    assert snapshots["dashboard_24"]["analysis"]["intelligence"]["observation_count"] == 1
+    assert snapshots["dashboard_168"]["analysis"]["intelligence"]["observation_count"] == 3

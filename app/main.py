@@ -166,6 +166,67 @@ def _build_dashboard_snapshot(hours: int = 168) -> dict[str, Any]:
     }
 
 
+def _build_dashboard_snapshots(client: httpx.Client) -> dict[str, dict[str, Any]]:
+    """Build all public dashboard windows from one bounded Supabase read."""
+    project_url, key = _supabase_config()
+    now = datetime.now(timezone.utc)
+    sources = _read_view(
+        client,
+        project_url,
+        key,
+        "dashboard_sources",
+        {"select": "*", "order": "source_id.asc"},
+    )
+    all_observations = _read_view_all(
+        client,
+        project_url,
+        key,
+        "dashboard_observations",
+        {
+            "select": (
+                "source_id,display_name,observed_at,collected_at,value,unit,"
+                "geographic_scope,quality"
+            ),
+            "observed_at": f"gte.{(now - timedelta(hours=168)).isoformat()}",
+            "order": "observed_at.asc,source_id.asc",
+            "limit": "6000",
+        },
+    )
+
+    parsed_observations: list[tuple[datetime, dict[str, Any]]] = []
+    for row in all_observations:
+        raw_timestamp = row.get("observed_at")
+        try:
+            observed_at = datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            continue
+        if observed_at.tzinfo is None:
+            observed_at = observed_at.replace(tzinfo=timezone.utc)
+        parsed_observations.append((observed_at, row))
+
+    snapshots: dict[str, dict[str, Any]] = {}
+    for hours in (24, 72, 168):
+        cutoff = now - timedelta(hours=hours)
+        observations = [
+            row for observed_at, row in parsed_observations if observed_at >= cutoff
+        ]
+        analysis, events = analyze_dashboard(
+            sources, observations, generated_at=now, window_hours=hours
+        )
+        analysis["intelligence"] = analyze_intelligence(
+            sources, observations, now=now
+        )
+        snapshots[f"dashboard_{hours}"] = {
+            "sources": sources,
+            "observations": observations,
+            "analysis": analysis,
+            "events": events,
+            "generated_at": now.isoformat(),
+            "window_hours": hours,
+        }
+    return snapshots
+
+
 def _read_snapshot(dataset_key: str, *, stale_after_seconds: int) -> dict[str, Any]:
     project_url, key = _supabase_config()
     try:
@@ -594,14 +655,29 @@ def collect_snapshots(x_netguard_token: str = Header(default="")) -> dict[str, A
     failures: list[dict[str, str]] = []
     try:
         with httpx.Client(timeout=httpx.Timeout(35.0, connect=6.0), follow_redirects=True) as client:
+            try:
+                dashboard_payloads = _build_dashboard_snapshots(client)
+            except Exception as exc:
+                logger.exception("Dashboard snapshot batch build failed")
+                dashboard_payloads = {}
+                failures.extend(
+                    {"dataset": f"dashboard_{hours}", "error": type(exc).__name__}
+                    for hours in (24, 72, 168)
+                )
+
             for hours in (24, 72, 168):
                 dataset_key = f"dashboard_{hours}"
+                payload = dashboard_payloads.get(dataset_key)
+                if payload is None:
+                    continue
                 try:
-                    payload = _build_dashboard_snapshot(hours)
-                    _save_snapshot(client, project_url, key, x_netguard_token, dataset_key, payload, len(payload.get("sources", [])))
+                    _save_snapshot(
+                        client, project_url, key, x_netguard_token, dataset_key,
+                        payload, len(payload.get("sources", []))
+                    )
                     completed.append(dataset_key)
                 except Exception as exc:
-                    logger.exception("Snapshot build failed for %s", dataset_key)
+                    logger.exception("Snapshot persistence failed for %s", dataset_key)
                     failures.append({"dataset": dataset_key, "error": type(exc).__name__})
             try:
                 payload = _build_censorship_snapshot()
