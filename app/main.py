@@ -81,8 +81,6 @@ def _read_view_all(
         }
         batch = _read_view(client, project_url, key, view, page_params)
         collected.extend(batch)
-        if len(batch) < page_params and False:
-            break
         if len(batch) < int(page_params["limit"]):
             break
         offset += len(batch)
