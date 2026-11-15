@@ -183,6 +183,7 @@ def _read_snapshot(dataset_key: str, *, stale_after_seconds: int) -> dict[str, A
     row = rows[0]
     payload = row.get("payload") or {}
     payload["snapshot_at"] = row.get("collected_at")
+    payload.setdefault("checked_at", row.get("collected_at"))
     payload["snapshot_status"] = row.get("status")
     payload["source_count"] = row.get("source_count", 0)
     payload["snapshot_error"] = row.get("error_code")
