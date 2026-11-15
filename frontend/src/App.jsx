@@ -483,6 +483,7 @@ export default function App() {
   const [snapshotError, setSnapshotError] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshInFlight = useRef(false);
+  const pendingKeysRef = useRef(new Set());
 
   const keysForPage = useMemo(() => {
     if (page === "censorship") return ["censorship"];
@@ -540,7 +541,11 @@ export default function App() {
 
   const loadSnapshots = useCallback(async (requestedKeys = keysForPage) => {
     const keys = [...new Set(requestedKeys)].filter((key) => SNAPSHOT_KEYS.includes(key));
-    if (!keys.length || refreshInFlight.current) return;
+    if (!keys.length) return;
+    if (refreshInFlight.current) {
+      keys.forEach((key) => pendingKeysRef.current.add(key));
+      return;
+    }
     refreshInFlight.current = true;
     setIsRefreshing(true);
     try {
@@ -589,6 +594,11 @@ export default function App() {
     } finally {
       refreshInFlight.current = false;
       setIsRefreshing(false);
+      if (pendingKeysRef.current.size) {
+        const pendingKeys = [...pendingKeysRef.current];
+        pendingKeysRef.current.clear();
+        loadSnapshots(pendingKeys);
+      }
     }
   }, [keysForPage]);
 
