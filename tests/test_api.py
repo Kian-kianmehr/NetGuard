@@ -92,3 +92,27 @@ def test_censorship_api_returns_cached_ooni_results(monkeypatch):
     )
     assert payload["sync"]["status"] == "success"
     assert payload["lookback_days"] == 90
+
+
+def test_read_view_all_paginates_and_preserves_stable_order(monkeypatch):
+    from app.main import _read_view_all
+
+    calls = []
+
+    def fake_read_view(client, project_url, key, view, params):
+        calls.append((params["limit"], params["offset"], params["order"]))
+        offset = int(params["offset"])
+        return [{"row": index} for index in range(offset, min(offset + int(params["limit"]), 5))]
+
+    monkeypatch.setattr("app.main._read_view", fake_read_view)
+    rows = _read_view_all(
+        object(), "https://example.supabase.co", "test", "dashboard_observations",
+        {"select": "*", "order": "observed_at.asc,source_id.asc"},
+        page_size=2, max_rows=10,
+    )
+    assert [row["row"] for row in rows] == [0, 1, 2, 3, 4]
+    assert calls == [
+        ("2", "0", "observed_at.asc,source_id.asc"),
+        ("2", "2", "observed_at.asc,source_id.asc"),
+        ("2", "4", "observed_at.asc,source_id.asc"),
+    ]
