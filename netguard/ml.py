@@ -199,7 +199,16 @@ def _signal_model(
     interval = _interval_seconds(source)
     rows = _valid_rows(source_id, observations)
     features = _features(rows, interval)
-    fresh = _is_fresh(source, rows, now)
+    source_fresh = _is_fresh(source, rows, now)
+    observation_age = (
+        max(0.0, (now - rows[-1][0]).total_seconds()) if rows else None
+    )
+    cadence_delayed = (
+        source_fresh
+        and observation_age is not None
+        and observation_age > interval * 3
+    )
+    fresh = source_fresh and not cadence_delayed
     result = {
         "source_id": source_id,
         "signal": source.get("signal"),
@@ -207,18 +216,26 @@ def _signal_model(
         "sample_count": len(rows),
         "training_samples": max(0, len(features) - 1),
         "expected_interval_seconds": interval,
-        "observation_age_seconds": (
-            round(max(0.0, (now - rows[-1][0]).total_seconds())) if rows else None
-        ),
+        "observation_age_seconds": round(observation_age) if observation_age is not None else None,
+        "cadence_delay_after_seconds": interval * 3,
         "score": None,
         "status": "collecting_history" if fresh else "stale_data",
-        "status_label": "در حال جمع‌آوری تاریخچه" if fresh else "دادهٔ تازه برای امتیازدهی موجود نیست",
+        "status_label": (
+            "در حال جمع‌آوری تاریخچه" if fresh
+            else "آخرین مشاهده نسبت به cadence منبع با تأخیر است" if cadence_delayed
+            else "دادهٔ تازه برای امتیازدهی موجود نیست"
+        ),
         "is_anomaly": False,
         "dominant_feature": None,
         "dominant_feature_label": "هنوز قابل تعیین نیست",
         "interpretation": (
             f"برای آموزش اولیهٔ مدل حداقل {MIN_RAW_POINTS} مشاهدهٔ معتبر و تاریخچهٔ پیوسته لازم است."
-            if fresh else "آخرین مشاهدهٔ معتبر برای امتیازدهی فعلی به‌اندازهٔ کافی تازه نیست."
+            if fresh else (
+                f"آخرین مشاهده {round(observation_age / 60)} دقیقه قبل است و از سه فاصلهٔ معمول "
+                f"نمونه‌برداری ({round(interval * 3 / 60)} دقیقه) قدیمی‌تر است؛ امتیاز جاری نمایش داده نمی‌شود."
+                if cadence_delayed else
+                "آخرین مشاهدهٔ معتبر برای امتیازدهی فعلی به‌اندازهٔ کافی تازه نیست."
+            )
         ),
     }
     if not fresh or len(rows) < MIN_RAW_POINTS or len(features) - 1 < MIN_TRAINING_POINTS:
@@ -554,8 +571,12 @@ def analyze_intelligence(
         "model_family": "unsupervised_anomaly_detection",
         "model_status": "ready" if trained else "collecting_history",
         "model_status_label": (
-            f"مدل فعال برای {len(trained)} شاخص"
-            if trained else "در حال جمع‌آوری تاریخچهٔ تازه برای آموزش اولیه"
+            f"مدل آمادهٔ امتیازدهی برای {len(trained)} شاخص"
+            if trained else (
+                "تاریخچه وجود دارد؛ برای امتیاز جاری باید مشاهدهٔ تازه برسد"
+                if any(item.get("status") == "stale_data" and item.get("observation_age_seconds") is not None for item in models)
+                else "در حال جمع‌آوری تاریخچهٔ تازه برای آموزش اولیه"
+            )
         ),
         "trained_signals": len(trained),
         "minimum_raw_points": MIN_RAW_POINTS,
