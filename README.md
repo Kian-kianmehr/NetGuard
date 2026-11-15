@@ -32,16 +32,15 @@ Browser → Supabase REST SELECT → netguard_snapshots
 
 Frontend: React/Vite روی Render Static Site. Backend: FastAPI روی Render Free برای API خواندنی و تولید Snapshot. Database: Supabase PostgreSQL. Collectorها سه Supabase Edge Function مستقل‌اند. بازدیدکننده باعث شروع جمع‌آوری نمی‌شود.
 
-شش Snapshot: dashboard_24، dashboard_72، dashboard_168، censorship، providers_status و iran_datacenters. مرورگر فقط دادهٔ آماده را می‌خواند و هر پنج دقیقه یا هنگام بازگشت تب تازه‌سازی می‌کند.
+شش Snapshot: `dashboard_24`، `dashboard_72`، `dashboard_168`، `censorship`، `providers_status` و `iran_datacenters`. مرورگر دادهٔ آماده را می‌خواند و هر پنج دقیقه یا هنگام بازگشت تب تازه‌سازی می‌کند.
 
 ## API
-
-- GET /health — سلامت پردازه و وجود تنظیمات؛ نه آزمون کامل پایگاه داده.
-- GET /api/dashboard?hours=24|72|168
-- GET /api/censorship
-- GET /api/providers/status
-- GET /api/iran/datacenters
-- POST /internal/collect-snapshots — فقط با x-netguard-token معتبر.
+- `GET /health` — سلامت پردازه و وجود تنظیمات؛ نه آزمون کامل پایگاه داده.
+- `GET /api/dashboard?hours=24|72|168`
+- `GET /api/censorship`
+- `GET /api/providers/status`
+- `GET /api/iran/datacenters`
+- `POST /internal/collect-snapshots` — فقط با `x-netguard-token` معتبر.
 
 ## اجرای محلی
 
@@ -54,23 +53,22 @@ uvicorn app.main:app --reload
 
 # ترمینال دوم
 cd frontend
+cp .env.example .env.local
 npm install
 npm test
 npm run dev
 ```
 
-Frontend به VITE_SUPABASE_URL و VITE_SUPABASE_PUBLISHABLE_KEY نیاز دارد. FastAPI برای خواندن Snapshot از SUPABASE_URL و SUPABASE_PUBLISHABLE_KEY استفاده می‌کند. Collector دستی scripts/collect_ioda.py فقط برای توسعه است و به SUPABASE_SECRET_KEY سمت سرور نیاز دارد؛ production از Edge Functionها استفاده می‌کند.
+FastAPI برای خواندن Snapshot از `SUPABASE_URL` و `SUPABASE_PUBLISHABLE_KEY` استفاده می‌کند. Vite به `VITE_SUPABASE_URL` و `VITE_SUPABASE_PUBLISHABLE_KEY` نیاز دارد. Collector دستی `scripts/collect_ioda.py` فقط برای توسعه است و به `SUPABASE_SECRET_KEY` سمت سرور نیاز دارد؛ production از Edge Functionها استفاده می‌کند.
 
 ## امنیت و عملیات
-
 - RLS روی جدول‌های exposed فعال است؛ نقش‌های عمومی فقط SELECT روی داده‌های عمومی دارند.
 - جدول اعتبارنامهٔ Collector policy عمومی ندارد.
 - Secret Key و Service Role Key در مرورگر قرار نمی‌گیرند.
-- RPC netguard_save_snapshot با SECURITY DEFINER در schema عمومی قابل فراخوانی است، اما توکن داخلی بلند را با hash ذخیره‌شده تطبیق می‌دهد و فقط شش dataset مجاز را می‌پذیرد. Supabase Advisor به دلیل callable بودن تابع هشدار می‌دهد؛ این رفتار برای مسیر نوشتن Snapshot فعلی عمدی است و باید با هر تغییر معماری دوباره بررسی شود.
-- GitHub Actions تست‌های Python و تست/Build فرانت‌اند را اجرا می‌کند.
+- RPC `netguard_save_snapshot` با `SECURITY DEFINER` در schema عمومی قابل فراخوانی است، اما توکن داخلی بلند را با hash ذخیره‌شده تطبیق می‌دهد و فقط شش dataset مجاز را می‌پذیرد. Supabase Advisor به دلیل callable بودن آن هشدار می‌دهد؛ این مسیر نوشتن Snapshot فعلی عمدی است و باید در هر بازطراحی دسترسی دوباره بررسی شود.
+- تست‌های Python و تست/Build فرانت‌اند در GitHub Actions اجرا می‌شوند.
 
 ## محدودیت‌های نسخهٔ اول
-
 - ارزیابی ملی است؛ دو شاخص اصلی BGP و Ping از IODA می‌آیند و probe مستقل از چند استان/ISP وجود ندارد.
 - دادهٔ ملی به شهر یا اپراتور تعمیم داده نمی‌شود.
 - OONI فقط آزمون‌های probeهای داوطلب را پوشش می‌دهد؛ نبود نتیجه به معنی دسترسی آزاد نیست.
@@ -79,8 +77,8 @@ Frontend به VITE_SUPABASE_URL و VITE_SUPABASE_PUBLISHABLE_KEY نیاز دار
 - موجودی دیتاسنترها پایش زندهٔ عملیاتی نیست.
 - پیش‌بینی، امتداد آزمایشی روند است نه احتمال کالیبره‌شده؛ مدل بازیابی تا داشتن رخدادهای تاریخی برچسب‌خورده عددی نمی‌دهد.
 - cadence ده‌دقیقه‌ای هدف عملیاتی است نه SLA؛ Render Free و منابع بالادستی بر آن اثر دارند.
-- فایل LICENSE در مخزن تعریف نشده است؛ پیش از اعطای حق استفادهٔ مجدد، صاحب پروژه باید مجوز را انتخاب کند.
+- فایل LICENSE هنوز تعریف نشده است؛ مجوز استفادهٔ مجدد باید از سوی صاحب پروژه انتخاب شود.
 
 ## گام بعدی
 
-MVP ملی بسته می‌شود. نسخهٔ بعدی باید probeهای مستقل در چند استان و اپراتور راه‌اندازی کند؛ فقط پس از فراهم شدن vantage point واقعی، نقشهٔ استانی و مقایسهٔ ISP ساخته می‌شود. نقشهٔ راه در docs/ROADMAP_FA.md قرار دارد.
+MVP ملی بسته می‌شود. نسخهٔ بعدی باید probeهای مستقل در چند استان و اپراتور راه‌اندازی کند؛ فقط پس از فراهم شدن vantage point واقعی، نقشهٔ استانی و مقایسهٔ ISP ساخته می‌شود. نقشهٔ راه در `docs/ROADMAP_FA.md` آمده است.
