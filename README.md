@@ -26,8 +26,8 @@ Supabase pg_cron / pg_net
   └─ دقیقه‌های 03,13,23,33,43,53:
        POST محافظت‌شده به FastAPI برای ساخت Snapshot
 
-Browser → Supabase REST SELECT → netguard_snapshots
-          Publishable Key + RLS + cache مرورگر
+Browser → Render FastAPI (Frankfurt) → Supabase REST SELECT → netguard_snapshots
+          API cache کوتاه‌مدت + cache مرورگر
 ```
 
 Frontend: React/Vite روی Render Static Site. Backend: FastAPI روی Render Free برای API خواندنی و تولید Snapshot. Database: Supabase PostgreSQL. Collectorها سه Supabase Edge Function مستقل‌اند. بازدیدکننده باعث شروع جمع‌آوری نمی‌شود.
@@ -59,7 +59,7 @@ npm test
 npm run dev
 ```
 
-FastAPI برای خواندن Snapshot از `SUPABASE_URL` و `SUPABASE_PUBLISHABLE_KEY` استفاده می‌کند. Vite به `VITE_SUPABASE_URL` و `VITE_SUPABASE_PUBLISHABLE_KEY` نیاز دارد. Collector دستی `scripts/collect_ioda.py` فقط برای توسعه است و به `SUPABASE_SECRET_KEY` سمت سرور نیاز دارد؛ production از Edge Functionها استفاده می‌کند.
+FastAPI برای خواندن Snapshot از `SUPABASE_URL` و `SUPABASE_PUBLISHABLE_KEY` استفاده می‌کند. مرورگر فقط به API فرانکفورت متصل می‌شود؛ `VITE_API_BASE_URL` اختیاری است و در صورت تنظیم، نشانی API را جایگزین مقدار پیش‌فرض می‌کند. Collector دستی `scripts/collect_ioda.py` فقط برای توسعه است و به `SUPABASE_SECRET_KEY` سمت سرور نیاز دارد؛ production از Edge Functionها استفاده می‌کند.
 
 ## امنیت و عملیات
 - RLS روی جدول‌های exposed فعال است؛ نقش‌های عمومی فقط SELECT روی داده‌های عمومی دارند.
