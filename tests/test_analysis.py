@@ -129,8 +129,8 @@ def test_public_summary_does_not_claim_full_internet_health():
 def test_public_summary_detects_worsening_trend_without_confirming_outage():
     first = "ioda:IR:bgp"
     second = "ioda:IR:ping-slash24"
-    first_values = [1000] * 12 + [800] * 12
-    second_values = [900] * 12 + [700] * 12
+    first_values = [1000] * 12 + [850] * 9 + [400] * 3
+    second_values = [900] * 12 + [760] * 9 + [350] * 3
     rows = observations(first, first_values) + observations(second, second_values)
     result, _ = analyze_dashboard(
         [source(first), source(second)], rows, generated_at=NOW
