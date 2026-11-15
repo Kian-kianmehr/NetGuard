@@ -62,18 +62,18 @@ def test_censorship_api_returns_cached_ooni_results(monkeypatch):
 
     def fake_read_view(client, project_url, key, view, params):
         if view == "censored_domains":
-            return [{
-                "domain": "youtube.com",
-                "confirmed_blocked": True,
-                "confirmed_measurements": 3,
-                "anomaly_measurements": 1,
-            }]
+            return [
+                {"domain": "youtube.com", "confirmed_blocked": True, "confirmed_measurements": 3, "anomaly_measurements": 1, "measurement_count": 4},
+                {"domain": "example-news.net", "confirmed_blocked": True, "confirmed_measurements": 1, "anomaly_measurements": 0, "measurement_count": 1},
+            ]
         if view == "censorship_sync_runs":
             return [{
                 "status": "success",
                 "finished_at": "2026-11-15T10:00:00Z",
                 "records_received": 4,
             }]
+        if view == "censorship_coverage":
+            return [{"domain_count": 2, "measurement_count": 5, "probe_networks": 2, "confirmed_measurements": 4, "anomaly_measurements": 1}]
         raise AssertionError(f"Unexpected view: {view}")
 
     monkeypatch.setattr("app.main._read_view", fake_read_view)
@@ -83,7 +83,9 @@ def test_censorship_api_returns_cached_ooni_results(monkeypatch):
     assert response.status_code == 200
     payload = response.json()
     assert payload["domains"][0]["domain"] == "youtube.com"
-    assert payload["total_domains_observed"] == 1
+    assert {item["domain"] for item in payload["domains"]} == {"youtube.com", "example-news.net"}
+    assert payload["total_domains_observed"] == 2
+    assert payload["coverage"]["probe_networks"] == 2
     assert payload["domains"][0]["confirmed_blocked"] is True
     assert payload["domains"][0]["source_url"].startswith(
         "https://explorer.ooni.org/search?probe_cc=IR&domain="
