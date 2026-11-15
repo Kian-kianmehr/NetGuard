@@ -62,6 +62,11 @@ def _window_values(
     return [value for timestamp, value in rows if start <= timestamp <= end]
 
 
+def _minimum_window_samples(interval_seconds: int, window_minutes: int) -> int:
+    expected = (window_minutes * 60) / max(interval_seconds, 1)
+    return max(2, ceil(expected * 0.4))
+
+
 def _features(
     rows: list[tuple[datetime, float]],
     interval_seconds: int,
