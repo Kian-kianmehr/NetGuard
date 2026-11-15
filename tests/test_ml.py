@@ -152,3 +152,40 @@ def test_stale_primary_signal_blocks_forecast_even_when_history_is_long():
     forecast = analyze_intelligence(sources, rows)["forecast"]
     assert forecast["available"] is False
     assert forecast["components"][0]["reason"] == "دادهٔ تازه برای این شاخص موجود نیست"
+
+
+
+def test_joint_model_fuses_aligned_primary_and_merit_signals():
+    sources, rows = [], []
+    for source_id, signal, base in (
+        ("ioda:IR:bgp", "bgp", 1000),
+        ("ioda:IR:ping-slash24", "ping-slash24", 900),
+        ("ioda:IR:merit", "merit-nt", 700),
+    ):
+        values = [base + ((index % 9) - 4) * 0.8 for index in range(160)]
+        source, source_rows = make_data(values, source_id, signal)
+        sources.append(source)
+        rows.extend(source_rows)
+
+    joint = analyze_intelligence(sources, rows)["joint_model"]
+    assert joint["available"] is True
+    assert joint["sample_count"] >= 45
+    assert joint["active_signals"] == ["bgp", "ping-slash24", "merit-nt"]
+    assert 0.0 <= joint["score"] <= 1.0
+    assert joint["dominant_feature_label"] in joint["active_signal_labels"]
+
+
+def test_joint_model_refuses_stale_primary_signal():
+    sources, rows = [], []
+    for source_id, signal, base in (
+        ("ioda:IR:bgp", "bgp", 1000),
+        ("ioda:IR:ping-slash24", "ping-slash24", 900),
+    ):
+        source, source_rows = make_data([base] * 120, source_id, signal)
+        sources.append(source)
+        rows.extend(source_rows)
+    latest = datetime.fromisoformat(max(row["observed_at"] for row in rows))
+    joint = analyze_intelligence(sources, rows, now=latest + timedelta(minutes=20))["joint_model"]
+    assert joint["available"] is False
+    assert joint["status"] == "stale_data"
+    assert joint["score"] is None
