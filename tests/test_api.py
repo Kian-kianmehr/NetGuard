@@ -114,37 +114,42 @@ def test_censorship_api_separates_ooni_evidence_from_test_candidates(monkeypatch
     assert payload["lookback_days"] == 90
 
 
-def test_provider_status_endpoint_returns_official_provider_snapshots(monkeypatch):
-    import app.main as main
+def test_provider_status_endpoint_reads_persisted_snapshot(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test")
+    calls = []
+    snapshot = {
+        "providers": [{
+            "id": "cloudflare", "name": "Cloudflare", "group": "infrastructure",
+            "status": "operational", "status_label": "عادی", "available": True,
+            "description": "شبکه", "url": "https://www.cloudflarestatus.com/",
+            "data_center_count": 12,
+            "affected_locations": [{"name": "Example City - (EXM)", "status_label": "اختلال بخشی"}],
+            "incidents": [], "technical_components": [],
+        }],
+        "scope_note": "این داده دسترسی از داخل ایران را ثابت نمی‌کند.",
+    }
 
-    monkeypatch.setattr(main, "_fetch_statuspage_provider", lambda provider: {
-        "id": provider["id"], "name": provider["name"], "group": provider["group"],
-        "status": "operational", "status_label": "عادی", "available": True,
-        "description": provider["description"], "url": provider["url"],
-        "data_center_count": 12, "components_attention": 1,
-        "affected_locations": [{"name": "Example City - (EXM)", "status_label": "اختلال بخشی"}],
-        "incidents": [], "technical_components": [], "checked_at": "2026-11-15T10:00:00Z",
-    })
-    monkeypatch.setattr(main, "_fetch_google_cloud_status", lambda: {
-        "id": "google-cloud", "name": "Google Cloud و Vertex AI", "group": "infrastructure",
-        "status": "operational", "status_label": "عادی", "available": True,
-        "description": "آزمون", "url": "https://status.cloud.google.com/",
-        "data_center_count": 0, "components_attention": 0,
-        "affected_locations": [], "incidents": [], "technical_components": [],
-        "checked_at": "2026-11-15T10:00:00Z",
-    })
-    main._PROVIDER_CACHE.update({"expires_at": 0, "payload": None})
+    def fake_read_view(client, project_url, key, view, params):
+        calls.append((view, params))
+        assert view == "netguard_snapshots"
+        return [{
+            "payload": snapshot, "collected_at": "2026-11-15T10:00:00Z",
+            "status": "partial", "source_count": 9, "error_code": None,
+        }]
 
+    monkeypatch.setattr("app.main._read_view", fake_read_view)
     with TestClient(app) as client:
         response = client.get("/api/providers/status")
 
     assert response.status_code == 200
     payload = response.json()
-    assert len(payload["providers"]) == 9
-    cloudflare = next(item for item in payload["providers"] if item["id"] == "cloudflare")
-    assert cloudflare["data_center_count"] == 12
-    assert cloudflare["affected_locations"][0]["name"] == "Example City - (EXM)"
+    assert len(payload["providers"]) == 1
+    assert payload["providers"][0]["data_center_count"] == 12
+    assert payload["checked_at"] == "2026-11-15T10:00:00Z"
+    assert payload["snapshot_status"] == "partial"
     assert "دسترسی از داخل ایران" in payload["scope_note"]
+    assert calls[0][1]["dataset_key"] == "eq.providers_status"
 
 
 def test_read_view_all_paginates_and_preserves_stable_order(monkeypatch):
