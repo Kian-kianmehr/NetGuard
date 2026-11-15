@@ -10,9 +10,9 @@ services:
     autoDeployTrigger: checksPass
     envVars:
       - key: SUPABASE_URL
-        value: https://your-project.supabase.co
+        value: https://fsglerccgxktvcpybuzk.supabase.co
       - key: SUPABASE_PUBLISHABLE_KEY
-        sync: false
+        value: sb_publishable_UXBLLdcNecHqtiqTtM0Jjg_aVOcAGJD
       - key: NETGUARD_COLLECTOR_TOKEN
         sync: false
 
@@ -23,6 +23,6 @@ services:
     autoDeployTrigger: checksPass
     envVars:
       - key: VITE_SUPABASE_URL
-        value: https://your-project.supabase.co
+        value: https://fsglerccgxktvcpybuzk.supabase.co
       - key: VITE_SUPABASE_PUBLISHABLE_KEY
-        sync: false
+        value: sb_publishable_UXBLLdcNecHqtiqTtM0Jjg_aVOcAGJD
