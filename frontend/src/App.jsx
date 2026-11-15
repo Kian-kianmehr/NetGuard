@@ -365,7 +365,7 @@ function SourceTable({ rows = [] }) {
   return <div className="table-wrap"><table>
     <thead><tr><th>چه چیزی بررسی می‌شود؟</th><th>وضعیت دریافت</th><th>آخرین اندازه‌گیری</th><th>فاصلهٔ بررسی</th><th>وضعیت به‌روزرسانی</th><th>مقدار آخر</th></tr></thead>
     <tbody>{rows.map((source) => <tr key={source.source_id}>
-      <td><b>{source.display_name}</b><small>{sourcePlain(source.signal)}</small><details className="technical-details"><summary>نام فنی و منبع</summary><span>{source.provider} · {source.signal}</span></details></td>
+      <td><b>{source.display_name}</b><small>{sourcePlain(source.signal)}</small><details className="technical-details" open><summary>نام فنی و منبع</summary><span>{source.provider} · {source.signal}</span></details></td>
       <td><Badge value={source.freshness_status}/></td>
       <td>{time(source.last_observed_at)}<small>{source.observation_age_seconds == null ? "زمان مشاهده نامشخص" : number(Math.floor(source.observation_age_seconds / 60), 0) + " دقیقه پیش"}</small></td>
       <td><b>{source.expected_interval_seconds ? number(source.expected_interval_seconds / 60, 0) + " دقیقه" : "—"}</b></td>
@@ -895,8 +895,30 @@ export default function App() {
         {modelSignals.length ? <div className="ai-signal-grid">{modelSignals.map((item) => <article key={item.source_id}><div><b>{item.display_name}</b><Badge value={item.status} map={{ready: [item.is_anomaly ? "رفتار غیرمعمول" : "در محدودهٔ معمول", item.is_anomaly ? "warn" : "good"], collecting_history: ["در حال یادگیری", "neutral"], stale_data: ["داده قدیمی", "neutral"]}}/></div><p>{item.interpretation}</p><small>{number(item.sample_count, 0)} نمونهٔ معتبر · {number(item.training_samples, 0)} نمونهٔ آموزشی</small></article>)}</div> : <Empty title="هنوز تاریخچهٔ کافی نداریم" note="مدل تا زمان جمع شدن دادهٔ واقعی، نتیجهٔ ساختگی تولید نمی‌کند."/>}
       </Panel>
       <details className="technical-details"><summary>جزئیات فنی مدل و امتیازهای هر شاخص</summary>
-      <Panel tag="مدل یادگیری ماشین" title="تشخیص رفتار غیرمعمول هر شاخص" note={intelligence.method_note || "مدل بر داده‌های مشاهده‌شده آموزش می‌بیند؛ هیچ داده یا برچسب ساختگی تولید نمی‌شود."}>
-        {modelSignals.length ? <div className="ml-list">{modelSignals.map((item) => <article className="ml-row" key={item.source_id}><div className="ml-row-head"><div><b>{item.display_name}</b><small>{item.signal}</small></div><span className={item.is_anomaly ? "ml-score anomaly" : "ml-score"}>{item.score == null ? "—" : number(item.score, 3)}</span></div><p>{item.interpretation}</p><div className="ml-meta"><span>وضعیت: {item.status_label}</span><span>تاریخچه: {number(item.sample_count, 0)} نمونه</span><span>نمونهٔ آموزش: {number(item.training_samples, 0)}</span><span>ویژگی غالب: {item.dominant_feature_label}</span></div></article>)}</div> : <Empty/>}
+      <Panel tag="مدل یادگیری ماشین" title="امتیاز و تشخیص ناهنجاری به تفکیک شاخص" note={intelligence.method_note || "برای هر شاخص یک مدل مستقل و بدون‌نظارت اجرا می‌شود؛ امتیازها احتمال قطعی اختلال نیستند."}>
+        <div className="ml-spec-grid">
+          <article><small>الگوریتم</small><b>{intelligence.model_name || "Hybrid Isolation Forest"}</b></article>
+          <article><small>تعداد درخت‌ها</small><b>۶۴</b></article>
+          <article><small>حداکثر نمونه در هر درخت</small><b>۱۲۸</b></article>
+          <article><small>حداقل تاریخچهٔ خام</small><b>۴۵ مشاهده</b></article>
+          <article><small>حداقل ویژگی آموزشی</small><b>۳۲ نمونه</b></article>
+          <article><small>آستانهٔ ناهنجاری</small><b>۰٫۶۵ از ۱</b></article>
+        </div>
+        <p className="ml-feature-note">ویژگی‌های مدل: لگاریتم سطح سیگنال، نرخ تغییر نرمال‌شده با فاصلهٔ زمانی واقعی و فاصله از خط مبنای مقاوم یک‌ساعته (MAD). امتیاز نهایی هر شاخص ترکیبی از Isolation Forest و انحراف مقاوم است.</p>
+        {modelSignals.length ? <div className="ml-list">{modelSignals.map((item) => <article className={"ml-row " + (item.is_anomaly ? "is-anomaly" : "")} key={item.source_id}>
+          <div className="ml-row-head">
+            <div><b>{item.display_name}</b><small dir="ltr">{item.signal} · مدل مستقل برای این شاخص</small></div>
+            <div className="ml-score-wrap"><span className={item.is_anomaly ? "ml-score anomaly" : "ml-score"}>{item.score == null ? "—" : number(item.score, 3) + " / ۱"}</span><small>امتیاز ناهنجاری</small></div>
+          </div>
+          {item.score != null && <div className="ml-score-track" role="img" aria-label={"امتیاز ناهنجاری " + number(item.score, 3) + " از ۱"}><span style={{width: (Math.max(0, Math.min(1, Number(item.score))) * 100) + "%"}}/></div>}
+          <p>{item.interpretation}</p>
+          <div className="ml-score-breakdown">
+            <div><small>امتیاز Isolation Forest</small><b>{item.isolation_forest_score == null ? "—" : number(item.isolation_forest_score, 3)}</b></div>
+            <div><small>امتیاز انحراف مقاوم</small><b>{item.robust_deviation_score == null ? "—" : number(item.robust_deviation_score, 3)}</b></div>
+            <div><small>آستانهٔ تشخیص</small><b>۰٫۶۵</b></div>
+          </div>
+          <div className="ml-meta"><span>وضعیت: {item.status_label}</span><span>تاریخچه: {number(item.sample_count, 0)} نمونه</span><span>ویژگی آموزشی: {number(item.training_samples, 0)}</span><span>فاصلهٔ نمونه‌برداری: {number((item.expected_interval_seconds || 0) / 60, 0)} دقیقه</span><span>ویژگی غالب: {item.dominant_feature_label || "نامشخص"}</span></div>
+        </article>)}</div> : <Empty title="امتیاز قابل نمایش نیست" note="برای هر شاخص باید تاریخچهٔ معتبر و تازه کافی باشد؛ در غیر این صورت امتیاز عمداً خالی می‌ماند."/>}
       </Panel>
       <div className="notice"><Info size={17}/><div><b>مرز علمی مدل</b><p>این مدل رفتار غیرعادی را پیدا می‌کند، نه احتمال قطعی خاموشی را. امتیازهای مدل زمانی به احتمال واقعی تبدیل می‌شوند که با رخدادهای تأییدشده آزمایش و کالیبره شده باشند.</p></div></div>
       </details>
