@@ -234,11 +234,14 @@ function PublicSituationReport({ summary, signals = [], intelligence, censorship
   const hasValue = (item) => item && item.latest_value != null && Number.isFinite(Number(item.latest_value));
   const signalSentence = (item, label, contextOnly = false) => {
     if (!hasValue(item)) return null;
-    const freshnessText = item.freshness_status === "stale"
-      ? "آخرین مشاهده قدیمی است"
-      : item.freshness_status === "fresh"
-        ? "آخرین مشاهده تازه است"
-        : "تازگی آخرین مشاهده نامشخص است";
+    const effectiveFreshness = item.display_freshness_status || item.freshness_status;
+    const freshnessText = effectiveFreshness === "stale"
+      ? "آخرین مشاهده از حد تازگی گذشته است"
+      : effectiveFreshness === "delayed"
+        ? "آخرین مشاهده نسبت به فاصلهٔ معمول نمونه‌برداری با تأخیر دریافت شده است"
+        : effectiveFreshness === "fresh"
+          ? "آخرین مشاهده نسبت به cadence منبع تازه است"
+          : "تازگی آخرین مشاهده نامشخص است";
     const trendText = item.trend_1h_label || item.plain_explanation || "روند قابل محاسبه نیست";
     return `${label}: ${number(item.latest_value)} ${item.unit || ""}؛ آخرین مشاهده ${time(item.last_observed_at)}؛ ${freshnessText}. ${contextOnly ? "این شاخص فقط شاهد کمکی است و به‌تنهایی وضعیت اینترنت را تعیین نمی‌کند." : trendText}`;
   };
@@ -635,9 +638,14 @@ export default function App() {
     result[source.freshness_status] = (result[source.freshness_status] || 0) + 1;
     return result;
   }, {});
-  const fresh = counts.fresh || 0;
-  const attention = (counts.stale || 0) + (counts.degraded || 0);
-  const overall = !data.sources.length ? "وضعیت دریافت داده نامشخص" : fresh === data.sources.length ? "داده‌های پایش به‌روز هستند" : "دریافت داده نیازمند بررسی";
+  const effectiveStates = signals.map((signal) => signal.display_freshness_status || signal.freshness_status);
+  const fresh = effectiveStates.length ? effectiveStates.filter((status) => status === "fresh").length : (counts.fresh || 0);
+  const delayed = effectiveStates.filter((status) => status === "delayed").length;
+  const attention = effectiveStates.length
+    ? effectiveStates.filter((status) => ["stale", "degraded", "delayed"].includes(status)).length
+    : (counts.stale || 0) + (counts.degraded || 0);
+  const totalSources = signals.length || data.sources.length;
+  const overall = !totalSources ? "وضعیت دریافت داده نامشخص" : fresh === totalSources ? "داده‌های پایش به‌روز هستند" : "دریافت داده نیازمند بررسی";
   const current = NAV.find((item) => item[0] === page) || NAV[0];
   const filteredEvents = useMemo(() => events.filter((event) =>
     eventFilter === "all" || event.severity === eventFilter
@@ -667,7 +675,7 @@ export default function App() {
     <PublicSituationReport summary={analysis.public_summary} signals={signals} intelligence={analysis.intelligence} censorship={censorship} providers={providerData} datacenters={datacenterData} dataQuality={dataQuality} checkedAt={lastPrimaryObservation} isLoading={data.busy} error={data.error}/>
     <div className="hero">
       <div><small>سلامت سامانهٔ پایش · ایران</small><h2>{overall}</h2>
-        <p>{number(fresh, 0)} منبع تازه · {number(attention, 0)} منبع قدیمی یا خطادار</p>
+        <p>{number(fresh, 0)} منبع تازه · {number(delayed, 0)} منبع با تأخیر · {number(attention - delayed, 0)} منبع قدیمی یا خطادار</p>
         <div className="meta"><span>آخرین مشاهده: {time(data.sources.map((source) => source.last_observed_at).filter(Boolean).sort().at(-1))}</span><span>آخرین دریافت API: {time(data.generated_at)}</span></div>
       </div><div className="orb"><Globe2 size={40}/><b>IR</b></div>
     </div>
