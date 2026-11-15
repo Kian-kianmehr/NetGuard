@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveDisplayNationalSummary, deriveLimitedNationalVerdict } from "../src/public-status.js";
+import { describeCoverage, deriveDisplayNationalSummary, deriveLimitedNationalVerdict } from "../src/public-status.js";
 
 const pingStable = {
   signal: "ping-slash24",
@@ -49,4 +49,16 @@ test("analysis view uses the same qualified verdict as the public report", () =>
   const result = deriveDisplayNationalSummary(summary, [bgpStale, pingStable]);
   assert.equal(result.condition, "stable_limited");
   assert.equal(result.title, "وضعیت کلی اینترنت فعلاً پایدار است");
+});
+
+test("coverage explicitly names the seven-day window and explains its denominator", () => {
+  const result = describeCoverage({
+    window_hours: 168,
+    valid_observations: 283,
+    expected_observations: 5040,
+  });
+  assert.equal(result.windowLabel, "۷ روزه");
+  assert.match(result.detail, /۲۸۳/);
+  assert.match(result.detail, /۵٬۰۴۰/);
+  assert.match(result.detail, /نه درصد کاربران/);
 });

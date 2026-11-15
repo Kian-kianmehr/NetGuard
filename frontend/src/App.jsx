@@ -1,4 +1,4 @@
-import { deriveDisplayNationalSummary, deriveLimitedNationalVerdict } from "./public-status.js";
+import { describeCoverage, deriveDisplayNationalSummary, deriveLimitedNationalVerdict } from "./public-status.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownRight, BookOpen, BrainCircuit, CheckCircle2, CircleHelp,
@@ -273,6 +273,7 @@ function PublicSituationReport({ summary, signals = [], intelligence, censorship
   };
   const displaySummary = summary?.condition === "unknown" ? bestEffortSummary : (summary || bestEffortSummary);
 
+  const coverageDescription = describeCoverage(dataQuality);
   const forecast = intelligence?.forecast || {};
   const providerList = Array.isArray(providers) ? providers : (providers?.providers || []);
   const infrastructure = providerList.filter((item) => item.group === "infrastructure");
@@ -308,7 +309,7 @@ function PublicSituationReport({ summary, signals = [], intelligence, censorship
       <article><small>زیرساخت خارج از ایران</small><b>{number(cloudflare?.data_center_count, 0)} نقطهٔ حضور Cloudflare</b><p>{providerText} این وضعیت‌ها جهانی‌اند و به‌تنهایی دسترسی از داخل ایران را ثابت نمی‌کنند.</p></article>
       <article><small>روند یک ساعت اخیر</small><b>{displaySummary.trend_label || "نامشخص"}</b><p>{displaySummary.trend_detail || "روند بر اساس آخرین نمونه‌های ذخیره‌شده نمایش داده می‌شود."}</p></article>
       <article><small>چشم‌انداز کوتاه‌مدت</small><b>{forecast.available ? `امتیاز نشانه‌های افت: ${number(forecast.risk_index, 0)} از ۱۰۰` : "روند قابل اندازه‌گیری؛ پیش‌بینی عددی منتشر نشده"}</b><p>{forecastText} این امتیاز احتمال قطعی یا پیش‌بینی قطعی خاموشی نیست.</p></article>
-      <article><small>کیفیت و اطمینان داده</small><b>{displaySummary.confidence_label || "محدود"} · پوشش {number(dataQuality?.window_coverage_percent, 0)}٪</b><p>{displaySummary.confidence_detail || "تازگی و کامل بودن داده‌ها بر میزان اطمینان اثر می‌گذارد."}</p></article>
+      <article><small>کیفیت و اطمینان داده</small><b>{displaySummary.confidence_label || "محدود"} · پوشش نمونه‌ها در بازهٔ {coverageDescription.windowLabel}: {number(dataQuality?.window_coverage_percent, 0)}٪</b><p>{displaySummary.confidence_detail || "تازگی و کامل بودن داده‌ها بر میزان اطمینان اثر می‌گذارد."} {coverageDescription.detail}</p></article>
     </div>
     <div className="public-explanation">
       <b>جمع‌بندی را چطور بخوانیم؟</b>
