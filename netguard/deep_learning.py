@@ -53,6 +53,19 @@ def forecast_series(
             "sample_count": len(pairs),
         }
 
+    latest_gaps = [
+        pairs[index][0] - pairs[index - 1][0]
+        for index in range(max(1, len(pairs) - SEQUENCE_LENGTH), len(pairs))
+    ]
+    if len(latest_gaps) != SEQUENCE_LENGTH or any(
+        gap < interval * 0.25 or gap > interval * 1.75 for gap in latest_gaps
+    ):
+        return {
+            "available": False,
+            "reason": "آخرین ۱۲ مشاهده پیوسته نیستند؛ پیش‌بینی عصبی متوقف شد",
+            "sample_count": len(pairs),
+        }
+
     # A sequence is retained only when its samples follow the source cadence.
     windows: list[tuple[list[float], float]] = []
     for end in range(SEQUENCE_LENGTH, len(pairs)):
