@@ -1,7 +1,7 @@
 const PROJECT_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const OONI_API_URL = "https://api.ooni.io/api/v1/measurements";
 const COUNTRY = "IR";
-const LOOKBACK_DAYS = 90;
+const LOOKBACK_DAYS = 3;
 const PAGE_SIZE = 100;
 const TEST_LIST_BATCH_SIZE = 250;
 const MAX_PAGES = 5;
@@ -104,7 +104,7 @@ async function fetchMeasurements(classification: "confirmed" | "anomaly", since:
     try {
       response = await fetch(`${OONI_API_URL}?${params.toString()}`, {
         headers: { Accept: "application/json", "User-Agent": "NetGuard/1.0 (public Iran internet monitoring)" },
-        signal: AbortSignal.timeout(25000),
+        signal: AbortSignal.timeout(12000),
       });
     } catch (error) {
       fetchError = error instanceof Error ? error.message : "ooni_request_error";

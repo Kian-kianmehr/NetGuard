@@ -493,31 +493,26 @@ def _fetch_google_cloud_status() -> dict[str, Any]:
 
 @app.get("/api/providers/status")
 def providers_status() -> dict[str, Any]:
-    """Read public official provider status pages; this is not an Iran reachability test."""
-    now = datetime.now(timezone.utc).timestamp()
-    with _PROVIDER_CACHE_LOCK:
-        cached = _PROVIDER_CACHE.get("payload")
-        if cached is not None and now < float(_PROVIDER_CACHE.get("expires_at") or 0):
-            return cached
-    from concurrent.futures import ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=9) as pool:
-        futures = [pool.submit(_fetch_statuspage_provider, provider)
-                   for provider in _PROVIDER_STATUSPAGES]
-        providers = [future.result() for future in futures]
-        providers.append(pool.submit(_fetch_google_cloud_status).result())
-    providers.sort(key=lambda item: (
-        {"infrastructure": 0, "ai": 1, "developer": 2}.get(item["group"], 9), item["name"]
-    ))
-    payload = {
-        "providers": providers,
-        "checked_at": datetime.now(timezone.utc).isoformat(),
-        "scope_note": (
-            "این وضعیت‌ها از صفحه‌های رسمی جهانی شرکت‌ها گرفته می‌شوند. سبز بودن آن‌ها "
-            "به معنی دسترسی از داخل ایران نیست و اختلال محلی ایران را هم رد نمی‌کند. "
-            "اطلاعات مراکز شهری فقط برای شبکه‌هایی نمایش داده می‌شود که وضعیت مرکز را جداگانه منتشر می‌کنند."
-        ),
-        "cache_seconds": 180,
-    }
-    with _PROVIDER_CACHE_LOCK:
-        _PROVIDER_CACHE.update({"expires_at": now + 180, "payload": payload})
+    """Return the latest persisted provider snapshot; never contact upstream status pages on a user request."""
+    project_url, key = _supabase_config()
+    timeout = httpx.Timeout(8.0, connect=4.0)
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            rows = _read_view(
+                client, project_url, key, "netguard_snapshots",
+                {"select": "payload,collected_at,status,source_count,error_code",
+                 "dataset_key": "eq.providers_status", "limit": "1"},
+            )
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("Provider snapshot read failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="وضعیت ذخیره‌شدهٔ سرویس‌ها فعلاً در دسترس نیست.") from None
+    if not rows:
+        raise HTTPException(status_code=503, detail="هنوز نخستین نوبت پایش سرویس‌ها ثبت نشده است.")
+    row = rows[0]
+    payload = row.get("payload") or {}
+    payload["checked_at"] = row.get("collected_at")
+    payload["snapshot_status"] = row.get("status")
+    payload["source_count"] = row.get("source_count", 0)
+    payload["error_code"] = row.get("error_code")
+    payload["stale_after_seconds"] = 900
     return payload
