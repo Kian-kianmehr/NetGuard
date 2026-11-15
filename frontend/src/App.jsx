@@ -14,7 +14,7 @@ const NAV = [
   ["sources", "منابع داده", Database],
   ["method", "روش‌شناسی", BookOpen],
 ];
-const API = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+const API = (import.meta.env.VITE_API_URL || "https://netguard-api-oan9.onrender.com").replace(/\/$/, "");
 const PUBLIC_INTEREST_DOMAINS = new Set([
   "facebook.com", "youtube.com", "instagram.com", "twitter.com", "x.com",
   "discord.com", "tiktok.com", "vk.com", "clubhouse.com", "reddit.com",
@@ -238,7 +238,12 @@ export default function App() {
   });
 
   const loadCensorship = useCallback(async () => {
-    if (!API) return;
+    if (!API) {
+      setCensorship((value) => ({
+        ...value, busy: false, error: "آدرس سرویس داده تنظیم نشده است.",
+      }));
+      return;
+    }
     setCensorship((value) => ({ ...value, busy: true }));
     try {
       const response = await fetch(API + "/api/censorship", {
