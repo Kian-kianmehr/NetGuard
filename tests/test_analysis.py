@@ -48,7 +48,7 @@ def test_stable_series_is_not_reported_as_an_anomaly():
 
 
 def test_large_sudden_drop_creates_explained_event():
-    values = [1000 + (index % 3) for index in range(30)] + [500, 480, 470]
+    values = [1000 + (index % 3) for index in range(27)] + [500, 480, 470, 450, 430, 410]
     rows = observations("ioda:IR:bgp", values)
     result, events = analyze_dashboard([source()], rows, generated_at=NOW)
     assert result["assessment"] == "watch"
@@ -84,8 +84,8 @@ def test_missing_and_invalid_observations_are_not_zero_filled():
 def test_two_independent_simultaneous_drops_are_only_suspected():
     first = "ioda:IR:bgp"
     second = "ioda:IR:ping-slash24"
-    rows = observations(first, [1000] * 30 + [500, 480, 470])
-    rows += observations(second, [800] * 30 + [400, 390, 380])
+    rows = observations(first, [1000] * 27 + [500, 480, 470, 450, 430, 410])
+    rows += observations(second, [800] * 27 + [400, 390, 380, 360, 340, 320])
     result, events = analyze_dashboard(
         [source(first), source(second)], rows, generated_at=NOW
     )
@@ -98,8 +98,8 @@ def test_two_independent_simultaneous_drops_are_only_suspected():
 def test_old_corroborated_events_do_not_keep_current_status_elevated():
     first = "ioda:IR:bgp"
     second = "ioda:IR:ping-slash24"
-    first_values = [1000] * 20 + [500, 480, 470] + [1000] * 18
-    second_values = [800] * 20 + [400, 390, 380] + [800] * 18
+    first_values = [1000] * 12 + [500, 480, 470, 450, 430, 410] + [1000] * 18
+    second_values = [800] * 12 + [400, 390, 380, 360, 340, 320] + [800] * 18
     rows = observations(first, first_values) + observations(second, second_values)
     result, events = analyze_dashboard(
         [source(first), source(second)], rows, generated_at=NOW
@@ -129,8 +129,8 @@ def test_public_summary_does_not_claim_full_internet_health():
 def test_public_summary_detects_worsening_trend_without_confirming_outage():
     first = "ioda:IR:bgp"
     second = "ioda:IR:ping-slash24"
-    first_values = [1000] * 12 + [850] * 9 + [400] * 3
-    second_values = [900] * 12 + [760] * 9 + [350] * 3
+    first_values = [1000] * 24 + [850] * 6 + [400] * 6
+    second_values = [900] * 24 + [760] * 6 + [350] * 6
     rows = observations(first, first_values) + observations(second, second_values)
     result, _ = analyze_dashboard(
         [source(first), source(second)], rows, generated_at=NOW
@@ -144,7 +144,7 @@ def test_public_summary_detects_worsening_trend_without_confirming_outage():
 
 def test_public_summary_does_not_call_a_single_signal_a_national_outage():
     first = "ioda:IR:bgp"
-    values = [1000] * 30 + [500, 480, 470]
+    values = [1000] * 27 + [500, 480, 470, 450, 430, 410]
     result, _ = analyze_dashboard(
         [source(first)], observations(first, values), generated_at=NOW
     )
