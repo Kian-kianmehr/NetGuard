@@ -196,3 +196,33 @@
   .site-evidence{width:100%;align-items:flex-start;flex-direction:row;justify-content:space-between;flex-wrap:wrap}
   .site-search{max-width:none;width:100%}
 }
+
+
+/* Machine-learning and forecast view */
+.risk-callout{display:grid;grid-template-columns:minmax(170px,.6fr) 1fr;gap:20px;align-items:center;padding:18px;border:1px solid #2b4057;border-radius:13px;background:#111f31}
+.risk-callout>div small,.risk-callout>div b,.risk-callout>div span{display:block}
+.risk-callout>div small{color:#8fa4b9;font-size:10px}
+.risk-callout>div b{margin:6px 0;font-size:28px;color:#e8f0f7}
+.risk-callout>div b em{font-size:12px;color:#8fa4b9;font-style:normal}
+.risk-callout>div span{font-size:11px;color:#9bb0c5}
+.risk-callout>p{margin:0;color:#a9bdcc;font-size:11px;line-height:2}
+.risk-callout.low{border-color:#28604f;background:#102a27}
+.risk-callout.watch{border-color:#70552e;background:#302719}
+.risk-callout.elevated{border-color:#713942;background:#321f29}
+.forecast-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:13px}
+.forecast-grid article{display:grid;gap:8px;padding:14px;border:1px solid #273a50;border-radius:11px;background:#101b2b}
+.forecast-grid small{color:#dbe7f1;font-size:11px}
+.forecast-grid b{font-size:22px;color:#d7e6f2}
+.forecast-grid span{font-size:10px;color:#8fa4b9;line-height:1.8}
+.ml-list{display:grid;gap:0}
+.ml-row{padding:15px 2px;border-bottom:1px solid #223248}
+.ml-row:last-child{border-bottom:0}
+.ml-row-head{display:flex;justify-content:space-between;align-items:center;gap:15px}
+.ml-row-head b,.ml-row-head small{display:block}
+.ml-row-head b{font-size:12px;color:#e3edf6}
+.ml-row-head small{margin-top:5px;color:#8195ac;font-size:10px}
+.ml-score{padding:6px 10px;border-radius:8px;background:#1d3547;color:#b5d9d4;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
+.ml-score.anomaly{background:#4a2732;color:#f1a4a4}
+.ml-row p{margin:10px 0;color:#a8b9ca;font-size:11px;line-height:1.9}
+.ml-meta{display:flex;flex-wrap:wrap;gap:8px 18px;color:#8195ac;font-size:10px}
+@media(max-width:700px){.risk-callout{grid-template-columns:1fr}.forecast-grid{grid-template-columns:1fr}}
