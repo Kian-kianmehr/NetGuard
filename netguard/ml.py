@@ -744,7 +744,7 @@ def analyze_intelligence(
             "architecture": "12-24-12-1",
             "sequence_length": 12,
             "hidden_layers": [24, 12],
-            "minimum_training_sequences": 64,
+            "minimum_training_sequences": 48,
             "validation_split_percent": 20,
             "available_signals": sum(1 for item in components if item.get("available")),
             "trained_signals": sum(1 for item in components if item.get("neural_model", {}).get("available")),
