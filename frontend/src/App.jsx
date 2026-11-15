@@ -444,6 +444,8 @@ export default function App() {
         <div className="meta"><span>آخرین مشاهده: {time(data.sources.map((source) => source.last_observed_at).filter(Boolean).sort().at(-1))}</span><span>آخرین دریافت API: {time(data.generated_at)}</span></div>
       </div><div className="orb"><Globe2 size={40}/><b>IR</b></div>
     </div>
+    <div className="plain-explanation"><b>نت‌گارد به زبان ساده</b><p>نت‌گارد تغییرات اینترنت را از چند منبع مستقل بررسی می‌کند، نشانه‌های اختلال را پیدا می‌کند، دسترسی به وب‌سایت‌ها را با آزمون‌های واقعی می‌سنجد و وضعیت سرویس‌های ابری و هوش مصنوعی را از صفحه‌های رسمی آن‌ها می‌خواند. هیچ شاخصی به‌تنهایی تجربهٔ همهٔ کاربران را نشان نمی‌دهد.</p></div>
+    <details className="technical-details"><summary>نمایش جزئیات فنی داشبورد</summary>
     <div className="section-kicker">جزئیات فنی سامانهٔ پایش</div>
     <div className="metrics">
       {[[RadioTower, "منابع ثبت‌شده", data.sources.length], [CheckCircle2, "منابع تازه", fresh], [AlertTriangle, "قدیمی یا خطادار", attention], [Activity, "مشاهدات بازه", data.observations.length]].map(([Icon, label, value]) =>
@@ -469,6 +471,7 @@ export default function App() {
       </Panel>
     </div>
     <Panel tag="سلامت ورودی داده" title="وضعیت منابع"><SourceTable rows={data.sources}/></Panel>
+    </details>
   </>;
   else if (page === "quality") {
     const quality = analysis.data_quality || {};
@@ -477,7 +480,7 @@ export default function App() {
       <div className="intro page-intro">
         <small><Database size={14}/> کیفیت، پوشش و پیوستگی داده</small>
         <h2>آیا داده برای ارزیابی کافی است؟</h2>
-        <p>تعداد نمونه، طول واقعی تاریخچه، تازگی آخرین مشاهده و فاصلهٔ بین اندازه‌گیری‌ها جداگانه بررسی می‌شوند.</p>
+        <p>این صفحه به زبان ساده نشان می‌دهد چند بررسی واقعاً ثبت شده، داده‌ها چقدر تازه‌اند و آیا بین بررسی‌ها فاصلهٔ غیرعادی وجود دارد.</p>
       </div>
       <div className="toolbar">
         <div className="range-tabs" aria-label="بازهٔ بررسی کیفیت">
@@ -509,7 +512,7 @@ export default function App() {
     const AssessmentIcon = assessmentIcon[analysis.assessment] || CircleHelp;
     const tone = assessmentTone[analysis.assessment] || "neutral";
     body = <div className="stack">
-      <div className="intro page-intro"><small><Activity size={14}/> گزارش پایش ملی</small><h2>ارزیابی وضعیت شبکه</h2><p>ارزیابی توضیح‌پذیر از رفتار سیگنال‌های ملی، کفایت داده و رخدادهای شناسایی‌شده.</p></div>
+      <div className="intro page-intro"><small><Activity size={14}/> گزارش پایش ملی</small><h2>ارزیابی وضعیت شبکه</h2><p>این بخش می‌گوید آیا نشانه‌ای از اختلال گسترده دیده می‌شود، چه شواهدی داریم و تا چه اندازه می‌توان به نتیجه اعتماد کرد.</p></div>
       <PublicAssessment summary={analysis.public_summary}/>
       <section className={"analysis-hero " + tone}>
         <div className="analysis-mark"><AssessmentIcon size={27}/></div>
@@ -559,68 +562,69 @@ export default function App() {
   }
   else if (page === "censorship") body = <div className="stack">
     <div className="intro page-intro">
-      <small><ShieldAlert size={14}/> پایش دسترسی وب‌سایت‌ها</small>
-      <h2>وب‌سایت‌های فیلترشده</h2>
-      <p>بر پایهٔ آزمون‌های Web Connectivity از داخل ایران در داده‌های ۹۰ روز اخیر OONI.</p>
+      <small><ShieldAlert size={14}/> بررسی دسترسی وب‌سایت‌ها</small>
+      <h2>وضعیت دسترسی به وب‌سایت‌ها</h2>
+      <p>هم نتیجهٔ آزمون‌های واقعی از داخل ایران را می‌بینی، هم دامنه‌هایی را که پژوهشگران برای آزمایش پیشنهاد کرده‌اند. پیشنهاد برای آزمایش، به معنی فیلتر بودن نیست.</p>
     </div>
     <div className="metrics">
-      <Stat icon={Globe2} label="دامنه‌های مشاهده‌شده" value={number(censorship.total_domains_observed ?? censorship.domains.length, 0)} hint="همهٔ نتایج مثبت OONI در ۹۰ روز"/>
-      <Stat icon={Network} label="شبکه‌های اندازه‌گیری" value={number(censorship.coverage?.probe_networks, 0)} hint="شبکه‌های متمایز ثبت‌شده"/>
-      <Stat icon={Gauge} label="پوشش شناسهٔ شبکه" value={number(censorship.coverage?.asn_coverage_percent, 1) + "٪"} hint={number(censorship.coverage?.measurements_with_asn, 0) + " اندازه‌گیری با ASN ثبت‌شده"}/>
-      <Stat icon={ShieldCheck} label="مسدودیت تأییدشده" value={number(confirmedSites.length, 0)} hint="دارای نشانهٔ تأییدشدهٔ OONI"/>
-      <Stat icon={AlertTriangle} label="نیازمند بررسی" value={number(possibleSites.length, 0)} hint="فقط دارای ناهنجاری در آزمون"/>
+      <Stat icon={Globe2} label="دامنه‌های دارای نتیجه" value={number(censorship.total_domains_observed ?? censorship.domains.filter((item) => item.has_measurements).length, 0)} hint="آزمون واقعی در ۹۰ روز اخیر"/>
+      <Stat icon={Cloud} label="دامنه‌های فهرست آزمایش" value={number(censorship.total_test_domains, 0)} hint="نامزد آزمون؛ نه فهرست فیلترها"/>
+      <Stat icon={Network} label="شبکه‌های اندازه‌گیری" value={number(censorship.coverage?.probe_networks, 0)} hint="شبکه‌های متمایز با آزمون ثبت‌شده"/>
+      <Stat icon={Gauge} label="پوشش شناسهٔ شبکه" value={number(censorship.coverage?.asn_coverage_percent, 1) + "٪"} hint="میزان ثبت شناسهٔ شبکه در آزمون‌ها"/>
+      <Stat icon={ShieldCheck} label="دارای شاهد مسدودسازی" value={number(confirmedSites.length, 0)} hint="نشانهٔ روشن در نتیجهٔ OONI"/>
+      <Stat icon={AlertTriangle} label="دارای نشانهٔ اختلال" value={number(possibleSites.length, 0)} hint="هنوز فیلتر بودن قطعی نیست"/>
       <Stat icon={Clock3} label="آخرین دریافت" value={censorship.sync?.finished_at ? time(censorship.sync.finished_at, false) : "—"} hint="به‌روزرسانی دوره‌ای"/>
     </div>
     <div className="toolbar">
       <div className="range-tabs">
         {[
-          ["confirmed", "تأییدشده"],
+          ["confirmed", "شاهد مسدودسازی"],
           ["possible", "نشانهٔ اختلال"],
+          ["candidates", "هنوز بررسی‌نشده"],
           ["all", "همه"],
         ].map(([value, label]) => <button key={value} className={siteFilter === value ? "active" : ""} onClick={() => setSiteFilter(value)}>{label}</button>)}
       </div>
-      <input
-        className="site-search"
-        type="search"
-        value={siteQuery}
+      <input className="site-search" type="search" value={siteQuery}
         onChange={(event) => setSiteQuery(event.target.value)}
-        placeholder="جست‌وجوی دامنه…"
-        aria-label="جست‌وجوی دامنه"
-      />
+        placeholder="جست‌وجوی نام دامنه…" aria-label="جست‌وجوی دامنه"/>
     </div>
     {censorship.error && <div className="warning"><AlertTriangle/><div><b>دریافت فهرست با مشکل روبه‌رو شد</b><p>{censorship.error} آخرین دادهٔ ذخیره‌شده، در صورت وجود، همچنان نمایش داده می‌شود.</p></div></div>}
     {censorship.sync && <div className="site-sync-note">
       <span>آخرین همگام‌سازی: {time(censorship.sync.finished_at)}</span>
       <span>وضعیت دریافت: {censorship.sync.status === "success" ? "موفق" : censorship.sync.status === "partial" ? "ناقص" : "ناموفق"}</span>
-      <span>رکوردهای دریافتی: {number(censorship.sync.records_received, 0)}</span>
+      <span>نتایج OONI: {number(censorship.sync.records_received, 0)}</span>
+      <span>دامنه‌های فهرست آزمایش: {number(censorship.sync.test_list_records_received, 0)}</span>
     </div>}
     {censorship.scope_note && <p className="toolbar-note">{censorship.scope_note}</p>}
-    <Panel tag="نتایج آزمون‌های OONI" title={siteFilter === "confirmed" ? "مسدودیت‌های تأییدشده" : siteFilter === "possible" ? "موارد دارای نشانهٔ اختلال" : "همهٔ دامنه‌ها"} note="هر ردیف به آزمون ثبت‌شده از داخل ایران متصل است؛ نبود یک دامنه در این فهرست به معنی دسترسی آزاد نیست.">
+    <Panel tag="نتیجهٔ آزمون یا فهرست پژوهشی"
+      title={siteFilter === "confirmed" ? "دارای شاهد مسدودسازی" : siteFilter === "possible" ? "دارای نشانهٔ اختلال" : siteFilter === "candidates" ? "نامزدهای آزمون بدون نتیجهٔ تازه" : "همهٔ دامنه‌های قابل بررسی"}
+      note="دامنهٔ فهرست پژوهشی فقط برای آزمایش پیشنهاد شده است؛ تا وقتی نتیجهٔ تازه‌ای نباشد وضعیت آن نامشخص است.">
       {filteredDomains.length ? <div className="site-list">{filteredDomains.map((site) =>
         <article className="site-row" key={site.domain}>
           <div className="site-row-main">
             <div className="site-domain-line">
               <b dir="ltr">{site.domain}</b>
-              <Badge value={site.confirmed_blocked ? "confirmed" : "possible"} map={{
-                confirmed: ["مسدودیت تأییدشده", "warn"],
+              <Badge value={site.candidate_only ? "candidate" : site.confirmed_blocked ? "confirmed" : "possible"} map={{
+                confirmed: ["شاهد مسدودسازی", "warn"],
                 possible: ["نشانهٔ اختلال", "neutral"],
+                candidate: ["هنوز بررسی نشده", "neutral"],
               }}/>
             </div>
-            <small>{site.category_code ? "دسته: " + site.category_code + " · " : ""}آخرین آزمون: {time(site.last_observed_at)} · {number(site.probe_networks, 0)} شبکهٔ دارای شناسه · {number(site.measurement_count, 0)} اندازه‌گیری · پوشش ASN {number(site.asn_coverage_percent, 0)}٪</small>
+            <small>{site.category_label || "دسته‌بندی نشده"} · {site.candidate_only ? "در فهرست پژوهشی؛ بدون نتیجهٔ تازه" : "آخرین آزمون: " + time(site.last_observed_at)}</small>
           </div>
           <div className="site-evidence">
-            <span>{number(site.confirmed_measurements, 0)} آزمون تأییدشده · {number(site.anomaly_measurements, 0)} آزمون غیرعادی</span>
-            {site.source_url && <a href={site.source_url} target="_blank" rel="noreferrer">مشاهدهٔ شواهد ↗</a>}
+            <span>{site.candidate_only ? "هنوز نتیجهٔ قابل نمایش برای این دامنه ثبت نشده است." : number(site.confirmed_measurements, 0) + " آزمون تأییدشده · " + number(site.anomaly_measurements, 0) + " آزمون غیرعادی · " + number(site.probe_networks, 0) + " شبکه"}</span>
+            {site.source_url && <a href={site.source_url} target="_blank" rel="noreferrer">{site.candidate_only ? "منبع فهرست پژوهشی ↗" : "مشاهدهٔ شواهد ↗"}</a>}
           </div>
         </article>
       )}</div> : <Empty
         title={censorship.busy ? "در حال دریافت فهرست" : "دامنه‌ای در این گروه ثبت نشده"}
-        note={censorship.error || "نتایج آزمون‌های موجود در بازهٔ انتخابی پس از همگام‌سازی نمایش داده می‌شوند."}
+        note={censorship.error || "با انتخاب گروه دیگر یا جست‌وجوی نام دامنه می‌توانی فهرست را بررسی کنی."}
       />}
     </Panel>
     <div className="notice"><Info size={17}/><div>
-      <b>تفاوت مسدودیت تأییدشده با نشانهٔ اختلال</b>
-      <p>OONI زمانی یک وب‌سایت را «تأییدشده» علامت می‌زند که اثر انگشت صفحهٔ مسدودسازی یا نشانی شناخته‌شدهٔ فیلترینگ شناسایی شود. ناهنجاری به‌تنهایی اثبات فیلترینگ نیست و ممکن است مثبت کاذب باشد. نتایج به شبکه‌هایی محدود است که در آن‌ها آزمون انجام شده است.</p>
+      <b>سه وضعیت را با هم اشتباه نگیریم</b>
+      <p>«شاهد مسدودسازی» یعنی آزمون OONI نشانهٔ مشخص مسدودسازی را دیده است. «نشانهٔ اختلال» ممکن است از مشکل شبکه یا سرور هم باشد. «هنوز بررسی نشده» یعنی دامنه در فهرست پژوهشی آمده، اما نتیجهٔ تازه‌ای نداریم. هیچ فهرست عمومی، تمام سایت‌های فیلترشده را با قطعیت پوشش نمی‌دهد.</p>
     </div></div>
   </div>;
   else if (page === "intelligence") {
@@ -633,14 +637,14 @@ export default function App() {
       <div className="intro page-intro"><small><BrainCircuit size={14}/> تحلیل یادگیری ماشین</small><h2>مدل هوشمند و برآورد کوتاه‌مدت</h2><p>مدل بدون‌نظارت، رفتار هر سیگنال را با تاریخچهٔ خودش مقایسه می‌کند؛ برآورد آینده از نتیجهٔ قطعی شبکه جداست.</p></div>
       <div className="metrics">
         <Stat icon={BrainCircuit} label="مدل" value={intelligence.model_name || "در حال آماده‌سازی"} hint={intelligence.model_status_label || "تاریخچهٔ کافی لازم است"}/>
-        <Stat icon={Gauge} label="شاخص ریسک ۳۰ دقیقه" value={forecast.risk_index == null ? "—" : number(forecast.risk_index, 0) + " / ۱۰۰"} hint={forecast.risk_label || "فعلاً برآوردی موجود نیست"}/>
+        <Stat icon={Gauge} label="امتیاز نشانه‌های افت" value={forecast.risk_index == null ? "—" : <span dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</span>} hint="امتیاز آزمایشی؛ نه درصد احتمال اختلال"/>
         <Stat icon={Activity} label="شاخص‌های آموزش‌دیده" value={number(intelligence.trained_signals, 0)} hint="مدل جداگانه برای هر شاخص"/>
         <Stat icon={Clock3} label="افق برآورد" value="۳۰ دقیقه" hint="روند کوتاه‌مدت"/>
       </div>
       <Panel tag="پیش‌بینی آزمایشی" title="ریسک افت در افق ۳۰ دقیقه" note={forecast.note || "برآورد پس از دریافت دادهٔ کافی نمایش داده می‌شود."}>
         {forecast.available ? <>
-          <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>شاخص ریسک آزمایشی</small><b>{number(forecast.risk_index, 0)}<em> / ۱۰۰</em></b><span>{forecast.risk_label}</span></div><p>این عدد احتمال وقوع اختلال نیست؛ شاخصی ترکیبی برای اولویت‌بندی بررسی روند دو سیگنال اصلی است.</p></div>
-          <div className="forecast-grid">{forecast.components.map((item) => <article key={item.signal}><small>{item.signal === "bgp" ? "دیدپذیری مسیرهای اینترنت (BGP)" : "پاسخ‌گویی شبکه‌ها (Ping)"}</small><b>{number(item.projected_change_30m_percent)}٪</b><span>تغییر برآوردی ۳۰ دقیقه پس از آخرین نمونه · مقدار فعلی {number(item.current_value)}</span><span>آخرین مشاهده: {number((item.observation_age_seconds || 0) / 60, 0)} دقیقه قبل · مقدار برآوردی {number(item.projected_value_30m)}</span><span>امتیاز ناهنجاری {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span></article>)}</div>
+          <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>امتیاز نشانه‌های افت در دو شاخص اصلی</small><strong dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</strong><span>{forecast.risk_label}</span></div><p>این امتیاز از تغییرات اخیر دو شاخص اصلی ساخته می‌شود. صفر یعنی در همین محاسبه نشانهٔ کافی از افت پیدا نشده؛ نه اینکه خطر صفر باشد یا قطعی رخ ندهد.</p></div>
+          <div className="forecast-grid">{forecast.components.map((item) => <article key={item.signal}><small>{item.signal === "bgp" ? "مسیرهای قابل مشاهدهٔ اینترنت" : "پاسخ‌گویی نشانی‌های نمونه"}</small><b>{number(item.projected_change_30m_percent)}٪</b><span>تغییر برآوردی ۳۰ دقیقه پس از آخرین نمونه · مقدار فعلی {number(item.current_value)}</span><span>آخرین مشاهده: {number((item.observation_age_seconds || 0) / 60, 0)} دقیقه قبل · مقدار برآوردی {number(item.projected_value_30m)}</span><span>امتیاز ناهنجاری {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span></article>)}</div>
         </> : <Empty title="هنوز برآورد هم‌زمان ممکن نیست" note={forecast.note || "برای هر دو شاخص اصلی باید تاریخچهٔ معتبر بیشتری جمع شود."}/>}
       </Panel>
       <Panel tag="تحلیل شواهد" title="فرضیه‌های علت احتمالی" note={cause.scope_note || "این تحلیل علت قطعی اختلال را تعیین نمی‌کند."}>
@@ -657,14 +661,49 @@ export default function App() {
       <Panel tag="بازیابی و مدت رخداد" title="تخمین زمان بازگشت به وضعیت عادی" note={recovery.note || "برآورد زمان بازیابی فعلاً منتشر نمی‌شود."}>
         <Empty title="هنوز قابل برآورد نیست" note="برای تخمین معتبر، باید رخدادهای تاریخیِ تأییدشده همراه با زمان شروع، پایان و شدت در اختیار مدل باشد. تا قبل از آن عدد زمان بازیابی نمایش داده نمی‌شود."/>
       </Panel>
+      <div className="plain-explanation"><b>این مدل چه فایده‌ای دارد؟</b><p>مدل رفتار معمول هر شاخص را از روی داده‌های قبلی یاد می‌گیرد. اگر رفتار تازه با گذشته فرق زیادی داشته باشد، آن را برای بررسی علامت می‌زند؛ این علامت به‌تنهایی معنی اختلال اینترنت نیست.</p></div>
+      {modelSignals.some((item) => item.is_anomaly) && <div className="notice"><Info size={17}/><div><b>یک شاخص کمکی رفتار غیرمعمولی نشان داده است</b><p>این یافته برای بررسی بیشتر نگه داشته می‌شود؛ اما چون به‌تنهایی افت مسیر یا پاسخ‌گویی شبکه را ثابت نمی‌کند، مستقیماً به امتیاز نشانه‌های افت اضافه نمی‌شود.</p></div></div>}
+      <details className="technical-details"><summary>جزئیات فنی مدل و امتیازهای هر شاخص</summary>
       <Panel tag="مدل یادگیری ماشین" title="تشخیص رفتار غیرمعمول هر شاخص" note={intelligence.method_note || "مدل بر داده‌های مشاهده‌شده آموزش می‌بیند؛ هیچ داده یا برچسب ساختگی تولید نمی‌شود."}>
         {modelSignals.length ? <div className="ml-list">{modelSignals.map((item) => <article className="ml-row" key={item.source_id}><div className="ml-row-head"><div><b>{item.display_name}</b><small>{item.signal}</small></div><span className={item.is_anomaly ? "ml-score anomaly" : "ml-score"}>{item.score == null ? "—" : number(item.score, 3)}</span></div><p>{item.interpretation}</p><div className="ml-meta"><span>وضعیت: {item.status_label}</span><span>تاریخچه: {number(item.sample_count, 0)} نمونه</span><span>نمونهٔ آموزش: {number(item.training_samples, 0)}</span><span>ویژگی غالب: {item.dominant_feature_label}</span></div></article>)}</div> : <Empty/>}
       </Panel>
-      <div className="notice"><Info size={17}/><div><b>مرز علمی مدل</b><p>Isolation Forest مدل تشخیص ناهنجاریِ بدون‌نظارت است، نه مدل طبقه‌بندی قطع اینترنت. برای تبدیل شاخص ریسک به احتمال واقعی، به تاریخچهٔ رخدادهای تأییدشده، ارزیابی خارج از نمونه و کالیبراسیون نیاز داریم؛ این نسخه چنین احتمالی جعل نمی‌کند.</p></div></div>
+      <div className="notice"><Info size={17}/><div><b>مرز علمی مدل</b><p>این مدل رفتار غیرعادی را پیدا می‌کند، نه احتمال قطعی خاموشی را. امتیازهای مدل زمانی به احتمال واقعی تبدیل می‌شوند که با رخدادهای تأییدشده آزمایش و کالیبره شده باشند.</p></div></div>
+      </details>
+    </div>;
+  }
+  else if (page === "providers") {
+    const providerList = providerData.providers || [];
+    const infra = providerList.filter((item) => item.group === "infrastructure");
+    const ai = providerList.filter((item) => item.group === "ai");
+    const developer = providerList.filter((item) => item.group === "developer");
+    const cloudflare = providerList.find((item) => item.id === "cloudflare");
+    body = <div className="stack">
+      <div className="intro page-intro"><small><Server size={14}/> پایش سرویس‌های جهانی</small><h2>دیتاسنترها، زیرساخت ابری و هوش مصنوعی</h2><p>نت‌گارد صفحه‌های رسمی وضعیت شرکت‌ها را بررسی می‌کند تا اختلال‌های اعلام‌شدهٔ جهانی را یک‌جا ببینی.</p></div>
+      <div className="metrics">
+        <Stat icon={Server} label="شرکت‌های بررسی‌شده" value={number(providerList.length, 0)} hint="بر اساس منابع رسمی"/>
+        <Stat icon={AlertTriangle} label="دارای اختلال اعلام‌شده" value={number(providerList.filter((item) => ["degraded_performance","partial_outage","major_outage"].includes(item.status)).length, 0)} hint="در صفحهٔ رسمی شرکت"/>
+        <Stat icon={Cloud} label="مراکز شبکهٔ Cloudflare" value={number(cloudflare?.data_center_count, 0)} hint="مکان‌های دارای وضعیت منتشرشده"/>
+        <Stat icon={Clock3} label="آخرین بررسی" value={time(providerData.checked_at, false)} hint="بازخوانی خودکار هر ۵ دقیقه"/>
+      </div>
+      <div className="notice"><Info size={17}/><div><b>محدودیت مهم</b><p>{providerData.scope_note || "این اطلاعات وضعیت جهانی سرویس‌ها را از منابع رسمی نشان می‌دهد؛ سالم بودن یک سرویس در جهان، دسترسی به آن از داخل ایران را ثابت نمی‌کند."}</p></div></div>
+      {providerData.error && <div className="warning"><AlertTriangle/><div><b>دریافت وضعیت با مشکل روبه‌رو شد</b><p>{providerData.error}</p></div></div>}
+      <Panel tag="شبکهٔ جهانی و مراکز شهری" title="مراکز شبکه و نقاط حضور" note="وضعیت شهرهایی که شرکت به‌طور جداگانه منتشر می‌کند؛ این اطلاعات معادل پایش همهٔ دیتاسنترهای جهان نیست.">
+        {cloudflare ? <ProviderCard item={cloudflare}/> : <Empty title="هنوز داده‌ای دریافت نشده"/>}
+      </Panel>
+      <Panel tag="زیرساخت ابری و میزبانی" title="سرویس‌های ابری" note="این سرویس‌ها میزبان برنامه‌ها، پایگاه‌های داده و زیرساخت وب هستند.">
+        <div className="provider-grid">{infra.filter((item) => item.id !== "cloudflare").map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
+      </Panel>
+      <Panel tag="سرویس‌های هوش مصنوعی" title="وضعیت ارائه‌دهندگان هوش مصنوعی" note="اختلال در این سرویس‌ها ممکن است بر چت‌بات‌ها، رابط‌های برنامه‌نویسی یا میزبانی مدل اثر بگذارد.">
+        <div className="provider-grid">{ai.map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
+      </Panel>
+      <Panel tag="ابزارهای توسعه" title="سرویس‌های کدنویسی و همکاری" note="اختلال در این بخش ممکن است دریافت کد یا گردش کار توسعه را تحت تأثیر قرار دهد.">
+        <div className="provider-grid">{developer.map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
+      </Panel>
+      <div className="toolbar-note">وضعیت سرویس‌ها هر ۵ دقیقه بازخوانی می‌شود. زمان بررسی نت‌گارد و آخرین تغییر صفحهٔ رسمی شرکت از هم جدا هستند.</div>
     </div>;
   }
   else if (page === "signals") body = <div className="stack">
-    <div className="intro page-intro"><small><Signal size={14}/> پایش شاخص‌ها</small><h2>سیگنال‌های شبکه</h2><p>هر سیگنال با واحد، خط مبنا، دامنه و نمودار مستقل خودش بررسی می‌شود؛ مقادیر ناهم‌واحد با هم ادغام نمی‌شوند.</p></div>
+    <div className="intro page-intro"><small><Signal size={14}/> نشانه‌های وضعیت شبکه</small><h2>این نمودارها چه می‌گویند؟</h2><p>هر نمودار یک بخش از وضعیت اینترنت را نشان می‌دهد. توضیح سادهٔ آن بالای آمار قرار دارد و جزئیات تخصصی همچنان در دسترس است.</p></div>
     <div className="toolbar">
       <div className="range-tabs" aria-label="بازهٔ زمانی">
         {[[24, "۲۴ ساعت"], [72, "۳ روز"], [168, "۷ روز"]].map(([hours, label]) => <button key={hours} className={windowHours === hours ? "active" : ""} onClick={() => setWindowHours(hours)}>{label}</button>)}
@@ -715,7 +754,7 @@ export default function App() {
     <div className="notice"><Info size={17}/><div><b>چرا رخدادها تأیید قطعی نیستند؟</b><p>برای تأیید اختلال در سطح کشور، شواهد مستقل، هم‌زمان و پایدار لازم است. هم‌زمانی BGP، پایش فعال و تلسکوپ شبکه فقط قدرت شواهد را افزایش می‌دهد و علت رخداد را به‌تنهایی مشخص نمی‌کند.</p></div></div>
   </div>;
   else if (page === "sources") body = <div className="stack">
-    <div className="intro"><small>منابع داده</small><h2>پوشش منابع نسخهٔ اول</h2><p>سه سیگنال ملی IODA در pipeline فعال هستند؛ منابع مکمل هنوز به جمع‌آوری خودکار متصل نشده‌اند.</p></div>
+    <div className="intro"><small>منابع داده</small><h2>اطلاعات از کجا می‌آید؟</h2><p>این صفحه می‌گوید هر منبع چه چیزی را اندازه می‌گیرد. نام‌های فنی و جزئیات اتصال هم در بخش جداگانه نگه داشته شده‌اند.</p></div>
     <Panel tag="سلامت ورودی" title="وضعیت و تازگی منابع"><SourceTable rows={data.sources}/></Panel>
     <div className="three">
       <article><b>IODA · Georgia Tech</b><p>منبع اصلی سیگنال‌های زیرساختی نسخهٔ نخست.</p><a href="https://api.ioda.inetintel.cc.gatech.edu/v2/docs" target="_blank" rel="noreferrer">مستندات API ↗</a></article>
@@ -726,9 +765,9 @@ export default function App() {
   else body = <div className="stack">
     <div className="intro"><small>روش‌شناسی</small><h2>داده چه می‌گوید و چه چیزی را ثابت نمی‌کند؟</h2><p>شفافیت منبع، زمان، کیفیت و محدودیت‌ها بخشی از محصول است.</p></div>
     <div className="three">
-      <article><small>۰۱</small><h3>Observed · مشاهده‌شده</h3><p>مقدار، زمان و منبعی که مستقیم دریافت و ذخیره شده است.</p></article>
-      <article><small>۰۲</small><h3>Suspected · مشکوک</h3><p>چند نشانهٔ هم‌جهت و مستقل وجود دارد، اما شواهد برای تأیید کافی نیست.</p></article>
-      <article><small>۰۳</small><h3>Confirmed · تأییدشده</h3><p>فقط پس از معیارهای مستقل، تکرارپذیر و کنترل کیفیت؛ این وضعیت در نسخهٔ فعلی خودکار صادر نمی‌شود.</p></article>
+      <article><small>۰۱</small><h3>مشاهدهٔ مستقیم</h3><p>مقدار، زمان و منبعی که مستقیم دریافت و ذخیره شده است.</p></article>
+      <article><small>۰۲</small><h3>مشکوک؛ نیازمند بررسی</h3><p>چند نشانهٔ هم‌جهت و مستقل وجود دارد، اما شواهد برای تأیید کافی نیست.</p></article>
+      <article><small>۰۳</small><h3>تأییدشده با شواهد مستقل</h3><p>فقط پس از معیارهای مستقل، تکرارپذیر و کنترل کیفیت؛ این وضعیت در نسخهٔ فعلی خودکار صادر نمی‌شود.</p></article>
     </div>
     <Panel tag="قواعد تحلیل" title="اصول غیرقابل مذاکره"><ul className="caveats">
       <li>دادهٔ گم‌شده صفر نیست و به وضعیت سالم تبدیل نمی‌شود.</li>
@@ -749,7 +788,7 @@ export default function App() {
     </aside>
     <main>
       <header className="topbar"><div className="topbar-crumb">نت‌گارد <b>/</b> <strong>{current[1]}</strong></div>
-        <div className="actions"><span className="scope-label"><i/> ایران · پایش ملی</span><button onClick={() => { load(); loadCensorship(); }} disabled={data.busy || censorship.busy}><RefreshCw size={15}/>{data.busy || censorship.busy ? "در حال دریافت" : "به‌روزرسانی"}</button></div>
+        <div className="actions"><span className="scope-label"><i/> ایران · پایش ملی</span><button onClick={() => { load(); loadCensorship(); loadProviders(); }} disabled={data.busy || censorship.busy || providerData.busy}><RefreshCw size={15}/>{data.busy || censorship.busy || providerData.busy ? "در حال دریافت" : "به‌روزرسانی"}</button></div>
       </header>
       <div className="content">
         {data.error && <div className="warning"><AlertTriangle/><div><b>دریافت داده ناموفق بود</b><p>{data.error} دادهٔ ساختگی جایگزین نمی‌شود.</p></div></div>}
