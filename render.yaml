@@ -1,11 +1,28 @@
 services:
   - type: web
+    name: netguard-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: SUPABASE_URL
+        value: https://fsglerccgxktvcpybuzk.supabase.co
+      - key: SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_UXBLLdcNecHqtiqTtM0Jjg_aVOcAGJD
+      - key: NETGUARD_COLLECTOR_TOKEN
+        sync: false
+
+  - type: static
     name: netguard-dashboard
-    runtime: static
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
+    autoDeployTrigger: checksPass
     envVars:
       - key: VITE_SUPABASE_URL
         value: https://fsglerccgxktvcpybuzk.supabase.co
       - key: VITE_SUPABASE_PUBLISHABLE_KEY
-        sync: false
+        value: sb_publishable_UXBLLdcNecHqtiqTtM0Jjg_aVOcAGJD

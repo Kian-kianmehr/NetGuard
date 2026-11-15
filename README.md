@@ -1,39 +1,84 @@
-# NetGuard
+# NetGuard — نسخهٔ اولیهٔ ۱.۰.۰
 
-مرکز پایش و تحلیل شواهد عمومی وضعیت اینترنت ایران.
+NetGuard داشبورد عمومی فارسی برای پایش و توضیح شواهد وضعیت اینترنت ایران است.
 
-## نسخه ۱
-- داشبورد فارسی و راست‌چین با شش بخش: نمای کلی، تحلیل، سیگنال‌ها، رخدادها، منابع و روش‌شناسی.
-- دریافت سه سیگنال ملی IODA برای ایران: `bgp`، `ping-slash24` و `merit-nt`.
-- Collector مستقل پایتون و ذخیرهٔ تاریخچه در Supabase PostgreSQL.
-- اجرای هدف‌گذاری‌شده هر پنج دقیقه از GitHub Actions؛ زمان‌بندی best-effort است و SLA ندارد.
-- ثبت زمان مشاهدهٔ upstream و زمان دریافت به‌صورت جداگانه.
-- دادهٔ خالی، قدیمی و خطادار «سالم» فرض نمی‌شود.
+**داشبورد زنده:** https://netguard-dashboard-63d8.onrender.com  
+**مخزن:** https://github.com/Kian-kianmehr/NetGuard
+
+## محدودهٔ MVP
+
+ده بخش محصول: نمای کلی ملی، کیفیت داده، دامنه‌ها و OONI، دیتاسنترهای ایران و وضعیت جهانی ارائه‌دهندگان، هوش مصنوعی، تحلیل، سیگنال‌ها، رخدادها، منابع و روش‌شناسی.
+
+منابع فعال:
+- IODA: BGP، ping-slash24 و merit-nt در سطح ملی.
+- OONI Web Connectivity: آزمون‌های داوطلبانه از ایران؛ نتیجهٔ تأییدشده از anomaly جداست.
+- Citizen Lab: فهرست نامزدهای آزمون، نه شاهد قطعی فیلترینگ.
+- صفحه‌های رسمی جهانی ارائه‌دهندگان.
+- موجودی اولیهٔ ۱۳ مرکز یا محل میزبانی ایران با سطح شواهد؛ پایش زندهٔ مراکز فعال نیست.
+
+## معماری production
+
+```text
+Supabase pg_cron / pg_net
+  ├─ هر ۱۰ دقیقه: netguard-collector (IODA)
+  ├─ هر ۱۰ دقیقه: netguard-censorship-collector (OONI)
+  ├─ هر ۱۰ دقیقه: netguard-provider-collector
+  └─ دقیقه‌های 03,13,23,33,43,53:
+       POST محافظت‌شده به FastAPI برای ساخت Snapshot
+
+Browser → Supabase REST SELECT → netguard_snapshots
+          Publishable Key + RLS + cache مرورگر
+```
+
+Frontend: React/Vite روی Render Static Site. Backend: FastAPI روی Render Free برای API خواندنی و تولید Snapshot. Database: Supabase PostgreSQL. Collectorها سه Supabase Edge Function مستقل‌اند. بازدیدکننده باعث شروع جمع‌آوری نمی‌شود.
+
+شش Snapshot: `dashboard_24`، `dashboard_72`، `dashboard_168`، `censorship`، `providers_status` و `iran_datacenters`. مرورگر دادهٔ آماده را می‌خواند و هر پنج دقیقه یا هنگام بازگشت تب تازه‌سازی می‌کند.
+
+## API
+- `GET /health` — سلامت پردازه و وجود تنظیمات؛ نه آزمون کامل پایگاه داده.
+- `GET /api/dashboard?hours=24|72|168`
+- `GET /api/censorship`
+- `GET /api/providers/status`
+- `GET /api/iran/datacenters`
+- `POST /internal/collect-snapshots` — فقط با `x-netguard-token` معتبر.
 
 ## اجرای محلی
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-python -m pytest -q
-python scripts/collect_ioda.py
+uvicorn app.main:app --reload
 
+# ترمینال دوم
 cd frontend
+cp .env.example .env.local
 npm install
+npm test
 npm run dev
 ```
 
-## راه‌اندازی آنلاین
-1. یک بار فایل `sql/001_initial_schema.sql` را در SQL Editor پروژهٔ Supabase اجرا کنید.
-2. در GitHub → Settings → Secrets and variables → Actions یک repository secret با نام `SUPABASE_SECRET_KEY` بسازید.
-3. در Render یک Static Site از همین repository و شاخهٔ `master` بسازید. Build command: `cd frontend && npm install && npm run build`؛ Publish directory: `frontend/dist`.
-4. در environment variables سایت Render این دو مقدار را تنظیم کنید:
-   - `VITE_SUPABASE_URL`: آدرس پروژه
-   - `VITE_SUPABASE_PUBLISHABLE_KEY`: کلید publishable یا anon عمومی
-5. در GitHub Actions، workflow با نام NetGuard IODA collection را یک بار دستی اجرا کنید.
+FastAPI برای خواندن Snapshot از `SUPABASE_URL` و `SUPABASE_PUBLISHABLE_KEY` استفاده می‌کند. Vite به `VITE_SUPABASE_URL` و `VITE_SUPABASE_PUBLISHABLE_KEY` نیاز دارد. Collector دستی `scripts/collect_ioda.py` فقط برای توسعه است و به `SUPABASE_SECRET_KEY` سمت سرور نیاز دارد؛ production از Edge Functionها استفاده می‌کند.
 
-کلید secret فقط در GitHub Actions قرار می‌گیرد؛ آن را هرگز در frontend یا فایل عمومی repository نگذارید.
+## امنیت و عملیات
+- RLS روی جدول‌های exposed فعال است؛ نقش‌های عمومی فقط SELECT روی داده‌های عمومی دارند.
+- جدول اعتبارنامهٔ Collector policy عمومی ندارد.
+- Secret Key و Service Role Key در مرورگر قرار نمی‌گیرند.
+- RPC `netguard_save_snapshot` با `SECURITY DEFINER` در schema عمومی قابل فراخوانی است، اما توکن داخلی بلند را با hash ذخیره‌شده تطبیق می‌دهد و فقط شش dataset مجاز را می‌پذیرد. Supabase Advisor به دلیل callable بودن آن هشدار می‌دهد؛ این مسیر نوشتن Snapshot فعلی عمدی است و باید در هر بازطراحی دسترسی دوباره بررسی شود.
+- تست‌های Python و تست/Build فرانت‌اند در GitHub Actions اجرا می‌شوند.
 
-## محدودیت‌های اندازه‌گیری
-IODA دادهٔ زیرساختی ملی است، نه سنجش تجربهٔ تک‌تک کاربران یا تمام ISPها. تغییر یک سیگنال به‌تنهایی قطعی، سانسور، تحریم یا علت اختلال را اثبات نمی‌کند. دادهٔ ملی به استان یا شهر تعمیم داده نمی‌شود. پیش‌بینی تا زمانی که تاریخچهٔ کافی و ارزیابی معتبر وجود نداشته باشد فعال نیست.
+## محدودیت‌های نسخهٔ اول
+- ارزیابی ملی است؛ دو شاخص اصلی BGP و Ping از IODA می‌آیند و probe مستقل از چند استان/ISP وجود ندارد.
+- دادهٔ ملی به شهر یا اپراتور تعمیم داده نمی‌شود.
+- OONI فقط آزمون‌های probeهای داوطلب را پوشش می‌دهد؛ نبود نتیجه به معنی دسترسی آزاد نیست.
+- خطای endpoint یا anomaly به‌تنهایی اثبات فیلترینگ، تحریم یا قطعی نیست.
+- وضعیت جهانی ارائه‌دهندگان دسترسی از داخل ایران را ثابت نمی‌کند.
+- موجودی دیتاسنترها پایش زندهٔ عملیاتی نیست.
+- پیش‌بینی، امتداد آزمایشی روند است نه احتمال کالیبره‌شده؛ مدل بازیابی تا داشتن رخدادهای تاریخی برچسب‌خورده عددی نمی‌دهد.
+- cadence ده‌دقیقه‌ای هدف عملیاتی است نه SLA؛ Render Free و منابع بالادستی بر آن اثر دارند.
+- فایل LICENSE هنوز تعریف نشده است؛ مجوز استفادهٔ مجدد باید از سوی صاحب پروژه انتخاب شود.
+
+## گام بعدی
+
+MVP ملی بسته می‌شود. نسخهٔ بعدی باید probeهای مستقل در چند استان و اپراتور راه‌اندازی کند؛ فقط پس از فراهم شدن vantage point واقعی، نقشهٔ استانی و مقایسهٔ ISP ساخته می‌شود. نقشهٔ راه در `docs/ROADMAP_FA.md` آمده است.
