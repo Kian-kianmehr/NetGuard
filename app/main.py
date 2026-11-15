@@ -9,13 +9,15 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from netguard.analysis import analyze_dashboard
+
 logger = logging.getLogger("netguard.api")
 
 
 def _supabase_config() -> tuple[str, str]:
     project_url = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
-    # Prefer the least-privileged public key. A server-side secret is a
-    # fallback only; it is never sent to the browser and this endpoint is read-only.
+    # Prefer the least-privileged public key. Server-side secret keys are never
+    # sent to the browser and are not required for this read-only API.
     public_key = (
         os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
         or os.getenv("SUPABASE_ANON_KEY", "").strip()
@@ -32,7 +34,6 @@ def _supabase_config() -> tuple[str, str]:
 
 def _auth_headers(key: str) -> dict[str, str]:
     headers = {"apikey": key, "Accept": "application/json"}
-    # Legacy anon keys are JWTs; current sb_publishable keys are not.
     if key.startswith("eyJ"):
         headers["Authorization"] = f"Bearer {key}"
     return headers
@@ -60,7 +61,7 @@ def _read_view(
 app = FastAPI(
     title="NetGuard API",
     description="Read-only API for the NetGuard Iran internet monitoring dashboard.",
-    version="1.0.0",
+    version="1.1.0",
 )
 app.add_middleware(
     CORSMiddleware,
@@ -72,18 +73,16 @@ app.add_middleware(
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "database_configured": bool(
-            os.getenv("SUPABASE_URL", "").strip()
-            and (
-                os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
-                or os.getenv("SUPABASE_ANON_KEY", "").strip()
-                or os.getenv("SUPABASE_SECRET_KEY", "").strip()
-                or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-            )
-        ),
-    }
+    configured = bool(
+        os.getenv("SUPABASE_URL", "").strip()
+        and (
+            os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip()
+            or os.getenv("SUPABASE_ANON_KEY", "").strip()
+            or os.getenv("SUPABASE_SECRET_KEY", "").strip()
+            or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        )
+    )
+    return {"status": "ok", "database_configured": configured}
 
 
 @app.get("/api/dashboard")
@@ -124,9 +123,12 @@ def dashboard(
             detail="The monitoring database could not return dashboard data.",
         ) from None
 
+    analysis, events = analyze_dashboard(sources, observations)
     return {
         "sources": sources,
         "observations": observations,
+        "analysis": analysis,
+        "events": events,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "window_hours": hours,
     }
