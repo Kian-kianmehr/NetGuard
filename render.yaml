@@ -13,20 +13,11 @@ services:
         value: https://fsglerccgxktvcpybuzk.supabase.co
       - key: SUPABASE_PUBLISHABLE_KEY
         value: sb_publishable_UXBLLdcNecHqtiqTtM0Jjg_aVOcAGJD
-      - key: NETGUARD_COUNTRY_CODE
-        value: IR
-      - key: IODA_LOOKBACK_HOURS
-        value: "4"
-      - key: IODA_MAX_POINTS
-        value: "240"
-      - key: COLLECTOR_INTERVAL_SECONDS
-        value: "600"
       - key: NETGUARD_COLLECTOR_TOKEN
         sync: false
 
-  - type: web
+  - type: static
     name: netguard-dashboard
-    runtime: static
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     autoDeployTrigger: checksPass
