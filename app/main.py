@@ -92,7 +92,8 @@ def dashboard(
     hours: int = Query(default=168, ge=6, le=168),
 ) -> dict[str, Any]:
     project_url, key = _supabase_config()
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    now = datetime.now(timezone.utc)
+    since = (now - timedelta(hours=hours)).isoformat()
     timeout = httpx.Timeout(12.0, connect=5.0)
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True) as client:
@@ -115,7 +116,7 @@ def dashboard(
                     ),
                     "observed_at": f"gte.{since}",
                     "order": "observed_at.asc",
-                    "limit": "1800",
+                    "limit": "6000",
                 },
             )
     except (httpx.HTTPError, ValueError) as exc:
@@ -125,14 +126,18 @@ def dashboard(
             detail="The monitoring database could not return dashboard data.",
         ) from None
 
-    analysis, events = analyze_dashboard(sources, observations)
-    analysis["intelligence"] = analyze_intelligence(sources, observations)
+    analysis, events = analyze_dashboard(
+        sources, observations, generated_at=now, window_hours=hours
+    )
+    analysis["intelligence"] = analyze_intelligence(
+        sources, observations, now=now
+    )
     return {
         "sources": sources,
         "observations": observations,
         "analysis": analysis,
         "events": events,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": now.isoformat(),
         "window_hours": hours,
     }
 
