@@ -471,6 +471,8 @@ export default function App() {
     const intelligence = analysis.intelligence || {};
     const forecast = intelligence.forecast || {};
     const modelSignals = intelligence.signals || [];
+    const cause = intelligence.cause_analysis || {};
+    const recovery = intelligence.recovery_estimate || {};
     body = <div className="stack">
       <div className="intro page-intro"><small><BrainCircuit size={14}/> تحلیل یادگیری ماشین</small><h2>مدل هوشمند و برآورد کوتاه‌مدت</h2><p>مدل بدون‌نظارت، رفتار هر سیگنال را با تاریخچهٔ خودش مقایسه می‌کند؛ برآورد آینده از نتیجهٔ قطعی شبکه جداست.</p></div>
       <div className="metrics">
@@ -484,6 +486,20 @@ export default function App() {
           <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>شاخص ریسک آزمایشی</small><b>{number(forecast.risk_index, 0)}<em> / ۱۰۰</em></b><span>{forecast.risk_label}</span></div><p>این عدد احتمال وقوع اختلال نیست؛ شاخصی ترکیبی برای اولویت‌بندی بررسی روند دو سیگنال اصلی است.</p></div>
           <div className="forecast-grid">{forecast.components.map((item) => <article key={item.signal}><small>{item.signal === "bgp" ? "دیدپذیری مسیرهای اینترنت (BGP)" : "پاسخ‌گویی شبکه‌ها (Ping)"}</small><b>{number(item.projected_change_30m_percent)}٪</b><span>تغییر برآوردی در ۳۰ دقیقهٔ آینده · مقدار فعلی {number(item.current_value)}</span><span>مقدار برآوردی {number(item.projected_value_30m)} · امتیاز ناهنجاری {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span></article>)}</div>
         </> : <Empty title="هنوز برآورد هم‌زمان ممکن نیست" note={forecast.note || "برای هر دو شاخص اصلی باید تاریخچهٔ معتبر بیشتری جمع شود."}/>}
+      </Panel>
+      <Panel tag="تحلیل شواهد" title="فرضیه‌های علت احتمالی" note={cause.scope_note || "این تحلیل علت قطعی اختلال را تعیین نمی‌کند."}>
+        <div className="cause-card">
+          <div className="cause-heading">
+            <div><small>فرضیهٔ اصلی</small><b>{cause.hypothesis_label || "دادهٔ کافی موجود نیست"}</b></div>
+            <span className={"cause-strength " + (cause.evidence_strength || "none")}>{cause.evidence_strength_label || "شواهد ناکافی"}</span>
+          </div>
+          <p>{cause.description || "برای تحلیل علت به هم‌زمانی داده‌های چند منبع نیاز است."}</p>
+          <div className="cause-signals">{(cause.observed_changes || []).map((item) => <span key={item.source_id}><b>{item.display_name}</b>{item.change_percent == null ? "—" : number(item.change_percent) + "٪"}</span>)}</div>
+          {cause.alternative_explanations?.length ? <div className="cause-alternatives"><small>توضیح‌های جایگزین برای بررسی</small><ul>{cause.alternative_explanations.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
+        </div>
+      </Panel>
+      <Panel tag="بازیابی و مدت رخداد" title="تخمین زمان بازگشت به وضعیت عادی" note={recovery.note || "برآورد زمان بازیابی فعلاً منتشر نمی‌شود."}>
+        <Empty title="هنوز قابل برآورد نیست" note="برای تخمین معتبر، باید رخدادهای تاریخیِ تأییدشده همراه با زمان شروع، پایان و شدت در اختیار مدل باشد. تا قبل از آن عدد زمان بازیابی نمایش داده نمی‌شود."/>
       </Panel>
       <Panel tag="مدل یادگیری ماشین" title="تشخیص رفتار غیرمعمول هر شاخص" note={intelligence.method_note || "مدل بر داده‌های مشاهده‌شده آموزش می‌بیند؛ هیچ داده یا برچسب ساختگی تولید نمی‌شود."}>
         {modelSignals.length ? <div className="ml-list">{modelSignals.map((item) => <article className="ml-row" key={item.source_id}><div className="ml-row-head"><div><b>{item.display_name}</b><small>{item.signal}</small></div><span className={item.is_anomaly ? "ml-score anomaly" : "ml-score"}>{item.score == null ? "—" : number(item.score, 3)}</span></div><p>{item.interpretation}</p><div className="ml-meta"><span>وضعیت: {item.status_label}</span><span>تاریخچه: {number(item.sample_count, 0)} نمونه</span><span>نمونهٔ آموزش: {number(item.training_samples, 0)}</span><span>ویژگی غالب: {item.dominant_feature_label}</span></div></article>)}</div> : <Empty/>}
