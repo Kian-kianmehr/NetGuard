@@ -207,6 +207,9 @@ def _signal_model(
         "sample_count": len(rows),
         "training_samples": max(0, len(features) - 1),
         "expected_interval_seconds": interval,
+        "observation_age_seconds": (
+            round(max(0.0, (now - rows[-1][0]).total_seconds())) if rows else None
+        ),
         "score": None,
         "status": "collecting_history" if fresh else "stale_data",
         "status_label": "در حال جمع‌آوری تاریخچه" if fresh else "دادهٔ تازه برای امتیازدهی موجود نیست",
@@ -275,12 +278,25 @@ def _forecast_component(
             "sample_count": len(rows),
         }
     latest_time = rows[-1][0]
+    age_seconds = max(0.0, (now - latest_time).total_seconds())
+    maximum_forecast_age = interval * 3
+    if age_seconds > maximum_forecast_age:
+        return {
+            "signal": signal,
+            "available": False,
+            "reason": (
+                f"آخرین مشاهده {round(age_seconds / 60)} دقیقه قبل ثبت شده و از "
+                f"سه فاصلهٔ معمول نمونه‌برداری ({round(maximum_forecast_age / 60)} دقیقه) قدیمی‌تر است"
+            ),
+            "sample_count": len(rows),
+            "observation_age_seconds": round(age_seconds),
+            "expected_interval_seconds": interval,
+        }
     recent_start = latest_time - timedelta(minutes=FORECAST_WINDOW_MINUTES)
     previous_start = recent_start - timedelta(minutes=FORECAST_WINDOW_MINUTES)
     previous = _window_values(rows, previous_start, recent_start - timedelta(microseconds=1))
     recent = _window_values(rows, recent_start, latest_time)
     minimum = _minimum_window_samples(interval, FORECAST_WINDOW_MINUTES)
-    age_seconds = max(0.0, (now - latest_time).total_seconds())
     if len(previous) < minimum or len(recent) < minimum:
         return {
             "signal": signal,
@@ -518,12 +534,20 @@ def analyze_intelligence(
         else:
             risk_level, risk_label = "low", "در پنجره‌های فعلی افت پرقدرتی مشاهده نمی‌شود"
 
+    unavailable_reasons = [
+        (
+            "BGP" if item.get("signal") == "bgp" else "پایش فعال",
+            item.get("reason") or "دادهٔ کافی موجود نیست",
+        )
+        for item in components if not item.get("available")
+    ]
     note = (
         "شاخص ریسک، احتمال آماری کالیبره‌شده نیست. امتداد روند از دو پنجرهٔ ۳۰ دقیقه‌ای هم‌طول، "
         "همراه با امتیاز ناهنجاری ساخته می‌شود؛ ممکن است با تغییر منبع یا پوشش خطا کند."
         if available else
-        "برای برآورد، هر دو شاخص اصلی باید دادهٔ تازه و نمونهٔ کافی در دو پنجرهٔ ۳۰ دقیقه‌ای داشته باشند. "
-        "دادهٔ ناکافی به معنی ریسک صفر نیست."
+        "برای انتشار امتیاز ترکیبی، هر دو شاخص اصلی باید تازه و دارای نمونهٔ کافی باشند. "
+        + " ".join(f"{name}: {reason}." for name, reason in unavailable_reasons)
+        + " دادهٔ ناکافی به معنی ریسک صفر نیست؛ پیش‌بینی مستقل شاخص واجد شرایط جداگانه نمایش داده می‌شود."
     )
     return {
         "model_name": MODEL_NAME,
