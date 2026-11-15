@@ -184,12 +184,13 @@ function Chart({ rows = [], compact = false }) {
 function SourceTable({ rows = [] }) {
   if (!rows.length) return <Empty title="منبع فعالی در پاسخ API نیست" />;
   return <div className="table-wrap"><table>
-    <thead><tr><th>منبع</th><th>تازگی داده</th><th>آخرین مشاهده</th><th>آخرین اجرا</th><th>مقدار آخر</th></tr></thead>
+    <thead><tr><th>منبع</th><th>تازگی داده</th><th>آخرین مشاهده</th><th>فاصلهٔ نمونه‌گیری</th><th>آخرین اجرا</th><th>مقدار آخر</th></tr></thead>
     <tbody>{rows.map((source) => <tr key={source.source_id}>
       <td><b>{source.display_name}</b><small>{source.provider} · {source.signal}</small></td>
       <td><Badge value={source.freshness_status}/></td>
       <td>{time(source.last_observed_at)}<small>{source.observation_age_seconds == null ? "سن داده نامشخص" : number(Math.floor(source.observation_age_seconds / 60), 0) + " دقیقه پیش"}</small></td>
-      <td>{time(source.last_run_started_at)}<small>{source.last_run_status || "بدون اجرا"}</small></td>
+      <td><b>{source.expected_interval_seconds ? number(source.expected_interval_seconds / 60, 0) + " دقیقه" : "—"}</b><small>{source.stale_after_seconds ? "حد هشدار " + number(source.stale_after_seconds / 60, 0) + " دقیقه" : "آستانه نامشخص"}</small></td>
+      <td>{time(source.last_run_started_at)}<small>{source.last_run_status || "بدون اجرا"}{source.last_run_duration_ms != null ? " · " + number(source.last_run_duration_ms, 0) + " ms" : ""}</small></td>
       <td><b>{number(source.latest_value)}</b><small>{source.unit}</small></td>
     </tr>)}</tbody>
   </table></div>;
