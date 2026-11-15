@@ -25,8 +25,8 @@ function headers(key: string) {
   if (key.startsWith("eyJ")) result.Authorization = `Bearer ${key}`;
   return result;
 }
-async function db(key: string, method: string, body?: unknown, query = "") {
-  const response = await fetch(`${PROJECT_URL}/rest/v1/netguard_snapshots${query}`, {
+async function db(key: string, method: string, body?: unknown, query = "", table = "netguard_snapshots") {
+  const response = await fetch(`${PROJECT_URL}/rest/v1/${table}${query}`, {
     method, headers: { ...headers(key), Prefer: "resolution=merge-duplicates,return=minimal" },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(10000),
@@ -148,7 +148,7 @@ Deno.serve(async (request: Request) => {
     const supplied = request.headers.get("x-netguard-token") ?? "";
     if (supplied.length < 40) return Response.json({error:"unauthorized"},{status:401});
     const key = getServiceKey();
-    const credResponse = await db(key,"GET",undefined,"?select=token_hash&name=eq.ioda_collector&limit=1");
+    const credResponse = await db(key,"GET",undefined,"?select=token_hash&name=eq.ioda_collector&limit=1","netguard_collector_credentials");
     const credentials = await credResponse.json();
     const expected = Array.isArray(credentials) ? credentials[0]?.token_hash : null;
     if (typeof expected !== "string" || !equal(await sha256(supplied),expected)) {
