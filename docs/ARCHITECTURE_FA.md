@@ -1,50 +1,71 @@
-# معماری نسخهٔ اول
+# معماری عملیاتی NetGuard — نسخهٔ اول
+
+بازدیدکننده نه جمع‌آوری را شروع می‌کند و نه منتظر اجرای مدل می‌ماند. چرخهٔ داده در پس‌زمینه اجرا می‌شود:
 
 ```text
-Browser
-  |-- Render Static Site (React/Vite)
-  |       |-- GET /api/dashboard
-  |       v
-  |-- Render Free Web Service (FastAPI, API + Collector scheduler)
-          |-- read-only requests --> Supabase PostgREST
-          |-- every 5 min while awake --> IODA public API
-          `-- write observations + collector_runs --> Supabase Postgres
+Supabase pg_cron / pg_net
+  ├─ هر ۱۰ دقیقه: IODA Edge Collector
+  ├─ هر ۱۰ دقیقه: OONI Edge Collector
+  ├─ هر ۱۰ دقیقه: Provider Status Edge Collector
+  └─ دقیقه‌های 03,13,23,33,43,53:
+       x-netguard-token → Render FastAPI
+                           /internal/collect-snapshots
+                               │
+                      خواندن viewها + تحلیل
+                               │
+                      netguard_snapshots
+                               ▲
+                Supabase REST SELECT + RLS
+                               │
+                 Render Static Site / Browser
 ```
 
-- فرانت‌اند و API روی دو سرویس Render مستقر می‌شوند؛ دادهٔ پایدار در Supabase می‌ماند.
-- Collector در همان پردازهٔ FastAPI زمان‌بندی می‌شود؛ سرویس رایگان Render در بی‌درخواستی می‌خوابد، بنابراین این چرخه ۲۴/۷ یا SLA تضمین‌شده نیست.
-- هنگام استفاده از داشبورد، بازخوانی API هر ۶۰ ثانیه سرویس را بیدار نگه می‌دارد و چرخهٔ هدف پنج‌دقیقه‌ای می‌تواند اجرا شود.
-- کلید publishable فقط برای خواندن public و با RLS است؛ کلید secret فقط در متغیر محیطی Web Service و برای نوشتن Collector است.
-- هیچ secret در frontend، GitHub یا فایل عمومی repository قرار نمی‌گیرد.
-- مناطق جغرافیایی فقط در صورت وجود vantage point معتبر نمایش داده می‌شوند.
+## اجزا
+- Frontend: React و Vite روی Render Static Site.
+- Backend: FastAPI روی Render Free برای API خواندنی و ساخت Snapshot.
+- Database: Supabase PostgreSQL.
+- Collectors: سه Supabase Edge Function برای IODA، OONI و وضعیت رسمی ارائه‌دهندگان.
+- Scheduler: Supabase pg_cron و pg_net.
 
+## چرخهٔ داده
+1. Edge Functionها هر ۱۰ دقیقه دادهٔ خام را دریافت می‌کنند.
+2. observed_at زمان مشاهده و collected_at زمان دریافت را جدا نگه می‌دارند.
+3. job تجمیع به endpoint داخلی Render درخواست محافظت‌شده می‌فرستد.
+4. FastAPI تاریخچه‌های ۲۴، ۷۲ و ۱۶۸ ساعت را می‌خواند، تحلیل آماری/ML را اجرا می‌کند و شش Snapshot عمومی را می‌سازد.
+5. Snapshotها از طریق RPC netguard_save_snapshot با توکن داخلی ذخیره می‌شوند.
+6. مرورگر Snapshotهای لازم را با Publishable Key و RLS می‌خواند و cache می‌کند.
 
-## لایهٔ تحلیل هوشمند نسخهٔ اول
-- موتور تحلیل آماری توضیح‌پذیر قبلی حفظ شده است.
-- ماژول خالص Python در `netguard/ml.py` یک Isolation Forest بدون‌نظارت سبک را روی تاریخچهٔ هر سیگنال اجرا می‌کند.
-- مدل با تاریخچهٔ واقعی آموزش می‌بیند و در نبود حداقل نمونه، امتیاز جعلی تولید نمی‌کند.
-- برآورد ۳۰ دقیقه‌ای فقط در صورت وجود دو شاخص اصلی محاسبه می‌شود و «شاخص ریسک» است، نه احتمال کالیبره‌شده.
+## Snapshot و تازگی
+| کلید | محتوا | آستانهٔ stale |
+|---|---|---:|
+| dashboard_24 | ۲۴ ساعت | ۱۵ دقیقه |
+| dashboard_72 | ۳ روز | ۱۵ دقیقه |
+| dashboard_168 | ۷ روز | ۱۵ دقیقه |
+| censorship | شواهد OONI | ۳۰ دقیقه |
+| providers_status | وضعیت جهانی | ۱۵ دقیقه |
+| iran_datacenters | موجودی دیتاسنتر | ۳۰ دقیقه |
 
+اگر Snapshot کهنه باشد با is_stale مشخص می‌شود؛ دادهٔ قدیمی به‌عنوان تازه معرفی نمی‌شود.
 
-## لایهٔ کیفیت داده و ارزیابی زمانی
-- API تاریخچهٔ مشاهدات را با ترتیب قطعی `observed_at, source_id` و صفحه‌بندی REST می‌خواند؛ سقف پاسخ یک صفحه، تاریخچهٔ چندروزه را قطع نمی‌کند.
-- نمای `dashboard_sources` cadence، آستانهٔ کهنگی، خطای آخرین اجرا، مدت اجرا و تعداد رکوردهای دریافت‌شده را در کنار آخرین مشاهده می‌دهد.
-- ارزیابی جاری برای هر سیگنال دو پنجرهٔ ۳۰ دقیقه‌ای هم‌طول را مقایسه می‌کند و حداقل نمونه را از cadence همان منبع می‌سازد.
-- وضعیت منبع از نمای دیتابیس می‌آید؛ دادهٔ قدیمی یا اجرای ناموفق نباید به «پایدار» تعبیر شود.
-- کیفیت تاریخچه با چهار شاخص مستقل گزارش می‌شود: پوشش نمونه در بازه، طول زمانی مشاهده‌شده، شکاف‌های زمانی و سن آخرین مشاهده.
+## API
+- GET /health: سلامت پردازه و وجود تنظیمات؛ نه آزمون کامل پایگاه داده.
+- GET /api/dashboard?hours=24|72|168
+- GET /api/censorship
+- GET /api/providers/status
+- GET /api/iran/datacenters
+- POST /internal/collect-snapshots: فقط با x-netguard-token معتبر.
 
-## چرخهٔ جمع‌آوری و snapshot ده‌دقیقه‌ای
+## امنیت
+- RLS روی جدول‌های exposed فعال است.
+- anon و authenticated فقط SELECT روی داده‌های عمومی دارند.
+- netguard_collector_credentials policy عمومی ندارد.
+- Edge Functionها کلید نوشتن را از secret محیط اجرا می‌گیرند.
+- RPC netguard_save_snapshot از SECURITY DEFINER استفاده می‌کند، اما توکن بلند را با hash تطبیق می‌دهد و datasetها را whitelist می‌کند. این طراحی دلیل هشدار Supabase Advisor دربارهٔ callable بودن RPC است و باید در بازطراحی دسترسی دوباره ارزیابی شود.
+- هیچ Secret Key یا Service Role Key در Frontend نیست.
 
-بازدیدکننده نباید باعث شروع جمع‌آوری یا تحلیل شود. چرخهٔ پس‌زمینه با زمان‌بندی Supabase اجرا می‌شود:
-
-1. هر ۱۰ دقیقه IODA، OONI و وضعیت رسمی ارائه‌دهندگان به‌طور مستقل دریافت می‌شوند.
-2. چند دقیقه پس از آن، endpoint داخلی و محافظت‌شدهٔ Render داده‌های ذخیره‌شده را می‌خواند.
-3. تحلیل وضعیت، رخدادها، کیفیت داده و خروجی مدل روی همان داده‌ها محاسبه می‌شوند.
-4. خروجی‌های ۲۴ ساعت، ۳ روز و ۷ روز، فهرست OONI و موجودی مراکز دادهٔ ایران در `netguard_snapshots` ذخیره می‌شوند.
-5. API عمومی فقط snapshot آماده را می‌خواند. اگر زمان snapshot از حد تازگی عبور کند، پاسخ آن را با `is_stale` مشخص می‌کند؛ دادهٔ قدیمی هرگز سالم فرض نمی‌شود.
-
-کلیدهای snapshot عبارت‌اند از `dashboard_24`، `dashboard_72`، `dashboard_168`، `censorship`، `providers_status` و `iran_datacenters`. نوشتن snapshot فقط از طریق تابع محدودشدهٔ `netguard_save_snapshot` و با اعتبارنامهٔ جمع‌آورنده مجاز است.
-
-### محدودیت پایش مراکز دادهٔ داخل ایران
-
-موجودی مراکز داده از منابع اپراتورها و دایرکتوری‌های عمومی جمع‌آوری شده و سطح شواهد هر رکورد جداگانه ثبت می‌شود. این موجودی معادل وضعیت زنده نیست. برای اعلام سلامت یا اختلال هر مرکز، به probe مستقل داخل ایران و اندازه‌گیری مسیر همان مرکز نیاز است؛ تا زمان فراهم‌شدن آن، وضعیت مراکز «پایش مستقیم فعال نیست» یا «نامشخص» باقی می‌ماند.
+## محدودیت
+- Render Free ممکن است بخوابد؛ SLA تضمین‌شده وجود ندارد.
+- موفقیت Collector تضمین نمی‌کند منبع بالادستی مشاهدهٔ تازه منتشر کرده باشد.
+- دادهٔ قدیمی، تأخیر cadence و خطای Collector جدا هستند.
+- در شکست تجمیع ممکن است Snapshot قبلی باقی بماند؛ collected_at و is_stale باید بررسی شوند.
+- مراکز دادهٔ ایران در v1 پایش زندهٔ سلامت ندارند.
