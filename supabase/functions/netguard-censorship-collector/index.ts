@@ -4,6 +4,8 @@ const COUNTRY = "IR";
 const LOOKBACK_DAYS = 90;
 const PAGE_SIZE = 100;
 const MAX_PAGES = 5;
+const TEST_LIST_URL = "https://raw.githubusercontent.com/citizenlab/test-lists/master/lists/ir.csv";
+const EXCLUDED_TEST_CATEGORIES = new Set(["ALDR", "GMB", "PORN", "DATE", "XED"]);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -170,6 +172,91 @@ async function fetchMeasurements(classification: "confirmed" | "anomaly", since:
   return { rows: collected, error: fetchError };
 }
 
+
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let quoted = false;
+  const input = text.replace(/^\uFEFF/, "");
+  for (let index = 0; index < input.length; index++) {
+    const char = input[index];
+    if (char === '"') {
+      if (quoted && input[index + 1] === '"') {
+        field += '"';
+        index++;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === "," && !quoted) {
+      row.push(field);
+      field = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && input[index + 1] === "\n") index++;
+      row.push(field);
+      if (row.some((value) => value.trim())) rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+  row.push(field);
+  if (row.some((value) => value.trim())) rows.push(row);
+  return rows;
+}
+
+async function fetchTestListDomains() {
+  try {
+    const response = await fetch(TEST_LIST_URL, {
+      headers: { Accept: "text/csv", "User-Agent": "NetGuard/1.0 (public Iran internet monitoring)" },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!response.ok) throw new Error("citizenlab_http_" + response.status);
+    const rows = parseCsv(await response.text());
+    if (!rows.length) throw new Error("citizenlab_empty_list");
+    const header = rows[0].map((value) => value.trim().toLowerCase());
+    const urlIndex = header.indexOf("url");
+    const categoryIndex = header.indexOf("category_code");
+    const descriptionIndex = header.indexOf("category_description");
+    if (urlIndex < 0 || categoryIndex < 0) throw new Error("citizenlab_invalid_headers");
+
+    const deduplicated = new Map<string, Record<string, unknown>>();
+    for (const values of rows.slice(1)) {
+      const input = (values[urlIndex] ?? "").trim();
+      const category = (values[categoryIndex] ?? "").trim().toUpperCase();
+      if (!input || !category || EXCLUDED_TEST_CATEGORIES.has(category)) continue;
+      const domain = normalizeDomain(input);
+      if (!domain) continue;
+      deduplicated.set(domain, {
+        domain,
+        input,
+        category_code: category,
+        category_description: (values[descriptionIndex] ?? "").trim(),
+        source_url: "https://github.com/citizenlab/test-lists/blob/master/lists/ir.csv",
+        updated_at: new Date().toISOString(),
+      });
+    }
+    return { rows: [...deduplicated.values()], error: null as string | null };
+  } catch (error) {
+    const code = error instanceof Error ? error.message.split("_http_")[0] : "citizenlab_fetch_error";
+    return { rows: [] as Record<string, unknown>[], error: code.slice(0, 120) };
+  }
+}
+
+async function saveTestListDomains(key: string, rows: Record<string, unknown>[]) {
+  for (let offset = 0; offset < rows.length; offset += PAGE_SIZE) {
+    await dbRequest(
+      key,
+      "censorship_test_domains",
+      "POST",
+      rows.slice(offset, offset + PAGE_SIZE),
+      "?on_conflict=domain",
+      "resolution=merge-duplicates,return=minimal",
+    );
+  }
+}
+
 async function saveRows(key: string, rows: Record<string, unknown>[]) {
   for (let offset = 0; offset < rows.length; offset += PAGE_SIZE) {
     const batch = rows.slice(offset, offset + PAGE_SIZE);
@@ -215,20 +302,22 @@ Deno.serve(async (request: Request) => {
 
     const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const outcomes = await Promise.all([
+    const [confirmedResult, anomalyResult, testListResult] = await Promise.all([
       fetchMeasurements("confirmed", since, until),
       fetchMeasurements("anomaly", since, until),
+      fetchTestListDomains(),
     ]);
-    const rows = outcomes.flatMap((item) => item.rows);
-    const errors = outcomes.map((item) => item.error).filter((item): item is string => Boolean(item));
+    const rows = [...confirmedResult.rows, ...anomalyResult.rows];
+    const errors = [confirmedResult.error, anomalyResult.error, testListResult.error]
+      .filter((item): item is string => Boolean(item));
     if (rows.length) await saveRows(key, rows);
+    if (testListResult.rows.length) await saveTestListDomains(key, testListResult.rows);
 
-    const status = errors.length === 2 && rows.length === 0
+    const status = errors.length === 3 && rows.length === 0 && testListResult.rows.length === 0
       ? "error"
       : errors.length > 0
       ? "partial"
       : "success";
-    const errorCode = errors.length ? errors.join(",").slice(0, 500) : null;
     const finishedAt = new Date();
     await dbRequest(key, "censorship_sync_runs", "POST", {
       id: crypto.randomUUID(),
@@ -236,12 +325,16 @@ Deno.serve(async (request: Request) => {
       finished_at: finishedAt.toISOString(),
       status,
       records_received: rows.length,
-      error_code: errorCode,
+      error_code: [confirmedResult.error, anomalyResult.error].filter(Boolean).join(",").slice(0, 500) || null,
+      test_list_records_received: testListResult.rows.length,
+      test_list_error_code: testListResult.error,
     });
 
     return Response.json({
       status,
       records_received: rows.length,
+      test_list_records_received: testListResult.rows.length,
+      test_list_error_code: testListResult.error,
       since,
       until,
       generated_at: finishedAt.toISOString(),

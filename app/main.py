@@ -169,70 +169,355 @@ def dashboard(
     }
 
 
+
+_RESTRICTED_TEST_CATEGORIES = {"ALDR", "GMB", "PORN", "DATE", "XED"}
+_CATEGORY_LABELS = {
+    "CULTR": "فرهنگ و جامعه", "POLR": "دیدگاه و نقد سیاسی", "REL": "مذهب",
+    "HUMR": "حقوق بشر", "NEWS": "خبر و رسانه", "MILX": "موضوعات نظامی",
+    "ANON": "ابزارهای ناشناس‌سازی", "ECON": "اقتصاد", "COMM": "ارتباطات",
+    "FILE": "اشتراک فایل", "HACK": "فناوری و امنیت", "GOVT": "نهادهای دولتی",
+    "GRP": "گروه‌ها و سازمان‌ها", "GAME": "بازی و سرگرمی", "HOST": "میزبانی وب",
+    "MMED": "رسانه و محتوای چندرسانه‌ای", "ENV": "محیط زیست", "SRCH": "جست‌وجو",
+    "CTRL": "کنترل اینترنت", "PUBH": "سلامت عمومی", "COMT": "فناوری و تجارت",
+    "HATE": "محتوای نفرت‌پراکن", "IGO": "سازمان‌های بین‌المللی",
+    "LGBT": "جامعه و حقوق مدنی", "PROV": "ارائه‌دهندگان خدمات",
+}
+
 @app.get("/api/censorship")
 def censorship() -> dict[str, Any]:
-    """Return cached OONI measurements collected from probes inside Iran."""
+    """Return OONI evidence and the safe Citizen Lab test candidates separately."""
     project_url, key = _supabase_config()
-    timeout = httpx.Timeout(12.0, connect=5.0)
+    timeout = httpx.Timeout(15.0, connect=5.0)
     try:
         with httpx.Client(timeout=timeout, follow_redirects=True) as client:
             domains = _read_view(
-                client,
-                project_url,
-                key,
-                "censored_domains",
-                {
-                    "select": "*",
-                    "order": "confirmed_measurements.desc,last_observed_at.desc",
-                    "limit": "5000",
-                },
+                client, project_url, key, "censored_domains",
+                {"select": "*", "order": "confirmed_measurements.desc,last_observed_at.desc", "limit": "5000"},
+            )
+            test_domains = _read_view(
+                client, project_url, key, "censorship_test_domains",
+                {"select": "domain,category_code,category_description,source_url,updated_at",
+                 "order": "domain.asc", "limit": "2000"},
             )
             runs = _read_view(
-                client,
-                project_url,
-                key,
-                "censorship_sync_runs",
-                {
-                    "select": "started_at,finished_at,status,records_received,error_code",
-                    "order": "started_at.desc",
-                    "limit": "1",
-                },
+                client, project_url, key, "censorship_sync_runs",
+                {"select": "started_at,finished_at,status,records_received,error_code,"
+                          "test_list_records_received,test_list_error_code",
+                 "order": "started_at.desc", "limit": "1"},
             )
             coverage_rows = _read_view(
-                client, project_url, key, "censorship_coverage",
-                {"select": "*", "limit": "1"},
+                client, project_url, key, "censorship_coverage", {"select": "*", "limit": "1"},
             )
     except (httpx.HTTPError, ValueError) as exc:
-        logger.warning("OONI censorship data read failed (%s)", type(exc).__name__)
-        raise HTTPException(
-            status_code=502,
-            detail="Censorship monitoring data is temporarily unavailable.",
-        ) from None
+        logger.warning("Censorship data read failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Censorship monitoring data is temporarily unavailable.") from None
 
-    coverage = coverage_rows[0] if coverage_rows else {}
-    total_domains_observed = int(coverage.get("domain_count") or len(domains))
+    def safe_category(code: Any) -> bool:
+        return str(code or "").upper() not in _RESTRICTED_TEST_CATEGORIES
+
+    observed: dict[str, dict[str, Any]] = {}
     for item in domains:
         domain = item.get("domain")
-        if isinstance(domain, str) and domain:
-            item["source_url"] = (
-                "https://explorer.ooni.org/search?probe_cc=IR&domain="
-                + quote(domain, safe="")
-            )
+        code = str(item.get("category_code") or "").upper()
+        if not isinstance(domain, str) or not domain or not safe_category(code):
+            continue
+        item["candidate_only"] = False
+        item["has_measurements"] = True
+        item["in_test_list"] = False
+        item["category_label"] = _CATEGORY_LABELS.get(code, "سایر موضوعات")
         item["classification_label"] = (
             "مسدودیت تأییدشده" if item.get("confirmed_blocked")
-            else "ناهنجاری؛ نیازمند بررسی"
+            else "نشانهٔ اختلال؛ نیازمند بررسی"
         )
+        item["source_url"] = (
+            "https://explorer.ooni.org/search?probe_cc=IR&domain=" + quote(domain, safe="")
+        )
+        observed[domain] = item
+
+    candidates: dict[str, dict[str, Any]] = {}
+    for row in test_domains:
+        domain = row.get("domain")
+        code = str(row.get("category_code") or "").upper()
+        if not isinstance(domain, str) or not domain or not safe_category(code):
+            continue
+        candidates[domain] = row
+        if domain in observed:
+            observed[domain]["in_test_list"] = True
+            if not observed[domain].get("category_code"):
+                observed[domain]["category_code"] = code
+                observed[domain]["category_label"] = _CATEGORY_LABELS.get(code, "سایر موضوعات")
+            continue
+        observed[domain] = {
+            "domain": domain, "confirmed_blocked": False, "confirmed_measurements": 0,
+            "anomaly_measurements": 0, "probe_networks": 0, "measurement_count": 0,
+            "measurements_with_asn": 0, "asn_coverage_percent": 0,
+            "candidate_only": True, "has_measurements": False, "in_test_list": True,
+            "category_code": code, "category_label": _CATEGORY_LABELS.get(code, "سایر موضوعات"),
+            "classification_label": "در فهرست آزمون؛ هنوز نتیجهٔ تازه‌ای نداریم",
+            "last_observed_at": None, "source_url": row.get("source_url")
+                or "https://github.com/citizenlab/test-lists/blob/master/lists/ir.csv",
+        }
+
+    coverage = coverage_rows[0] if coverage_rows else {}
+    sync = runs[0] if runs else None
+    safe_observed_count = sum(1 for item in observed.values() if item.get("has_measurements"))
+    confirmed_count = sum(1 for item in observed.values() if item.get("confirmed_blocked"))
+    anomaly_count = sum(1 for item in observed.values()
+                        if item.get("has_measurements") and not item.get("confirmed_blocked"))
+    candidate_only_count = sum(1 for item in observed.values() if item.get("candidate_only"))
     return {
-        "domains": domains,
-        "total_domains_observed": total_domains_observed,
+        "domains": sorted(observed.values(),
+                          key=lambda item: (not bool(item.get("confirmed_blocked")),
+                                            not bool(item.get("has_measurements")),
+                                            -(int(item.get("measurement_count") or 0)))),
+        "total_domains_observed": safe_observed_count,
+        "total_test_domains": len(candidates),
+        "candidate_domains_not_recently_tested": candidate_only_count,
+        "confirmed_domain_count": confirmed_count,
+        "anomaly_domain_count": anomaly_count,
         "coverage": coverage,
         "scope_note": (
-            "همهٔ دامنه‌های دارای نتیجهٔ تأییدشده یا ناهنجاری در آزمون Web Connectivity "
-            "OONI طی ۹۰ روز اخیر نمایش داده می‌شوند؛ این فهرست کل وب‌سایت‌های فیلترشدهٔ ایران "
-            "نیست و فقط شبکه‌هایی را پوشش می‌دهد که در آزمون‌ها مشارکت کرده‌اند. "
-            "نبود یک دامنه در این فهرست، اثبات دسترسی آزاد نیست."
+            "این صفحه دو نوع داده را جدا نشان می‌دهد: آزمون‌های واقعی OONI از داخل ایران و "
+            "دامنه‌هایی که در فهرست پژوهشی Citizen Lab برای آزمایش قرار گرفته‌اند. "
+            "فقط نتیجهٔ دارای نشانهٔ مسدودسازی در OONI «تأییدشده» است؛ فهرست پژوهشی به‌تنهایی "
+            "فیلتر بودن را ثابت نمی‌کند. نبود نتیجه یعنی وضعیت نامشخص، نه دسترسی آزاد."
         ),
-        "sync": runs[0] if runs else None,
+        "sync": sync,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "lookback_days": 90,
+        "test_list_source": "https://github.com/citizenlab/test-lists/blob/master/lists/ir.csv",
     }
+
+
+_PROVIDER_STATUSPAGES = (
+    {"id": "cloudflare", "name": "Cloudflare", "group": "infrastructure",
+     "description": "شبکهٔ جهانی لبه و مراکز حضور؛ وضعیت شهرها به‌صورت جداگانه بررسی می‌شود.",
+     "api": "https://www.cloudflarestatus.com/api/v2/summary.json",
+     "url": "https://www.cloudflarestatus.com/"},
+    {"id": "digitalocean", "name": "DigitalOcean", "group": "infrastructure",
+     "description": "زیرساخت ابری و ماشین‌های مجازی.",
+     "api": "https://status.digitalocean.com/api/v2/summary.json",
+     "url": "https://status.digitalocean.com/"},
+    {"id": "render", "name": "Render", "group": "infrastructure",
+     "description": "میزبانی برنامه‌ها و سرویس‌های وب.",
+     "api": "https://status.render.com/api/v2/summary.json",
+     "url": "https://status.render.com/"},
+    {"id": "supabase", "name": "Supabase", "group": "infrastructure",
+     "description": "پایگاه داده و خدمات پشتیبان برنامه‌ها.",
+     "api": "https://status.supabase.com/api/v2/summary.json",
+     "url": "https://status.supabase.com/"},
+    {"id": "openai", "name": "OpenAI", "group": "ai",
+     "description": "سرویس‌های هوش مصنوعی و رابط‌های برنامه‌نویسی.",
+     "api": "https://status.openai.com/api/v2/summary.json",
+     "url": "https://status.openai.com/"},
+    {"id": "anthropic", "name": "Anthropic", "group": "ai",
+     "description": "سرویس‌های Claude و رابط برنامه‌نویسی.",
+     "api": "https://status.anthropic.com/api/v2/summary.json",
+     "url": "https://status.anthropic.com/"},
+    {"id": "huggingface", "name": "Hugging Face", "group": "ai",
+     "description": "میزبانی مدل‌ها، مجموعه‌داده‌ها و ابزارهای یادگیری ماشین.",
+     "api": "https://status.huggingface.co/api/v2/summary.json",
+     "url": "https://status.huggingface.co/"},
+    {"id": "github", "name": "GitHub", "group": "developer",
+     "description": "مخزن کد، همکاری تیمی و سرویس‌های توسعه.",
+     "api": "https://www.githubstatus.com/api/v2/summary.json",
+     "url": "https://www.githubstatus.com/"},
+)
+_PROVIDER_CACHE: dict[str, Any] = {"expires_at": 0.0, "payload": None}
+_PROVIDER_CACHE_LOCK = __import__("threading").Lock()
+_PROVIDER_STATUS_ORDER = {
+    "operational": 0, "under_maintenance": 1, "degraded_performance": 2,
+    "partial_outage": 3, "major_outage": 4,
+}
+_PROVIDER_STATUS_LABELS = {
+    "operational": "عادی", "under_maintenance": "تعمیرات برنامه‌ریزی‌شده",
+    "degraded_performance": "کندی یا افت کیفیت", "partial_outage": "اختلال بخشی",
+    "major_outage": "اختلال گسترده", "unknown": "نامشخص",
+}
+
+
+def _fetch_statuspage_provider(provider: dict[str, str]) -> dict[str, Any]:
+    checked_at = datetime.now(timezone.utc).isoformat()
+    try:
+        response = httpx.get(
+            provider["api"], timeout=httpx.Timeout(6.0, connect=3.0),
+            follow_redirects=True, headers={"Accept": "application/json", "User-Agent": "NetGuard/1.0"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        status = payload.get("status") or {}
+        indicator = str(status.get("indicator") or "unknown").lower()
+        indicator_map = {
+            "none": "operational", "minor": "degraded_performance",
+            "major": "major_outage", "critical": "major_outage",
+            "maintenance": "under_maintenance",
+        }
+        overall = indicator_map.get(indicator, "unknown")
+        components = payload.get("components") or []
+        normalized = []
+        for component in components:
+            raw_status = str(component.get("status") or "unknown").lower()
+            name = str(component.get("name") or "")
+            if not name:
+                continue
+            normalized.append({
+                "name": name, "status": raw_status,
+                "status_label": _PROVIDER_STATUS_LABELS.get(raw_status, "نامشخص"),
+                "updated_at": component.get("updated_at"),
+            })
+        component_worst = max(
+            (_PROVIDER_STATUS_ORDER.get(item["status"], 0) for item in normalized),
+            default=0,
+        )
+        overall_order = _PROVIDER_STATUS_ORDER.get(overall, 0)
+        if component_worst > overall_order:
+            overall = max(
+                (item["status"] for item in normalized),
+                key=lambda item: _PROVIDER_STATUS_ORDER.get(item, 0),
+            )
+        incidents = []
+        for incident in (payload.get("incidents") or [])[:8]:
+            updates = incident.get("incident_updates") or []
+            latest = updates[0] if updates else {}
+            incidents.append({
+                "name": incident.get("name") or "رخداد اعلام‌شده",
+                "status": incident.get("status"),
+                "impact": incident.get("impact"),
+                "updated_at": latest.get("updated_at") or incident.get("updated_at"),
+                "body": str(latest.get("body") or incident.get("shortlink") or "")[:360],
+                "url": incident.get("shortlink") or provider["url"],
+            })
+        locations = [
+            item for item in normalized
+            if " - (" in item["name"] and item["status"] != "operational"
+        ]
+        return {
+            **{key: provider[key] for key in ("id", "name", "group", "description", "url")},
+            "status": overall,
+            "status_label": _PROVIDER_STATUS_LABELS.get(overall, "نامشخص"),
+            "summary": str(status.get("description") or "")[:240],
+            "provider_updated_at": (payload.get("page") or {}).get("updated_at"),
+            "checked_at": checked_at,
+            "component_count": len(normalized),
+            "components_attention": sum(1 for item in normalized if item["status"] != "operational"),
+            "data_center_count": sum(1 for item in normalized if " - (" in item["name"]),
+            "affected_locations": locations[:30],
+            "incidents": incidents,
+            "technical_components": normalized[:80],
+            "available": True,
+        }
+    except (httpx.HTTPError, ValueError, TypeError, KeyError) as exc:
+        logger.info("Provider status unavailable for %s (%s)", provider["id"], type(exc).__name__)
+        return {
+            **{key: provider[key] for key in ("id", "name", "group", "description", "url")},
+            "status": "unknown", "status_label": "نامشخص",
+            "summary": "وضعیت از صفحهٔ رسمی دریافت نشد.",
+            "provider_updated_at": None, "checked_at": checked_at,
+            "component_count": 0, "components_attention": 0,
+            "data_center_count": 0, "affected_locations": [],
+            "incidents": [], "technical_components": [], "available": False,
+        }
+
+
+def _fetch_google_cloud_status() -> dict[str, Any]:
+    provider = {
+        "id": "google-cloud", "name": "Google Cloud و Vertex AI",
+        "group": "infrastructure",
+        "description": "زیرساخت ابری گوگل و بخشی از سرویس‌های هوش مصنوعی آن.",
+        "url": "https://status.cloud.google.com/",
+    }
+    checked_at = datetime.now(timezone.utc).isoformat()
+    try:
+        response = httpx.get(
+            "https://status.cloud.google.com/incidents.json",
+            timeout=httpx.Timeout(6.0, connect=3.0), follow_redirects=True,
+            headers={"Accept": "application/json", "User-Agent": "NetGuard/1.0"},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        now = datetime.now(timezone.utc)
+        active: list[dict[str, Any]] = []
+        recently_resolved: list[dict[str, Any]] = []
+        for incident in payload if isinstance(payload, list) else []:
+            updates = incident.get("updates") or []
+            end = incident.get("end")
+            begin = incident.get("begin")
+            if not begin:
+                continue
+            try:
+                begin_dt = datetime.fromisoformat(str(begin).replace("Z", "+00:00"))
+                if begin_dt.tzinfo is None:
+                    begin_dt = begin_dt.replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            if not end:
+                active.append(incident)
+            elif now - begin_dt <= timedelta(days=30):
+                recently_resolved.append(incident)
+
+        incidents = []
+        for incident in (active + recently_resolved)[:8]:
+            updates = incident.get("updates") or []
+            latest = updates[-1] if updates else {}
+            is_active = not incident.get("end")
+            incidents.append({
+                "name": incident.get("external_desc") or incident.get("service_name") or "رخداد اعلام‌شده",
+                "status": "active" if is_active else "resolved",
+                "impact": "در حال بررسی" if is_active else "پایان‌یافته",
+                "updated_at": latest.get("created") or incident.get("modified"),
+                "body": str(latest.get("text") or "")[:360],
+                "url": provider["url"],
+            })
+        return {
+            **provider,
+            "status": "degraded_performance" if active else "operational",
+            "status_label": "اختلال اعلام‌شده" if active else "بدون رخداد فعال اعلام‌شده",
+            "summary": (f"{len(active)} رخداد فعال" if active else "در فهرست رسمی، رخداد فعالی اعلام نشده است."),
+            "provider_updated_at": None, "checked_at": checked_at,
+            "component_count": 0, "components_attention": len(active),
+            "data_center_count": 0, "affected_locations": [],
+            "incidents": incidents, "technical_components": [],
+            "available": True,
+        }
+    except (httpx.HTTPError, ValueError, TypeError) as exc:
+        logger.info("Google Cloud status unavailable (%s)", type(exc).__name__)
+        return {
+            **provider, "status": "unknown", "status_label": "نامشخص",
+            "summary": "وضعیت از فهرست رسمی رخدادها دریافت نشد.",
+            "provider_updated_at": None, "checked_at": checked_at,
+            "component_count": 0, "components_attention": 0,
+            "data_center_count": 0, "affected_locations": [],
+            "incidents": [], "technical_components": [], "available": False,
+        }
+
+
+@app.get("/api/providers/status")
+def providers_status() -> dict[str, Any]:
+    """Read public official provider status pages; this is not an Iran reachability test."""
+    now = datetime.now(timezone.utc).timestamp()
+    with _PROVIDER_CACHE_LOCK:
+        cached = _PROVIDER_CACHE.get("payload")
+        if cached is not None and now < float(_PROVIDER_CACHE.get("expires_at") or 0):
+            return cached
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=9) as pool:
+        futures = [pool.submit(_fetch_statuspage_provider, provider)
+                   for provider in _PROVIDER_STATUSPAGES]
+        providers = [future.result() for future in futures]
+        providers.append(pool.submit(_fetch_google_cloud_status).result())
+    providers.sort(key=lambda item: (
+        {"infrastructure": 0, "ai": 1, "developer": 2}.get(item["group"], 9), item["name"]
+    ))
+    payload = {
+        "providers": providers,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "scope_note": (
+            "این وضعیت‌ها از صفحه‌های رسمی جهانی شرکت‌ها گرفته می‌شوند. سبز بودن آن‌ها "
+            "به معنی دسترسی از داخل ایران نیست و اختلال محلی ایران را هم رد نمی‌کند. "
+            "اطلاعات مراکز شهری فقط برای شبکه‌هایی نمایش داده می‌شود که وضعیت مرکز را جداگانه منتشر می‌کنند."
+        ),
+        "cache_seconds": 180,
+    }
+    with _PROVIDER_CACHE_LOCK:
+        _PROVIDER_CACHE.update({"expires_at": now + 180, "payload": payload})
+    return payload
