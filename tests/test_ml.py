@@ -78,7 +78,7 @@ def test_forecast_uses_fresh_ping_when_bgp_observation_is_too_old():
         ("ioda:IR:bgp", "bgp", 1000),
         ("ioda:IR:ping-slash24", "ping-slash24", 900),
     ):
-        source, source_rows = make_data([base] * 48, source_id, signal)
+        source, source_rows = make_data([base] * 120, source_id, signal)
         sources.append(source)
         rows.extend(source_rows)
     latest = datetime.fromisoformat(max(row["observed_at"] for row in rows))
