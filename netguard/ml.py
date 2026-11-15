@@ -618,6 +618,17 @@ def analyze_intelligence(
         "minimum_raw_points": MIN_RAW_POINTS,
         "feature_window_minutes": FEATURE_WINDOW_MINUTES,
         "signals": models,
+        "deep_learning": {
+            "model_name": "Two-hidden-layer temporal MLP",
+            "architecture": "12-24-12-1",
+            "sequence_length": 12,
+            "hidden_layers": [24, 12],
+            "minimum_training_sequences": 64,
+            "validation_split_percent": 20,
+            "available_signals": sum(1 for item in components if item.get("available")),
+            "trained_signals": sum(1 for item in components if item.get("neural_model", {}).get("available")),
+            "training_method": "chronological_holdout_with_persistence_baseline",
+        },
         "cause_analysis": causes,
         "recovery_estimate": {
             "available": False,
@@ -640,9 +651,9 @@ def analyze_intelligence(
             "note": note,
         },
         "method_note": (
-            "ترکیب Isolation Forest بدون‌نظارت و انحراف مقاوم؛ تغییر هر نمونه بر حسب زمان واقعی "
+            "تشخیص ناهنجاری با Isolation Forest و انحراف مقاوم؛ پیش‌بینی کوتاه‌مدت با شبکهٔ عصبی MLP دارای دو لایهٔ پنهان و توالی ورودی ۱۲ نمونه‌ای. "
             "مدل با ۸۰٪ توالی‌های قدیمی‌تر آموزش می‌بیند و با ۲۰٪ انتهاییِ کنارگذاشته‌شده ارزیابی می‌شود. "
             "پیش‌بینی ۱۵، ۳۰ و ۶۰ دقیقه‌ای به‌صورت بازگشتی از خروجی شبکهٔ عصبی ساخته می‌شود؛ "
             "این برآوردها احتمال آماری کالیبره‌شده نیستند."
-        ),
+        ),,
     }
