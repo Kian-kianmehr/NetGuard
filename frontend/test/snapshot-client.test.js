@@ -86,3 +86,27 @@ test("aborts a request that exceeds the timeout", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("aborts when the response body stalls", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (_url, { signal }) => Promise.resolve({
+    ok: true,
+    status: 200,
+    json: () => new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("body aborted")), { once: true });
+    }),
+  });
+
+  try {
+    await assert.rejects(
+      fetchJsonWithRetry("/snapshot", {}, {
+        timeoutMs: 15,
+        maxAttempts: 1,
+        retryDelayMs: 0,
+      }),
+      /پاسخ سرویس داده/
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
