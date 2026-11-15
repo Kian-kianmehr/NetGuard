@@ -70,3 +70,18 @@ export function deriveDisplayNationalSummary(summary, signals = []) {
   const ping = signals.find((item) => item.signal === "ping-slash24");
   return { ...summary, ...deriveLimitedNationalVerdict({ bgp, ping }) };
 }
+
+export function describeCoverage(dataQuality = {}) {
+  const hours = Number(dataQuality.window_hours || 0);
+  const windowLabel = hours >= 168 ? "۷ روزه"
+    : hours >= 72 ? "۳ روزه"
+      : hours >= 24 ? "۲۴ ساعته"
+        : hours > 0 ? `${hours} ساعته` : "بازهٔ نامشخص";
+  const valid = Number(dataQuality.valid_observations);
+  const expected = Number(dataQuality.expected_observations);
+  const format = (value) => new Intl.NumberFormat("fa-IR").format(value);
+  const detail = Number.isFinite(valid) && Number.isFinite(expected) && expected > 0
+    ? `در بازهٔ ${windowLabel}، ${format(valid)} از ${format(expected)} نمونهٔ مورد انتظار ثبت شده است. این درصد پوشش تاریخچهٔ پایش است، نه درصد کاربران یا پوشش جغرافیایی کشور.`
+    : "این درصد به پوشش نمونه‌های ثبت‌شده در بازهٔ پایش اشاره دارد، نه درصد کاربران یا پوشش جغرافیایی کشور.";
+  return { windowLabel, detail };
+}
