@@ -436,39 +436,41 @@ def _fetch_google_cloud_status() -> dict[str, Any]:
         response.raise_for_status()
         payload = response.json()
         now = datetime.now(timezone.utc)
-        recent = []
-        active = []
+        active: list[dict[str, Any]] = []
+        recently_resolved: list[dict[str, Any]] = []
         for incident in payload if isinstance(payload, list) else []:
             updates = incident.get("updates") or []
-            latest = updates[-1] if updates else {}
             end = incident.get("end")
             begin = incident.get("begin")
             if not begin:
                 continue
             try:
                 begin_dt = datetime.fromisoformat(str(begin).replace("Z", "+00:00"))
+                if begin_dt.tzinfo is None:
+                    begin_dt = begin_dt.replace(tzinfo=timezone.utc)
             except ValueError:
                 continue
-            is_active = not end
-            if is_active:
+            if not end:
                 active.append(incident)
             elif now - begin_dt <= timedelta(days=30):
-                recent.append(incident)
-        for incident in (active + recent)[:8]:
+                recently_resolved.append(incident)
+
+        incidents = []
+        for incident in (active + recently_resolved)[:8]:
             updates = incident.get("updates") or []
             latest = updates[-1] if updates else {}
-            recent.append({
+            is_active = not incident.get("end")
+            incidents.append({
                 "name": incident.get("external_desc") or incident.get("service_name") or "رخداد اعلام‌شده",
-                "status": "active" if not incident.get("end") else "resolved",
-                "impact": "در حال بررسی" if not incident.get("end") else "پایان‌یافته",
+                "status": "active" if is_active else "resolved",
+                "impact": "در حال بررسی" if is_active else "پایان‌یافته",
                 "updated_at": latest.get("created") or incident.get("modified"),
                 "body": str(latest.get("text") or "")[:360],
                 "url": provider["url"],
             })
-        incidents = recent[:8]
         return {
             **provider,
-            "status": "major_outage" if active else "operational",
+            "status": "degraded_performance" if active else "operational",
             "status_label": "اختلال اعلام‌شده" if active else "بدون رخداد فعال اعلام‌شده",
             "summary": (f"{len(active)} رخداد فعال" if active else "در فهرست رسمی، رخداد فعالی اعلام نشده است."),
             "provider_updated_at": None, "checked_at": checked_at,
