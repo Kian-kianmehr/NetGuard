@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from math import isfinite
+from math import ceil, isfinite
 from statistics import median
 from typing import Any
 
 
 ASSESSMENT_NAME = "NetGuard Network Assessment"
-MIN_BASELINE_POINTS = 12
 MIN_CHANGE_PERCENT = 25.0
 MIN_ROBUST_Z = 3.5
+COMPARISON_WINDOW_MINUTES = 30
+RECENT_ANOMALY_WINDOW_MINUTES = 30
+DEFAULT_INTERVAL_SECONDS = 300
 
 
 def _parse_time(value: Any) -> datetime | None:
@@ -46,15 +48,161 @@ def _valid_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _robust_stats(values: list[float], current: float) -> tuple[float, float, float]:
     center = median(values)
     mad = median([abs(value - center) for value in values])
-    # MAD is robust to spikes. The small relative floor avoids division by zero
-    # on stable count series without hiding meaningful deviations.
     scale = max(1.4826 * mad, abs(center) * 0.02, 1.0)
     z_score = (current - center) / scale
-    if abs(center) < 1e-9:
-        change = 100.0 if current > 0 else 0.0
-    else:
-        change = (current - center) / abs(center) * 100.0
+    change = 100.0 if abs(center) < 1e-9 and current > 0 else (
+        0.0 if abs(center) < 1e-9 else (current - center) / abs(center) * 100.0
+    )
     return center, change, z_score
+
+
+def _interval_seconds(source: dict[str, Any]) -> int:
+    try:
+        configured = int(source.get("expected_interval_seconds") or 0)
+    except (TypeError, ValueError):
+        configured = 0
+    if configured > 0:
+        return configured
+    return 600 if source.get("signal") == "ping-slash24" else DEFAULT_INTERVAL_SECONDS
+
+
+def _minimum_window_samples(interval_seconds: int, window_minutes: int) -> int:
+    expected = (window_minutes * 60) / max(interval_seconds, 1)
+    return max(2, ceil(expected * 0.4))
+
+
+def _compare_recent_windows(
+    rows: list[dict[str, Any]],
+    interval_seconds: int,
+    *,
+    at: datetime | None = None,
+) -> dict[str, Any]:
+    if not rows:
+        return {
+            "ready": False,
+            "baseline_value": None,
+            "recent_value": None,
+            "change_percent": None,
+            "robust_z_score": None,
+            "baseline_samples": 0,
+            "recent_samples": 0,
+        }
+    end = at or rows[-1]["_time"]
+    recent_start = end - timedelta(minutes=COMPARISON_WINDOW_MINUTES)
+    baseline_start = recent_start - timedelta(minutes=COMPARISON_WINDOW_MINUTES)
+    baseline = [r["_value"] for r in rows if baseline_start <= r["_time"] < recent_start]
+    recent = [r["_value"] for r in rows if recent_start <= r["_time"] <= end]
+    minimum = _minimum_window_samples(interval_seconds, COMPARISON_WINDOW_MINUTES)
+    result = {
+        "ready": False,
+        "baseline_value": None,
+        "recent_value": median(recent) if recent else None,
+        "change_percent": None,
+        "robust_z_score": None,
+        "baseline_samples": len(baseline),
+        "recent_samples": len(recent),
+        "baseline_window_minutes": COMPARISON_WINDOW_MINUTES,
+        "recent_window_minutes": COMPARISON_WINDOW_MINUTES,
+    }
+    if len(baseline) < minimum or len(recent) < minimum:
+        return result
+    center, change, z_score = _robust_stats(baseline, median(recent))
+    result.update({
+        "ready": True,
+        "baseline_value": center,
+        "recent_value": median(recent),
+        "change_percent": change,
+        "robust_z_score": z_score,
+    })
+    return result
+
+
+def _percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, ceil(percentile * len(ordered)) - 1))
+    return ordered[index]
+
+
+def _source_quality(
+    source: dict[str, Any],
+    rows: list[dict[str, Any]],
+    raw_rows: list[dict[str, Any]],
+    *,
+    now: datetime,
+    window_hours: int,
+) -> dict[str, Any]:
+    interval = _interval_seconds(source)
+    duration_seconds = max(1, window_hours * 3600)
+    expected = max(1, ceil(duration_seconds / interval))
+    sample_count = len(rows)
+    first_at = rows[0]["_time"] if rows else None
+    last_at = rows[-1]["_time"] if rows else None
+    gaps = [
+        (rows[index]["_time"] - rows[index - 1]["_time"]).total_seconds()
+        for index in range(1, len(rows))
+    ]
+    gaps = [gap for gap in gaps if gap > 0]
+    observed_span = (
+        max(0.0, (last_at - first_at).total_seconds())
+        if first_at is not None and last_at is not None else 0.0
+    )
+    sample_coverage = min(100.0, sample_count / expected * 100.0)
+    span_coverage = min(100.0, observed_span / duration_seconds * 100.0)
+    recent_2h = [r for r in rows if r["_time"] >= now - timedelta(hours=2)]
+    recent_30m = [r for r in rows if r["_time"] >= now - timedelta(minutes=30)]
+    baseline = _compare_recent_windows(rows, interval)
+    latest_age = max(0.0, (now - last_at).total_seconds()) if last_at else None
+    collected_times = [
+        parsed for parsed in (_parse_time(row.get("collected_at")) for row in raw_rows)
+        if parsed is not None
+    ]
+    latest_collected = max(collected_times) if collected_times else None
+    collection_lag = (
+        max(0.0, (now - latest_collected).total_seconds())
+        if latest_collected else None
+    )
+    invalid_count = max(0, len(raw_rows) - sample_count)
+    expected_gap_threshold = interval * 2.5
+    gaps_over_threshold = sum(1 for gap in gaps if gap > expected_gap_threshold)
+
+    return {
+        "source_id": source.get("source_id"),
+        "signal": source.get("signal"),
+        "display_name": source.get("display_name") or source.get("source_id"),
+        "expected_interval_seconds": interval,
+        "expected_interval_minutes": round(interval / 60, 1),
+        "expected_samples_in_window": expected,
+        "valid_samples": sample_count,
+        "invalid_samples": invalid_count,
+        "sample_coverage_percent": round(sample_coverage, 1),
+        "observed_span_percent": round(span_coverage, 1),
+        "observed_span_hours": round(observed_span / 3600, 2),
+        "first_observed_at": first_at.isoformat() if first_at else None,
+        "last_observed_at": last_at.isoformat() if last_at else None,
+        "last_collected_at": latest_collected.isoformat() if latest_collected else None,
+        "observation_age_seconds": round(latest_age) if latest_age is not None else None,
+        "collection_age_seconds": round(collection_lag) if collection_lag is not None else None,
+        "median_gap_seconds": round(median(gaps)) if gaps else None,
+        "p90_gap_seconds": round(_percentile(gaps, 0.9)) if gaps else None,
+        "max_gap_seconds": round(max(gaps)) if gaps else None,
+        "gaps_over_expected_threshold": gaps_over_threshold,
+        "samples_last_2h": len(recent_2h),
+        "samples_last_30m": len(recent_30m),
+        "baseline_samples": baseline["baseline_samples"],
+        "recent_samples": baseline["recent_samples"],
+        "freshness_status": source.get("freshness_status") or "unknown",
+        "last_run_status": source.get("last_run_status") or "unknown",
+        "last_run_started_at": source.get("last_run_started_at"),
+        "last_run_error_code": source.get("last_run_error_code"),
+        "window_coverage_label": (
+            "پوشش خوب" if sample_coverage >= 80 else
+            "پوشش متوسط" if sample_coverage >= 50 else
+            "پوشش محدود" if sample_coverage >= 20 else
+            "تاریخچهٔ کم در بازه"
+        ),
+    }
 
 
 def _event_severity(change: float, z_score: float) -> str:
@@ -67,84 +215,10 @@ def _event_severity(change: float, z_score: float) -> str:
 
 
 def _event_evidence_score(sample_count: int, change: float, z_score: float) -> int:
-    # This is an evidence-strength score, not a calibrated probability.
     coverage = min(sample_count / 40.0, 1.0) * 35
     magnitude = min(abs(change) / 80.0, 1.0) * 35
     consistency = min(abs(z_score) / 8.0, 1.0) * 30
     return round(min(100.0, coverage + magnitude + consistency))
-
-
-def _history_events(
-    source: dict[str, Any],
-    rows: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    candidates: list[dict[str, Any]] = []
-    for index in range(MIN_BASELINE_POINTS, len(rows)):
-        baseline_rows = rows[max(0, index - 12):index]
-        if len(baseline_rows) < MIN_BASELINE_POINTS:
-            continue
-        current_row = rows[index]
-        current = current_row["_value"]
-        center, change, z_score = _robust_stats(
-            [row["_value"] for row in baseline_rows], current
-        )
-        if abs(change) < MIN_CHANGE_PERCENT or abs(z_score) < MIN_ROBUST_Z:
-            continue
-        candidates.append({
-            "index": index,
-            "at": current_row["observed_at"],
-            "current": current,
-            "baseline": center,
-            "change": change,
-            "z_score": z_score,
-        })
-
-    if not candidates:
-        return []
-
-    clusters: list[list[dict[str, Any]]] = []
-    for candidate in candidates:
-        if not clusters or candidate["index"] - clusters[-1][-1]["index"] > 2:
-            clusters.append([candidate])
-        else:
-            clusters[-1].append(candidate)
-
-    events: list[dict[str, Any]] = []
-    for cluster in clusters:
-        peak = max(cluster, key=lambda item: abs(item["change"]))
-        first, last = cluster[0], cluster[-1]
-        change = peak["change"]
-        events.append({
-            "event_id": f"anomaly:{source.get('source_id')}:{first['at']}",
-            "event_type": "signal_anomaly",
-            "source_id": source.get("source_id"),
-            "source_name": source.get("display_name") or source.get("source_id"),
-            "title": "انحراف غیرعادی در سیگنال",
-            "description": (
-                f"مقدار سیگنال نسبت به خط مبنای اخیر "
-                f"{'کاهش' if change < 0 else 'افزایش'} محسوسی داشته است."
-            ),
-            "direction": "drop" if change < 0 else "spike",
-            "change_percent": round(change, 1),
-            "peak_change_percent": round(change, 1),
-            "baseline_value": round(peak["baseline"], 2),
-            "observed_value": round(peak["current"], 2),
-            "unit": source.get("unit", ""),
-            "start_at": first["at"],
-            "end_at": last["at"],
-            "occurred_at": last["at"],
-            "severity": _event_severity(change, peak["z_score"]),
-            "evidence_score": _event_evidence_score(
-                len(rows), change, peak["z_score"]
-            ),
-            "robust_z_score": round(peak["z_score"], 2),
-            "sample_count": len(rows),
-            "corroboration": "single_signal",
-            "status": "detected",
-            "status_label": "شناسایی‌شده؛ نیازمند بررسی",
-            "scope": "country",
-        })
-    return events
 
 
 PRIMARY_SIGNAL_GUIDANCE = {
@@ -162,10 +236,13 @@ PRIMARY_SIGNAL_GUIDANCE = {
     ),
 }
 
-TREND_CHANGE_THRESHOLD = 5.0
 
-
-def _signal_trend(rows: list[dict[str, Any]], signal: str) -> dict[str, Any]:
+def _signal_trend(
+    rows: list[dict[str, Any]],
+    signal: str,
+    interval_seconds: int,
+    now: datetime,
+) -> dict[str, Any]:
     if signal not in ("bgp", "ping-slash24"):
         return {
             "trend_1h_change_percent": None,
@@ -175,48 +252,44 @@ def _signal_trend(rows: list[dict[str, Any]], signal: str) -> dict[str, Any]:
                 if signal == "merit-nt" else "روند قابل محاسبه نیست"
             ),
         }
-    if len(rows) < 6:
+
+    latest = rows[-1]["_time"] if rows else None
+    if latest is None or (now - latest).total_seconds() > max(3600, interval_seconds * 3):
         return {
             "trend_1h_change_percent": None,
             "trend_1h_direction": "unknown",
-            "trend_1h_label": "برای مقایسهٔ یک‌ساعته دادهٔ کافی نیست",
+            "trend_1h_label": "دادهٔ تازه برای محاسبهٔ روند یک‌ساعته در دسترس نیست",
         }
 
-    latest_at = rows[-1]["_time"]
-    recent_start = latest_at - timedelta(hours=1)
-    previous_start = latest_at - timedelta(hours=2)
-    recent = [row["_value"] for row in rows if recent_start <= row["_time"] <= latest_at]
-    previous = [
-        row["_value"] for row in rows
-        if previous_start <= row["_time"] < recent_start
-    ]
-    if len(recent) < 3 or len(previous) < 3:
+    recent_start = latest - timedelta(hours=1)
+    previous_start = recent_start - timedelta(hours=1)
+    recent = [r["_value"] for r in rows if recent_start <= r["_time"] <= latest]
+    previous = [r["_value"] for r in rows if previous_start <= r["_time"] < recent_start]
+    minimum = max(2, _minimum_window_samples(interval_seconds, 60))
+    if len(recent) < minimum or len(previous) < minimum:
         return {
             "trend_1h_change_percent": None,
             "trend_1h_direction": "unknown",
-            "trend_1h_label": "برای مقایسهٔ یک‌ساعته دادهٔ کافی نیست",
+            "trend_1h_label": "برای مقایسهٔ یک‌ساعته نمونهٔ کافی نداریم",
         }
 
     previous_median = median(previous)
     recent_median = median(recent)
     if abs(previous_median) < 1e-9:
-        change = None
+        return {
+            "trend_1h_change_percent": None,
+            "trend_1h_direction": "unknown",
+            "trend_1h_label": "روند قابل محاسبه نیست",
+        }
+    change = (recent_median - previous_median) / abs(previous_median) * 100.0
+    if change >= 5.0:
+        direction, label = "improving", "بهبود در شاخص دسترسی/دیدپذیری"
+    elif change <= -5.0:
+        direction, label = "worsening", "افت در شاخص دسترسی/دیدپذیری"
     else:
-        change = (recent_median - previous_median) / abs(previous_median) * 100.0
-    if change is None:
-        direction = "unknown"
-        label = "روند قابل محاسبه نیست"
-    elif change >= TREND_CHANGE_THRESHOLD:
-        direction = "improving"
-        label = "بهبود در شاخص دسترسی/دیدپذیری"
-    elif change <= -TREND_CHANGE_THRESHOLD:
-        direction = "worsening"
-        label = "افت در شاخص دسترسی/دیدپذیری"
-    else:
-        direction = "stable"
-        label = "تقریباً بدون تغییر محسوس"
+        direction, label = "stable", "تقریباً بدون تغییر محسوس"
     return {
-        "trend_1h_change_percent": round(change, 1) if change is not None else None,
+        "trend_1h_change_percent": round(change, 1),
         "trend_1h_direction": direction,
         "trend_1h_label": label,
     }
@@ -235,10 +308,84 @@ def _plain_signal_explanation(
     if data_state != "usable":
         return meaning + " در حال حاضر دادهٔ این شاخص برای نتیجه‌گیری کافی یا به‌روز نیست."
     if current_anomaly and change_percent is not None and change_percent < 0:
-        return meaning + " در اندازه‌گیری‌های اخیر افت غیرعادی دیده شده و باید در کنار شاخص‌های دیگر بررسی شود."
+        return meaning + " در بازه‌های زمانی هم‌طول افت غیرعادی دیده شده و باید در کنار شاخص‌های دیگر بررسی شود."
     if current_anomaly and change_percent is not None and change_percent > 0:
         return meaning + " مقدار اخیر افزایش غیرعادی داشته؛ افزایش این شاخص به‌خودی‌خود نشانهٔ اختلال نیست."
-    return meaning + " در داده‌های اخیر افتی بالاتر از آستانهٔ تشخیص ثبت نشده است."
+    return meaning + " در مقایسهٔ دو پنجرهٔ زمانی اخیر، افتی بالاتر از آستانهٔ تشخیص ثبت نشده است."
+
+
+def _history_events(
+    source: dict[str, Any],
+    rows: list[dict[str, Any]],
+    *,
+    interval_seconds: int,
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for index in range(1, len(rows)):
+        comparison = _compare_recent_windows(rows[:index + 1], interval_seconds, at=rows[index]["_time"])
+        change = comparison["change_percent"]
+        z_score = comparison["robust_z_score"]
+        if (
+            not comparison["ready"]
+            or change is None or z_score is None
+            or abs(change) < MIN_CHANGE_PERCENT
+            or abs(z_score) < MIN_ROBUST_Z
+        ):
+            continue
+        candidates.append({
+            "at": rows[index]["observed_at"],
+            "current": comparison["recent_value"],
+            "baseline": comparison["baseline_value"],
+            "change": change,
+            "z_score": z_score,
+        })
+
+    if not candidates:
+        return []
+    cluster_gap = max(20 * 60, interval_seconds * 3)
+    clusters: list[list[dict[str, Any]]] = []
+    for candidate in candidates:
+        candidate_time = _parse_time(candidate["at"])
+        previous_time = _parse_time(clusters[-1][-1]["at"]) if clusters else None
+        if not clusters or candidate_time is None or previous_time is None or (candidate_time - previous_time).total_seconds() > cluster_gap:
+            clusters.append([candidate])
+        else:
+            clusters[-1].append(candidate)
+
+    events = []
+    for cluster in clusters:
+        peak = max(cluster, key=lambda item: abs(item["change"]))
+        change = peak["change"]
+        first, last = cluster[0], cluster[-1]
+        events.append({
+            "event_id": f"anomaly:{source.get('source_id')}:{first['at']}",
+            "event_type": "signal_anomaly",
+            "source_id": source.get("source_id"),
+            "source_name": source.get("display_name") or source.get("source_id"),
+            "title": "انحراف غیرعادی در سیگنال",
+            "description": (
+                f"مقدار سیگنال نسبت به خط مبنای زمانی اخیر "
+                f"{'کاهش' if change < 0 else 'افزایش'} محسوسی داشته است."
+            ),
+            "direction": "drop" if change < 0 else "spike",
+            "change_percent": round(change, 1),
+            "peak_change_percent": round(change, 1),
+            "baseline_value": round(peak["baseline"], 2),
+            "observed_value": round(peak["current"], 2),
+            "unit": source.get("unit", ""),
+            "start_at": first["at"],
+            "end_at": last["at"],
+            "occurred_at": last["at"],
+            "severity": _event_severity(change, peak["z_score"]),
+            "evidence_score": _event_evidence_score(len(rows), change, peak["z_score"]),
+            "robust_z_score": round(peak["z_score"], 2),
+            "sample_count": len(rows),
+            "corroboration": "single_signal",
+            "status": "detected",
+            "status_label": "شناسایی‌شده؛ نیازمند بررسی",
+            "scope": "country",
+        })
+    return events
 
 
 def _build_public_summary(signals: list[dict[str, Any]]) -> dict[str, Any]:
@@ -268,7 +415,7 @@ def _build_public_summary(signals: list[dict[str, Any]]) -> dict[str, Any]:
         right = _parse_time(down[1].get("last_observed_at"))
         both_down_together = (
             left is not None and right is not None
-            and abs((left - right).total_seconds()) <= 3600
+            and abs((left - right).total_seconds()) <= 1800
         )
 
     if both_down_together:
@@ -283,7 +430,7 @@ def _build_public_summary(signals: list[dict[str, Any]]) -> dict[str, Any]:
         outage_state = "multiple_indicators"
         outage_label = "نشانهٔ اختلال گسترده دیده می‌شود"
         outage_detail = (
-            "دو شاخص مستقل در فاصلهٔ زمانی نزدیک افت کرده‌اند. برای تأیید قطعی، "
+            "دو شاخص اصلی در فاصلهٔ زمانی نزدیک افت کرده‌اند. برای تأیید قطعی، "
             "اندازه‌گیری‌های مستقل و پایدار بیشتری لازم است."
         )
     elif down:
@@ -299,7 +446,7 @@ def _build_public_summary(signals: list[dict[str, Any]]) -> dict[str, Any]:
         outage_state = "single_signal_drop"
         outage_label = "یک نشانهٔ افت؛ قطع سراسری تأیید نشده"
         outage_detail = (
-            "یک شاخص به‌تنهایی برای اعلام قطعی کافی نیست؛ ممکن است تغییر محدود، محلی به نقاط اندازه‌گیری "
+            "یک شاخص به‌تنهایی برای اعلام قطعی کافی نیست؛ ممکن است تغییر محدود، وابسته به نقاط اندازه‌گیری "
             "یا ناشی از عامل دیگری باشد."
         )
     elif len(usable_primary) == 2:
@@ -341,20 +488,16 @@ def _build_public_summary(signals: list[dict[str, Any]]) -> dict[str, Any]:
     directions = [item["trend_1h_direction"] for item in trend_items]
     if len(directions) >= 2:
         if all(direction == "improving" for direction in directions):
-            trend_state = "improving"
-            trend_label = "در حال بهبود"
+            trend_state, trend_label = "improving", "در حال بهبود"
             trend_detail = "هر دو شاخص اصلی در مقایسه با ساعت قبل بهتر شده‌اند."
         elif all(direction == "worsening" for direction in directions):
-            trend_state = "worsening"
-            trend_label = "رو به بدتر شدن"
+            trend_state, trend_label = "worsening", "رو به بدتر شدن"
             trend_detail = "هر دو شاخص اصلی در مقایسه با ساعت قبل افت کرده‌اند."
         elif all(direction == "stable" for direction in directions):
-            trend_state = "stable"
-            trend_label = "تقریباً ثابت"
+            trend_state, trend_label = "stable", "تقریباً ثابت"
             trend_detail = "در یک ساعت اخیر تغییر معناداری در دو شاخص اصلی دیده نمی‌شود."
         else:
-            trend_state = "mixed"
-            trend_label = "روند یکدست نیست"
+            trend_state, trend_label = "mixed", "روند یکدست نیست"
             trend_detail = "شاخص‌های اصلی جهت یکسانی ندارند؛ از اعلام بهبود یا بدترشدن قطعی خودداری می‌کنیم."
     elif len(directions) == 1:
         trend_state = directions[0]
@@ -365,8 +508,7 @@ def _build_public_summary(signals: list[dict[str, Any]]) -> dict[str, Any]:
         }[trend_state]
         trend_detail = "این برداشت فقط از یک شاخص به دست آمده و اطمینان کمتری دارد."
     else:
-        trend_state = "unknown"
-        trend_label = "روند نامشخص"
+        trend_state, trend_label = "unknown", "روند نامشخص"
         trend_detail = "برای مقایسهٔ یک ساعت اخیر با ساعت قبل، نمونه‌های کافی در دسترس نیست."
 
     if len(usable_primary) == 2 and all(item.get("sample_count", 0) >= 24 for item in usable_primary):
@@ -385,15 +527,12 @@ def _build_public_summary(signals: list[dict[str, Any]]) -> dict[str, Any]:
         confidence_label = "پایین"
         confidence_detail = "دادهٔ تازه و کافی برای یک نتیجهٔ مطمئن در دسترس نیست."
 
-    if condition == "unknown":
-        stability_label = "پایداری شبکه قابل ارزیابی نیست"
-    elif condition == "possible_disruption":
-        stability_label = "نشانه‌های افت هم‌زمان دیده شده"
-    elif condition == "attention":
-        stability_label = "یک نشانهٔ نیازمند بررسی دیده شده"
-    else:
-        stability_label = "شاخص‌های اصلی فعلاً پایدارند"
-
+    stability_label = (
+        "پایداری شبکه قابل ارزیابی نیست" if condition == "unknown" else
+        "نشانه‌های افت هم‌زمان دیده شده" if condition == "possible_disruption" else
+        "یک نشانهٔ نیازمند بررسی دیده شده" if condition == "attention" else
+        "شاخص‌های اصلی فعلاً پایدارند"
+    )
     return {
         "tone": tone,
         "condition": condition,
@@ -408,7 +547,7 @@ def _build_public_summary(signals: list[dict[str, Any]]) -> dict[str, Any]:
         "quality_label": "کیفیت تجربهٔ کاربران مستقیماً سنجیده نشده",
         "quality_detail": (
             "این نسخه تعداد شبکه‌های قابل مشاهده و پاسخ‌گو را بررسی می‌کند؛ "
-            "سرعت دانلود و آپلود، تأخیر، نوسان و از دست رفتن بسته‌ها را از دستگاه کاربران اندازه نمی‌گیرد."
+            "سرعت، تأخیر و از دست رفتن بسته‌ها را از دستگاه کاربران اندازه نمی‌گیرد."
         ),
         "trend_state": trend_state,
         "trend_label": trend_label,
@@ -423,7 +562,7 @@ def _build_public_summary(signals: list[dict[str, Any]]) -> dict[str, Any]:
             "تلسکوپ شبکه یک شاهد کمکی است؛ تغییر آن به‌تنهایی به معنی بهتر یا بدتر شدن اینترنت نیست.",
             "نبود هشدار به معنی اثبات سلامت کامل اینترنت یا وصل بودن همهٔ کاربران نیست.",
         ],
-        "scope_note": "این نتیجه در سطح ملی و بر اساس داده‌های عمومی IODA است؛ وضعیت شهر، اپراتور یا تجربهٔ یک کاربر را مشخص نمی‌کند.",
+        "scope_note": "این نتیجه در سطح ملی و بر اساس داده‌های عمومی IODA است؛ وضعیت شهر، استان یا اپراتور را مشخص نمی‌کند.",
     }
 
 
@@ -432,11 +571,14 @@ def analyze_dashboard(
     observations: list[dict[str, Any]],
     *,
     generated_at: datetime | None = None,
+    window_hours: int = 168,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     now = generated_at or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
     now = now.astimezone(timezone.utc)
+    window_hours = max(1, min(int(window_hours), 168))
+    window_start = now - timedelta(hours=window_hours)
 
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for observation in observations:
@@ -446,32 +588,58 @@ def analyze_dashboard(
 
     signal_results: list[dict[str, Any]] = []
     events: list[dict[str, Any]] = []
+    quality_rows: list[dict[str, Any]] = []
+    expected_total = valid_total = 0
 
     for source in sources:
         source_id = source.get("source_id", "")
-        rows = _valid_rows(grouped.get(source_id, []))
+        raw_rows = grouped.get(source_id, [])
+        rows = _valid_rows(raw_rows)
+        rows = [row for row in rows if window_start <= row["_time"] <= now]
+        interval = _interval_seconds(source)
+        quality = _source_quality(
+            source, rows, raw_rows, now=now, window_hours=window_hours
+        )
+        quality_rows.append(quality)
+        expected_total += int(quality["expected_samples_in_window"])
+        valid_total += int(quality["valid_samples"])
+
         sample_count = len(rows)
         latest = rows[-1] if rows else None
-        source_events = _history_events(source, rows)
+        freshness_status = source.get("freshness_status") or "unknown"
+        comparison = _compare_recent_windows(rows, interval)
+        data_age = quality["observation_age_seconds"]
+        try:
+            stale_after = int(source.get("stale_after_seconds") or max(1800, interval * 3))
+        except (TypeError, ValueError):
+            stale_after = max(1800, interval * 3)
+        recent_enough = data_age is not None and data_age <= stale_after
+
+        if freshness_status == "stale" or not recent_enough:
+            data_state = "stale"
+        elif freshness_status != "fresh":
+            data_state = "limited"
+        elif sample_count < 12 or not comparison["ready"]:
+            data_state = "insufficient"
+        else:
+            data_state = "usable"
+
+        baseline_value = comparison["baseline_value"]
+        recent_value = comparison["recent_value"]
+        change = comparison["change_percent"]
+        z_score = comparison["robust_z_score"]
+        current_anomaly = (
+            data_state == "usable"
+            and change is not None
+            and z_score is not None
+            and abs(change) >= MIN_CHANGE_PERCENT
+            and abs(z_score) >= MIN_ROBUST_Z
+        )
+
+        source_events = _history_events(source, rows, interval_seconds=interval)
         events.extend(source_events)
 
-        baseline_rows = rows[-18:-3] if sample_count >= 15 else []
-        recent_rows = rows[-3:] if sample_count >= 3 else []
-        baseline_value = recent_value = change = z_score = None
-        current_anomaly = False
-        if len(baseline_rows) >= 8 and recent_rows:
-            baseline_value, change, z_score = _robust_stats(
-                [row["_value"] for row in baseline_rows],
-                median([row["_value"] for row in recent_rows]),
-            )
-            recent_value = median([row["_value"] for row in recent_rows])
-            current_anomaly = (
-                abs(change) >= MIN_CHANGE_PERCENT
-                and abs(z_score) >= MIN_ROBUST_Z
-            )
-
-        freshness_status = source.get("freshness_status") or "unknown"
-        if freshness_status == "stale":
+        if data_state == "stale":
             events.append({
                 "event_id": f"stale:{source_id}:{source.get('last_observed_at')}",
                 "event_type": "source_stale",
@@ -497,14 +665,15 @@ def analyze_dashboard(
                 "status_label": "مشکل تازگی داده",
                 "scope": "country",
             })
-        elif source.get("last_run_status") == "error":
+        elif source.get("last_run_status") in ("error", "no_data"):
+            run_status = source.get("last_run_status")
             events.append({
-                "event_id": f"collector-error:{source_id}:{source.get('last_run_started_at')}",
+                "event_id": f"collector-{run_status}:{source_id}:{source.get('last_run_started_at')}",
                 "event_type": "collector_error",
                 "source_id": source_id,
                 "source_name": source.get("display_name") or source_id,
-                "title": "خطا در دریافت منبع",
-                "description": "آخرین اجرای ثبت‌شدهٔ جمع‌آوری برای این منبع با خطا پایان یافته است.",
+                "title": "جمع‌آوری داده نیازمند بررسی است",
+                "description": "آخرین اجرای ثبت‌شدهٔ جمع‌آوری موفق به دریافت دادهٔ تازه نشده است.",
                 "direction": "unknown",
                 "change_percent": None,
                 "peak_change_percent": None,
@@ -515,24 +684,16 @@ def analyze_dashboard(
                 "end_at": source.get("last_run_started_at"),
                 "occurred_at": source.get("last_run_started_at"),
                 "severity": "warning",
-                "evidence_score": 70,
+                "evidence_score": 60,
                 "robust_z_score": None,
                 "sample_count": sample_count,
                 "corroboration": "operational",
                 "status": "detected",
-                "status_label": "خطای جمع‌آوری",
+                "status_label": "مشکل جمع‌آوری",
                 "scope": "country",
             })
 
-        eligible = sample_count >= 15 and latest is not None
-        if freshness_status != "fresh":
-            data_state = "stale" if freshness_status == "stale" else "limited"
-        elif not eligible:
-            data_state = "insufficient"
-        else:
-            data_state = "usable"
-
-        trend_info = _signal_trend(rows, source.get("signal", ""))
+        trend_info = _signal_trend(rows, source.get("signal", ""), interval, now)
         plain_explanation = _plain_signal_explanation(
             source.get("signal", ""), data_state, current_anomaly, change
         )
@@ -553,10 +714,15 @@ def analyze_dashboard(
             "last_collected_at": source.get("last_collected_at"),
             "last_run_started_at": source.get("last_run_started_at"),
             "last_run_status": source.get("last_run_status"),
+            "last_run_error_code": source.get("last_run_error_code"),
             "latest_value": source.get("latest_value"),
+            "expected_interval_seconds": interval,
+            "stale_after_seconds": stale_after,
             "sample_count": sample_count,
-            "minimum_value": round(min((r["_value"] for r in rows), default=0), 2) if rows else None,
-            "maximum_value": round(max((r["_value"] for r in rows), default=0), 2) if rows else None,
+            "recent_samples": comparison["recent_samples"],
+            "baseline_samples": comparison["baseline_samples"],
+            "minimum_value": round(min((r["_value"] for r in rows)), 2) if rows else None,
+            "maximum_value": round(max((r["_value"] for r in rows)), 2) if rows else None,
             "median_value": round(median([r["_value"] for r in rows]), 2) if rows else None,
             "baseline_value": round(baseline_value, 2) if baseline_value is not None else None,
             "recent_value": round(recent_value, 2) if recent_value is not None else None,
@@ -565,19 +731,18 @@ def analyze_dashboard(
             "current_anomaly": current_anomaly,
             "data_state": data_state,
             "data_state_label": {
-                "usable": "دادهٔ کافی و تازه",
-                "insufficient": "تاریخچهٔ ناکافی",
+                "usable": "دادهٔ تازه و مقایسه‌پذیر",
+                "insufficient": "نمونهٔ کافی در پنجره‌های اخیر نیست",
                 "stale": "دادهٔ قدیمی",
-                "limited": "وضعیت داده نامشخص یا محدود",
+                "limited": "جمع‌آوری یا تازگی داده نیازمند بررسی است",
             }[data_state],
             "event_count": len(source_events),
             "plain_title": signal_title,
             "plain_explanation": plain_explanation,
+            "data_quality": quality,
             **trend_info,
         })
 
-    # A single signal can raise an alert, but cross-signal corroboration is
-    # only assigned when independent national indicators move down close in time.
     negative_events = [
         event for event in events
         if event.get("event_type") == "signal_anomaly"
@@ -608,55 +773,91 @@ def analyze_dashboard(
         reverse=True,
     )
 
-    usable = [signal for signal in signal_results if signal["data_state"] == "usable"]
-    anomalous = [signal for signal in signal_results if signal["current_anomaly"]]
-    current_drops = [
-        signal for signal in signal_results
-        if signal["current_anomaly"]
-        and signal["change_percent"] is not None
-        and signal["change_percent"] < 0
-        and _parse_time(signal.get("last_observed_at")) is not None
+    primary = {
+        item["signal"]: item
+        for item in signal_results
+        if item["signal"] in ("bgp", "ping-slash24")
+    }
+    usable_primary = [
+        primary[signal] for signal in ("bgp", "ping-slash24")
+        if signal in primary and primary[signal]["data_state"] == "usable"
     ]
-    current_corroboration = any(
-        left["source_id"] != right["source_id"]
-        and abs(
-            (_parse_time(left["last_observed_at"]) - _parse_time(right["last_observed_at"])).total_seconds()
-        ) <= 3600
-        for index, left in enumerate(current_drops)
-        for right in current_drops[index + 1:]
-    )
-    fresh_count = sum(1 for signal in signal_results if signal["freshness_status"] == "fresh")
-    if current_corroboration:
+    primary_anomalies = [item for item in usable_primary if item["current_anomaly"]]
+    primary_drops = [
+        item for item in primary_anomalies
+        if item["change_percent"] is not None and item["change_percent"] < 0
+    ]
+
+    both_primary_down = False
+    if len(primary_drops) == 2:
+        left = _parse_time(primary_drops[0].get("last_observed_at"))
+        right = _parse_time(primary_drops[1].get("last_observed_at"))
+        both_primary_down = (
+            left is not None and right is not None
+            and abs((left - right).total_seconds()) <= 1800
+        )
+
+    if both_primary_down:
         assessment = "elevated_attention"
         summary = (
-            "چند شاخص مستقل در داده‌های تازه کاهش غیرعادی و هم‌زمان نشان داده‌اند. "
-            "این وضعیت یک هشدار چندسیگناله است، نه اثبات قطعی قطعی یا علت آن."
+            "دو شاخص اصلی در پنجره‌های زمانی هم‌طول، افت غیرعادی و نزدیک به هم نشان داده‌اند. "
+            "این هشدار چندسیگناله است؛ علت یا گسترهٔ قطعی هنوز تأیید نشده است."
         )
-    elif anomalous:
+    elif primary_anomalies:
         assessment = "watch"
         summary = (
-            "در یک یا چند سیگنال انحراف آماری شناسایی شده است. "
-            "برای نتیجه‌گیری دربارهٔ وضعیت کل شبکه، شواهد مستقل بیشتری لازم است."
+            "در یکی از شاخص‌های اصلی تغییر غیرعادی دیده شده است. "
+            "این تغییر نیازمند بررسی است و به‌تنهایی اختلال سراسری را ثابت نمی‌کند."
         )
-    elif len(usable) >= 2:
+    elif len(usable_primary) == 2:
         assessment = "no_anomaly_detected"
         summary = (
-            "در داده‌های قابل‌استفاده، انحرافی که از آستانهٔ تشخیص عبور کند مشاهده نشده است. "
-            "این نتیجه به‌تنهایی سلامت کامل اینترنت را اثبات نمی‌کند."
+            "در دو شاخص اصلیِ تازه و قابل مقایسه، افت غیرعادی شناسایی نشده است. "
+            "این نتیجه نبودِ شواهد در این پایش است، نه اثبات سلامت کامل اینترنت."
         )
     else:
         assessment = "insufficient_data"
         summary = (
-            "برای ارزیابی مطمئن، تعداد یا تازگی داده‌های موجود کافی نیست. "
-            "وضعیت شبکه از روی دادهٔ ناقص نتیجه‌گیری نمی‌شود."
+            "دادهٔ تازه و هم‌زمان از هر دو شاخص اصلی برای قضاوت کافی نیست. "
+            "دادهٔ ناقص یا قدیمی به معنی سالم بودن شبکه نیست."
         )
 
     source_count = len(signal_results)
-    coverage = round(
-        100 * sum(min(signal["sample_count"] / 40.0, 1.0)
-                  * (1.0 if signal["freshness_status"] == "fresh" else 0.5)
-                  for signal in signal_results) / source_count
-    ) if source_count else 0
+    usable = [signal for signal in signal_results if signal["data_state"] == "usable"]
+    anomalous = [signal for signal in signal_results if signal["current_anomaly"]]
+    fresh_count = sum(1 for signal in signal_results if signal["freshness_status"] == "fresh")
+    window_coverage = min(100.0, valid_total / expected_total * 100.0) if expected_total else 0.0
+    observed_span = (
+        sum(float(item["observed_span_percent"]) for item in quality_rows) / len(quality_rows)
+        if quality_rows else 0.0
+    )
+    recent_rows = [row for row in quality_rows if row["samples_last_2h"] > 0]
+    data_quality = {
+        "window_hours": window_hours,
+        "window_start": window_start.isoformat(),
+        "window_end": now.isoformat(),
+        "total_observations": len(observations),
+        "valid_observations": valid_total,
+        "invalid_observations": max(0, len(observations) - valid_total),
+        "expected_observations": expected_total,
+        "window_coverage_percent": round(window_coverage, 1),
+        "observed_span_percent": round(observed_span, 1),
+        "sources_total": source_count,
+        "sources_fresh": fresh_count,
+        "sources_usable": len(usable),
+        "sources_with_recent_samples": len(recent_rows),
+        "sources_with_gaps": sum(1 for item in quality_rows if item["gaps_over_expected_threshold"] > 0),
+        "source_details": quality_rows,
+        "coverage_label": (
+            "تاریخچهٔ کافی در این بازه" if window_coverage >= 80 else
+            "بخشی از بازه پوشش دارد" if window_coverage >= 30 else
+            "پوشش تاریخی محدود است"
+        ),
+        "interpretation": (
+            "درصد پوشش از تعداد نمونه‌های معتبر نسبت به تعداد مورد انتظار بر اساس فاصلهٔ ثبت‌شدهٔ هر منبع محاسبه می‌شود. "
+            "تازگی آخرین نمونه و پیوستگی فاصله‌های بین نمونه‌ها جداگانه سنجیده می‌شوند."
+        ),
+    }
 
     analysis = {
         "engine": ASSESSMENT_NAME,
@@ -665,29 +866,33 @@ def analyze_dashboard(
         "assessment_label": {
             "elevated_attention": "هشدار چندسیگناله",
             "watch": "نیازمند بررسی",
-            "no_anomaly_detected": "انحراف معناداری شناسایی نشد",
-            "insufficient_data": "دادهٔ کافی نیست",
+            "no_anomaly_detected": "افت غیرعادی شناسایی نشد",
+            "insufficient_data": "دادهٔ هم‌زمان کافی نیست",
         }[assessment],
         "summary": summary,
         "generated_at": now.isoformat().replace("+00:00", "Z"),
-        "data_coverage_percent": coverage,
+        "data_coverage_percent": round(window_coverage),
+        "data_quality": data_quality,
         "fresh_sources": fresh_count,
         "total_sources": source_count,
         "usable_sources": len(usable),
-        "anomalous_sources": len(anomalous),
+        "anomalous_sources": len(primary_anomalies),
+        "supporting_signal_anomalies": len(anomalous),
         "events_count": len(events),
         "signals": signal_results,
         "method": [
-            "مقایسهٔ مقدارهای اخیر با میانهٔ پنجرهٔ قبلی همان سیگنال",
-            "استفاده از Median Absolute Deviation برای کاهش حساسیت به نقاط پرت",
-            "بررسی هم‌زمانی فقط میان شاخص‌های مستقل و در بازهٔ حداکثر یک ساعت",
-            "جداسازی تازگی داده از وضعیت واقعی شبکه",
+            "مقایسهٔ دو پنجرهٔ زمانی ۳۰ دقیقه‌ای هم‌طول برای هر سیگنال",
+            "استفاده از میانه و Median Absolute Deviation برای کاهش حساسیت به نقاط پرت",
+            "تطبیق آستانهٔ تعداد نمونه با فاصلهٔ اندازه‌گیری هر منبع",
+            "بررسی هم‌زمانی فقط میان دو شاخص اصلی و با فاصلهٔ زمانی حداکثر ۳۰ دقیقه",
+            "جداسازی پوشش تاریخچه، پیوستگی نمونه‌ها و تازگی آخرین مشاهده",
         ],
         "limitations": [
-            "ارزیابی با مقایسهٔ آماری هر شاخص با سابقهٔ خودش و بررسی هم‌زمانی شاخص‌های مستقل انجام می‌شود.",
+            "درصد پوشش به بازهٔ انتخاب‌شده و فاصلهٔ مورد انتظار همان منبع وابسته است.",
             "امتیاز شواهد احتمال وقوع اختلال نیست و به‌عنوان احتمال کالیبره‌شده تفسیر نمی‌شود.",
             "داده‌ها در سطح ملی‌اند و وضعیت شهر، استان یا اپراتور را مشخص نمی‌کنند.",
             "یک سیگنال منفرد یا کاهش یک شاخص، فیلترینگ، تحریم یا قطعی را اثبات نمی‌کند.",
+            "دادهٔ IODA کیفیت تجربهٔ مستقیم کاربران، سرعت دانلود یا تأخیر انتهابه‌انتها را اندازه‌گیری نمی‌کند.",
         ],
     }
     analysis["public_summary"] = _build_public_summary(signal_results)
