@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownRight, BookOpen, BrainCircuit, CheckCircle2, CircleHelp,
   Clock3, Database, Gauge, Globe2, Info, Network, RadioTower, RefreshCw, ShieldAlert,
@@ -17,7 +17,60 @@ const NAV = [
   ["sources", "منابع داده", Database],
   ["method", "روش‌شناسی", BookOpen],
 ];
-const API = (import.meta.env.VITE_API_URL || "https://netguard-api-oan9.onrender.com").replace(/\/$/, "");
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
+const SNAPSHOT_CACHE_KEY = "netguard.public-snapshots.v1";
+const SNAPSHOT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const SNAPSHOT_STALE_AFTER = {
+  dashboard_24: 900,
+  dashboard_72: 900,
+  dashboard_168: 900,
+  censorship: 1800,
+  providers_status: 900,
+  iran_datacenters: 1800,
+};
+const SNAPSHOT_KEYS = Object.keys(SNAPSHOT_STALE_AFTER);
+
+function readCachedSnapshotRows() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(SNAPSHOT_CACHE_KEY) || "null");
+    if (!cached || cached.version !== 1 || !Array.isArray(cached.rows)) return [];
+    const savedAt = Number(cached.savedAt);
+    if (!Number.isFinite(savedAt) || Date.now() - savedAt > SNAPSHOT_CACHE_MAX_AGE_MS) return [];
+    return cached.rows.filter((row) =>
+      row && SNAPSHOT_KEYS.includes(row.dataset_key) &&
+      row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+    );
+  } catch {
+    return [];
+  }
+}
+
+function indexSnapshotRows(rows) {
+  const indexed = {};
+  for (const row of rows) {
+    if (!row || !SNAPSHOT_STALE_AFTER[row.dataset_key]) continue;
+    const collectedAt = row.collected_at || null;
+    const collectedMs = collectedAt ? new Date(collectedAt).getTime() : NaN;
+    const staleAfterSeconds = SNAPSHOT_STALE_AFTER[row.dataset_key];
+    const isStale = !Number.isFinite(collectedMs) ||
+      Date.now() - collectedMs > staleAfterSeconds * 1000;
+    const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+      ? row.payload
+      : {};
+    indexed[row.dataset_key] = {
+      ...payload,
+      snapshot_at: collectedAt,
+      checked_at: payload.checked_at || collectedAt,
+      snapshot_status: row.status || "unknown",
+      source_count: row.source_count ?? 0,
+      snapshot_error: row.error_code || null,
+      stale_after_seconds: staleAfterSeconds,
+      is_stale: isStale,
+    };
+  }
+  return indexed;
+}
 const number = (value, digits = 1) => value == null || !Number.isFinite(Number(value))
   ? "—"
   : new Intl.NumberFormat("fa-IR", { maximumFractionDigits: digits }).format(Number(value));
@@ -423,117 +476,121 @@ export default function App() {
   const [showOverviewDetails, setShowOverviewDetails] = useState(false);
   const [siteFilter, setSiteFilter] = useState("all");
   const [siteQuery, setSiteQuery] = useState("");
-  const [providerData, setProviderData] = useState({ providers: [], checked_at: null, error: "", busy: true });
-  const [datacenterData, setDatacenterData] = useState({ sites: [], snapshot_at: null, error: "", busy: true });
-  const [censorship, setCensorship] = useState({
-    domains: [], sync: null, generated_at: null, error: "", busy: true,
+  const [snapshotStore, setSnapshotStore] = useState(() => {
+    const rows = readCachedSnapshotRows();
+    return { byKey: indexSnapshotRows(rows), loaded: rows.length > 0 };
   });
-  const [data, setData] = useState({
-    sources: [], observations: [], analysis: null, events: [],
-    generated_at: null, error: "", busy: true,
-  });
+  const [snapshotError, setSnapshotError] = useState("");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const refreshInFlight = useRef(false);
 
-  const loadCensorship = useCallback(async () => {
-    if (!API) {
-      setCensorship((value) => ({
-        ...value, busy: false, error: "آدرس سرویس داده تنظیم نشده است.",
-      }));
-      return;
-    }
-    setCensorship((value) => ({ ...value, busy: true }));
+  const dashboardSnapshot = snapshotStore.byKey[`dashboard_${windowHours}`];
+  const data = dashboardSnapshot
+    ? { ...dashboardSnapshot, error: "", busy: false, window_hours: windowHours }
+    : {
+        sources: [], observations: [], analysis: null, events: [],
+        generated_at: null, error: snapshotStore.loaded
+          ? (snapshotError || "Snapshot این بازه در دسترس نیست.")
+          : "",
+        busy: !snapshotStore.loaded, window_hours: windowHours,
+      };
+  const censorshipSnapshot = snapshotStore.byKey.censorship;
+  const censorship = censorshipSnapshot
+    ? {
+        ...censorshipSnapshot,
+        domains: Array.isArray(censorshipSnapshot.domains) ? censorshipSnapshot.domains : [],
+        error: "", busy: false,
+      }
+    : {
+        domains: [], sync: null, generated_at: null,
+        error: snapshotStore.loaded ? (snapshotError || "Snapshot فهرست سایت‌ها در دسترس نیست.") : "",
+        busy: !snapshotStore.loaded,
+      };
+  const providerSnapshot = snapshotStore.byKey.providers_status;
+  const providerData = providerSnapshot
+    ? {
+        ...providerSnapshot,
+        providers: Array.isArray(providerSnapshot.providers) ? providerSnapshot.providers : [],
+        error: "", busy: false,
+      }
+    : {
+        providers: [], checked_at: null,
+        error: snapshotStore.loaded ? (snapshotError || "Snapshot وضعیت سرویس‌ها در دسترس نیست.") : "",
+        busy: !snapshotStore.loaded,
+      };
+  const datacenterSnapshot = snapshotStore.byKey.iran_datacenters;
+  const datacenterData = datacenterSnapshot
+    ? {
+        ...datacenterSnapshot,
+        sites: Array.isArray(datacenterSnapshot.sites) ? datacenterSnapshot.sites : [],
+        error: "", busy: false,
+      }
+    : {
+        sites: [], snapshot_at: null,
+        error: snapshotStore.loaded ? (snapshotError || "Snapshot مراکز داده در دسترس نیست.") : "",
+        busy: !snapshotStore.loaded,
+      };
+
+  const loadSnapshots = useCallback(async () => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    setIsRefreshing(true);
     try {
-      const response = await fetch(API + "/api/censorship", {
-        headers: { Accept: "application/json" }, cache: "no-store",
+      if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+        throw new Error("تنظیم اتصال عمومی Supabase در سایت کامل نیست.");
+      }
+      const query = new URLSearchParams({
+        select: "dataset_key,payload,collected_at,status,source_count,error_code",
+        dataset_key: `in.(${SNAPSHOT_KEYS.join(",")})`,
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.detail || "دریافت فهرست سایت‌ها ناموفق بود.");
-      const observedDomains = Array.isArray(payload.domains) ? payload.domains : [];
-      setCensorship({
-        ...payload,
-        domains: observedDomains,
-        scope_note: payload.scope_note || "همهٔ دامنه‌های دارای نتیجهٔ مثبت OONI در بازهٔ نمایش داده‌شده‌اند.",
-        error: "",
-        busy: false,
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/netguard_snapshots?${query}`, {
+        headers: {
+          Accept: "application/json",
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        cache: "no-store",
       });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.message || payload?.details || `خواندن Snapshot ناموفق بود (${response.status}).`);
+      }
+      if (!Array.isArray(payload) || !payload.some((row) => row.dataset_key === "dashboard_168")) {
+        throw new Error("Snapshot اصلی داشبورد از پایگاه داده دریافت نشد.");
+      }
+      const rows = payload.filter((row) => SNAPSHOT_KEYS.includes(row.dataset_key));
+      try {
+        localStorage.setItem(SNAPSHOT_CACHE_KEY, JSON.stringify({
+          version: 1,
+          savedAt: Date.now(),
+          rows,
+        }));
+      } catch {
+        // The live response remains usable when browser storage is unavailable or full.
+      }
+      setSnapshotStore({ byKey: indexSnapshotRows(rows), loaded: true });
+      setSnapshotError("");
     } catch (error) {
-      setCensorship((value) => ({
-        ...value, busy: false, error: error.message || "فهرست سایت‌ها در دسترس نیست.",
-      }));
+      setSnapshotStore((current) => ({ ...current, loaded: true }));
+      setSnapshotError(error?.message || "دریافت آخرین Snapshot ناموفق بود.");
+    } finally {
+      refreshInFlight.current = false;
+      setIsRefreshing(false);
     }
   }, []);
-
-  const loadProviders = useCallback(async () => {
-    try {
-      const response = await fetch(API + "/api/providers/status", {
-        headers: { Accept: "application/json" }, cache: "no-store",
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.detail || "دریافت وضعیت سرویس‌ها ناموفق بود.");
-      setProviderData({ ...payload, error: "", busy: false });
-    } catch (error) {
-      setProviderData((value) => ({ ...value, error: error.message || "وضعیت سرویس‌ها دریافت نشد.", busy: false }));
-    }
-  }, []);
-
-  const loadDatacenters = useCallback(async () => {
-    try {
-      const response = await fetch(API + "/api/iran/datacenters", {
-        headers: { Accept: "application/json" }, cache: "no-store",
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.detail || "دریافت فهرست دیتاسنترهای ایران ناموفق بود.");
-      setDatacenterData({ ...payload, error: "", busy: false });
-    } catch (error) {
-      setDatacenterData((value) => ({ ...value, error: error.message || "فهرست دیتاسنترها دریافت نشد.", busy: false }));
-    }
-  }, []);
-
-  const load = useCallback(async () => {
-    if (!API) {
-      setData((value) => ({ ...value, busy: false, error: "آدرس API در متغیر VITE_API_URL تنظیم نشده است." }));
-      return;
-    }
-    setData((value) => ({ ...value, busy: true }));
-    try {
-      const response = await fetch(API + "/api/dashboard?hours=" + windowHours, {
-        headers: { Accept: "application/json" }, cache: "no-store",
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.detail || "دریافت داده ناموفق بود: " + response.status);
-      setData({ ...payload, error: "", busy: false });
-    } catch (error) {
-      setData((value) => ({ ...value, busy: false, error: error.message || "ارتباط با API برقرار نشد." }));
-    }
-  }, [windowHours]);
 
   useEffect(() => {
-    let active = true, timer;
-    const tick = async () => {
-      if (!active) return;
-      if (document.visibilityState === "visible") await load();
-      if (active) timer = setTimeout(tick, 60000);
+    loadSnapshots();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") loadSnapshots();
     };
-    tick();
-    return () => { active = false; clearTimeout(timer); };
-  }, [load]);
-
-  useEffect(() => {
-    loadCensorship();
-    const timer = window.setInterval(loadCensorship, 15 * 60 * 1000);
-    return () => window.clearInterval(timer);
-  }, [loadCensorship]);
-
-  useEffect(() => {
-    loadProviders();
-    const timer = window.setInterval(loadProviders, 5 * 60 * 1000);
-    return () => window.clearInterval(timer);
-  }, [loadProviders]);
-
-  useEffect(() => {
-    loadDatacenters();
-    const timer = window.setInterval(loadDatacenters, 5 * 60 * 1000);
-    return () => window.clearInterval(timer);
-  }, [loadDatacenters]);
+    const timer = window.setInterval(refreshWhenVisible, 5 * 60 * 1000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [loadSnapshots]);
 
   const groups = useMemo(() => data.observations.reduce((accumulator, row) => {
     (accumulator[row.source_id] ||= []).push(row);
@@ -964,13 +1021,13 @@ export default function App() {
     </aside>
     <main>
       <header className="topbar"><div className="topbar-crumb">نت‌گارد <b>/</b> <strong>{current[1]}</strong></div>
-        <div className="actions"><span className="scope-label"><i/> ایران · پایش ملی</span><button onClick={() => { load(); loadCensorship(); loadProviders(); }} disabled={data.busy || censorship.busy || providerData.busy}><RefreshCw size={15}/>{data.busy || censorship.busy || providerData.busy ? "در حال دریافت" : "به‌روزرسانی"}</button></div>
+        <div className="actions"><span className="scope-label"><i/> ایران · پایش ملی</span><button onClick={loadSnapshots} disabled={isRefreshing || data.busy || censorship.busy || providerData.busy || datacenterData.busy}><RefreshCw size={15}/>{isRefreshing ? "در حال دریافت" : "به‌روزرسانی"}</button></div>
       </header>
       <div className="content">
         {data.error && <div className="warning"><AlertTriangle/><div><b>دریافت داده ناموفق بود</b><p>{data.error} دادهٔ ساختگی جایگزین نمی‌شود.</p></div></div>}
         {body}
       </div>
-      <footer><span>NetGuard · پایش شواهد عمومی</span><span>بازخوانی هر ۶۰ ثانیه · زمان نمایش ایران</span></footer>
+      <footer><span>NetGuard · پایش شواهد عمومی</span><span>بازخوانی خودکار هر ۵ دقیقه · زمان نمایش ایران</span></footer>
     </main>
   </div>;
 }
