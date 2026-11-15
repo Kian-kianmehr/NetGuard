@@ -424,6 +424,7 @@ export default function App() {
       <span>وضعیت دریافت: {censorship.sync.status === "success" ? "موفق" : censorship.sync.status === "partial" ? "ناقص" : "ناموفق"}</span>
       <span>رکوردهای دریافتی: {number(censorship.sync.records_received, 0)}</span>
     </div>}
+    {censorship.scope_note && <p className="toolbar-note">{censorship.scope_note}</p>}
     <Panel tag="نتایج آزمون‌های OONI" title={siteFilter === "confirmed" ? "مسدودیت‌های تأییدشده" : siteFilter === "possible" ? "موارد دارای نشانهٔ اختلال" : "همهٔ دامنه‌ها"} note="هر ردیف به آزمون ثبت‌شده از داخل ایران متصل است؛ نبود یک دامنه در این فهرست به معنی دسترسی آزاد نیست.">
       {filteredDomains.length ? <div className="site-list">{filteredDomains.map((site) =>
         <article className="site-row" key={site.domain}>
