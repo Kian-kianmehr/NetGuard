@@ -555,3 +555,34 @@ button:focus-visible,a:focus-visible,input:focus-visible{
   .technical-details{padding:9px 10px}
   .risk-score-rtl{font-size:inherit}
 }
+
+
+/* Public situation report, clean in-flow details, and expanded intelligence UI */
+.situation-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+.situation-grid article{min-width:0;padding:14px;border-radius:11px;background:rgba(7,15,27,.48);border:1px solid rgba(129,155,182,.14)}
+.situation-grid small{display:block;font-size:10px;color:#8fa4b9;line-height:1.8}
+.situation-grid b{display:block;color:#e8f0f7;font-size:12px;line-height:1.9;margin:6px 0;overflow-wrap:anywhere}
+.situation-grid p{margin:0;color:#a3b3c6;font-size:10px;line-height:1.95}
+.detail-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border:1px solid rgba(135,164,190,.2);border-radius:11px;background:#101e30;color:#83d9c4;font:inherit;font-size:12px;font-weight:650;text-align:right;cursor:pointer;transition:background .18s,border-color .18s}
+.detail-toggle:hover{background:#152940;border-color:rgba(113,216,189,.45)}
+.detail-toggle span{display:grid;place-items:center;width:25px;height:25px;border-radius:7px;background:#1b3940;color:#8fe2c8;font-size:17px}
+.technical-expansion{position:relative;display:grid;gap:16px;min-width:0;padding:17px;border:1px solid rgba(135,164,190,.18);border-radius:13px;background:rgba(10,22,37,.72);overflow:visible;animation:expand-in .18s ease-out}
+.technical-expansion>.panel{margin:0}
+@keyframes expand-in{from{opacity:.65;transform:translateY(-3px)}to{opacity:1;transform:translateY(0)}}
+.forecast-horizons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:5px 0}
+.forecast-horizons>div{min-width:0;display:grid;gap:5px;padding:9px;border-radius:8px;background:#142338;border:1px solid #253951}
+.forecast-horizons>div>small{color:#8298af;font-size:9px}
+.forecast-horizons>div>b{font-size:17px;line-height:1.4}
+.forecast-horizons>div>span{font-size:9px;color:#8fa4b9;line-height:1.7}
+.forecast-method-note{margin:12px 0 0;padding:10px 12px;border-radius:9px;background:#172638;color:#9bb0c3;font-size:10px;line-height:1.9}
+.ai-signal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.ai-signal-grid article{min-width:0;padding:13px;border:1px solid #26394f;border-radius:10px;background:#101d2d}
+.ai-signal-grid article>div{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.ai-signal-grid article>div>b{font-size:11px;color:#e2ecf5}
+.ai-signal-grid article>p{margin:9px 0;color:#a7bacb;font-size:10px;line-height:1.9}
+.ai-signal-grid article>small{color:#7189a2;font-size:9px}
+.global-node-table{margin-top:16px;max-height:520px;overflow:auto;border:1px solid #22344a;border-radius:10px}
+.risk-callout>div strong{display:block;margin:6px 0;font-size:28px;color:#e8f0f7}
+@media(max-width:1180px){.situation-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:800px){.situation-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-signal-grid{grid-template-columns:1fr}}
+@media(max-width:700px){.situation-grid{grid-template-columns:1fr}.technical-expansion{padding:10px}.forecast-horizons{grid-template-columns:repeat(3,minmax(0,1fr))}.forecast-horizons>div{padding:7px}.forecast-horizons>div>b{font-size:14px}}
