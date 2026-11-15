@@ -39,6 +39,7 @@ def test_observations_far_behind_source_cadence_are_limited_and_operational():
     item = source()
     item["expected_interval_seconds"] = 300
     rows = observations(item["source_id"], [1000 + (index % 2) for index in range(33)])
+    item["last_observed_at"] = rows[-1]["observed_at"]
     result, events = analyze_dashboard([item], rows, generated_at=NOW)
     signal = result["signals"][0]
     delayed = [event for event in events if event["event_type"] == "source_delayed"]
