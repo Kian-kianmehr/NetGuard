@@ -6,7 +6,7 @@ from typing import Any
 
 
 SEQUENCE_LENGTH = 12
-MIN_SEQUENCES = 64
+MIN_SEQUENCES = 48
 HIDDEN_LAYERS = (24, 12)
 MAX_EPOCHS = 120
 BATCH_SIZE = 32
@@ -34,6 +34,9 @@ def forecast_series(
     if len(values) != len(timestamps):
         return {"available": False, "reason": "طول تاریخچه و زمان نمونه‌ها یکسان نیست"}
 
+    if not horizons or any(not isinstance(item, int) or item <= 0 for item in horizons):
+        return {"available": False, "reason": "افق‌های پیش‌بینی باید اعداد صحیح مثبت باشند"}
+
     interval = max(1, int(interval_seconds))
     pairs = []
     for raw_value, raw_time in zip(values, timestamps):
@@ -49,7 +52,7 @@ def forecast_series(
     if len(pairs) <= SEQUENCE_LENGTH:
         return {
             "available": False,
-            "reason": f"برای آموزش شبکهٔ عصبی حداقل {SEQUENCE_LENGTH + MIN_SEQUENCES + 1} مشاهدهٔ پیوسته لازم است",
+            "reason": f"برای آموزش شبکهٔ عصبی حداقل {SEQUENCE_LENGTH + MIN_SEQUENCES} مشاهدهٔ پیوسته لازم است",
             "sample_count": len(pairs),
         }
 
