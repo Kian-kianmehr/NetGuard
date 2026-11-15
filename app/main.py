@@ -3,11 +3,11 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote
 
 import httpx
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from netguard.analysis import analyze_dashboard
@@ -226,7 +226,7 @@ _CATEGORY_LABELS = {
 }
 
 @app.get("/api/dashboard")
-def dashboard(hours: int = Query(default=168, ge=6, le=168)) -> dict[str, Any]:
+def dashboard(hours: Literal[24, 72, 168] = 168) -> dict[str, Any]:
     return _read_snapshot(f"dashboard_{hours}", stale_after_seconds=900)
 
 
