@@ -16,10 +16,8 @@ services:
       - key: NETGUARD_COLLECTOR_TOKEN
         sync: false
 
-  - type: web
+  - type: static
     name: netguard-dashboard
-    runtime: static
-    plan: free
     buildCommand: cd frontend && npm install && npm run build
     staticPublishPath: frontend/dist
     autoDeployTrigger: checksPass
