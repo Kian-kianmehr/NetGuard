@@ -860,6 +860,7 @@ export default function App() {
     const modelSignals = intelligence.signals || [];
     const cause = intelligence.cause_analysis || {};
     const recovery = intelligence.recovery_estimate || {};
+    const unavailableProviderCount = (providerData.providers || []).filter((item) => item.available === false).length;
     body = <div className="stack">
       <div className="intro page-intro"><small><BrainCircuit size={14}/> NetGuard Intelligence</small><h2>تحلیل هوشمند و پیش‌بینی روند اینترنت</h2><p>این بخش تغییرات غیرعادی را در چند شاخص پیدا می‌کند، هم‌زمانی شواهد را می‌سنجد و امتداد کوتاه‌مدت روند را نشان می‌دهد. خروجی‌ها هشدار زودهنگام‌اند، نه اعلام قطعی خاموشی.</p></div>
       <div className="metrics">
@@ -928,6 +929,8 @@ export default function App() {
       </Panel>
       <div className="notice"><Info size={17}/><div><b>مرز علمی مدل</b><p>این مدل رفتار غیرعادی را پیدا می‌کند، نه احتمال قطعی خاموشی را. امتیازهای مدل زمانی به احتمال واقعی تبدیل می‌شوند که با رخدادهای تأییدشده آزمایش و کالیبره شده باشند.</p></div></div>
       </details>
+      {providerData.is_stale && <div className="warning"><AlertTriangle/><div><b>اطلاعات وضعیت جهانی قدیمی است</b><p>آخرین snapshot در {time(providerData.snapshot_at)} ثبت شده؛ ممکن است وضعیت رسمی ارائه‌دهندگان از آن زمان تغییر کرده باشد.</p></div></div>}
+      {providerData.snapshot_status === "partial" && <div className="notice"><Info size={17}/><div><b>دادهٔ وضعیت جهانی کامل نیست</b><p>{number(unavailableProviderCount, 0)} ارائه‌دهنده در آخرین بررسی پاسخ معتبر نداده‌اند و با وضعیت «نامشخص» نمایش داده می‌شوند. این موضوع به‌تنهایی نشانهٔ اختلال اینترنت ایران یا خرابی آن سرویس‌ها نیست.</p></div></div>}
       <Panel tag="وضعیت سرویس‌های هوش مصنوعی" title="دسترسی جهانی به ارائه‌دهندگان مدل‌ها" note="این اطلاعات از صفحات رسمی وضعیت شرکت‌ها می‌آید و وضعیت دسترسی به آن‌ها از داخل ایران را به‌تنهایی ثابت نمی‌کند.">
         <div className="provider-grid">{(providerData.providers || []).filter((item) => item.group === "ai").map((item) => <ProviderCard key={item.id} item={item}/>)}</div>
       </Panel>
@@ -935,11 +938,12 @@ export default function App() {
   }
   else if (page === "providers") {
     const providerList = providerData.providers || [];
+    const unavailableProviderCount = providerList.filter((item) => item.available === false).length;
     const infra = providerList.filter((item) => item.group === "infrastructure");
     const developer = providerList.filter((item) => item.group === "developer");
     const cloudflare = providerList.find((item) => item.id === "cloudflare");
     const globalNodes = (cloudflare?.technical_components || []).filter((item) => item.name && item.name.includes(" - ("));
-    const globalIssues = globalNodes.filter((item) => item.status !== "operational");
+    const globalIssues = globalNodes.filter((item) => item.status !== "operational" && item.status !== "unknown");
     body = <div className="stack">
       <div className="intro page-intro"><small><Server size={14}/> زیرساخت و مراکز داده</small><h2>مراکز دادهٔ ایران و خارج از ایران</h2><p>این صفحه موجودی عمومی مراکز داخل کشور را از وضعیت نقاط حضور و زیرساخت جهانی جدا می‌کند. «ثبت‌شده» با «پایش زنده و سالم» یکی نیست.</p></div>
       <div className="metrics">
@@ -949,6 +953,8 @@ export default function App() {
         <Stat icon={AlertTriangle} label="مکان‌های جهانی غیرعادی" value={number(globalIssues.length, 0)} hint="وضعیت اعلام‌شدهٔ سرویس، نه از داخل ایران"/>
       </div>
       {providerData.error && <div className="warning"><AlertTriangle/><div><b>دریافت وضعیت جهانی با مشکل روبه‌رو شد</b><p>{providerData.error}</p></div></div>}
+      {providerData.is_stale && <div className="warning"><AlertTriangle/><div><b>اطلاعات وضعیت جهانی قدیمی است</b><p>آخرین snapshot در {time(providerData.snapshot_at)} ثبت شده؛ ممکن است وضعیت رسمی ارائه‌دهندگان از آن زمان تغییر کرده باشد.</p></div></div>}
+      {providerData.snapshot_status === "partial" && <div className="notice"><Info size={17}/><div><b>دادهٔ وضعیت جهانی کامل نیست</b><p>{number(unavailableProviderCount, 0)} ارائه‌دهنده در آخرین بررسی پاسخ معتبر نداده‌اند و با وضعیت «نامشخص» نمایش داده می‌شوند. این موضوع به‌تنهایی نشانهٔ اختلال اینترنت ایران یا خرابی آن سرویس‌ها نیست.</p></div></div>}
       <Panel tag="داخل ایران" title="مراکز داده و مکان‌های میزبانی ایران" note={datacenterData.scope_note || "فهرست مراکز ثبت‌شده در منابع عمومی؛ وضعیت عملیاتی فقط با اندازه‌گیری مستقیم قابل تأیید است."}>
         {datacenterData.error && <div className="warning"><AlertTriangle/><div><b>دریافت فهرست ناموفق بود</b><p>{datacenterData.error}</p></div></div>}
         <div className="metrics">
