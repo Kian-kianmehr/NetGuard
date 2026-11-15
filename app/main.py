@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -59,50 +57,10 @@ def _read_view(
     return result
 
 
-def _collector_is_configured() -> bool:
-    return bool(
-        os.getenv("SUPABASE_URL", "").strip()
-        and (
-            os.getenv("SUPABASE_SECRET_KEY", "").strip()
-            or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-        )
-    )
-
-
-async def _collector_loop() -> None:
-    """Collect while the free web instance is awake; it pauses when Render sleeps it."""
-    interval = max(60, int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "300")))
-    while True:
-        if _collector_is_configured():
-            try:
-                from netguard.collector import run_collection
-
-                exit_code = await asyncio.to_thread(run_collection)
-                if exit_code:
-                    logger.warning("Collector finished with source errors")
-            except Exception as exc:  # Keep the API alive if collection fails.
-                logger.error("Collector cycle failed (%s)", type(exc).__name__)
-        else:
-            logger.info("Collector is idle: Supabase secret is not configured")
-        await asyncio.sleep(interval)
-
-
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    task = asyncio.create_task(_collector_loop(), name="netguard-collector")
-    try:
-        yield
-    finally:
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
-
-
 app = FastAPI(
     title="NetGuard API",
     description="Read-only API for the NetGuard Iran internet monitoring dashboard.",
     version="1.0.0",
-    lifespan=lifespan,
 )
 app.add_middleware(
     CORSMiddleware,
@@ -124,10 +82,6 @@ def health() -> dict[str, Any]:
                 or os.getenv("SUPABASE_SECRET_KEY", "").strip()
                 or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
             )
-        ),
-        "collector_configured": _collector_is_configured(),
-        "collector_interval_seconds": max(
-            60, int(os.getenv("COLLECTOR_INTERVAL_SECONDS", "300"))
         ),
     }
 
