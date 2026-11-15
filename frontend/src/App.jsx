@@ -153,7 +153,76 @@ function PublicStatus({ summary, checkedAt }) {
   </section>;
 }
 
-function PublicSituationReport({ summary, intelligence, censorship, providers, datacenters, dataQuality, checkedAt }) {
+function PublicSituationReport({ summary, signals = [], intelligence, censorship, providers, datacenters, dataQuality, checkedAt, isLoading, error }) {
+  // The API serves a precomputed snapshot. Do not show a fake "waiting for enough data"
+  // state before that saved snapshot has been read by the browser.
+  if (!summary && !signals.length) {
+    if (isLoading) return null;
+    return <section className="public-assessment neutral">
+      <div className="public-assessment-head">
+        <div>
+          <small>گزارش عمومی نت‌گارد · وضعیت اینترنت داخل ایران</small>
+          <h2>گزارش ذخیره‌شده در دسترس نیست</h2>
+          <p>{error || "خواندن آخرین Snapshot از سرویس پایش با مشکل روبه‌رو شده است."}</p>
+        </div>
+        <span className="public-verdict">خطا در دریافت</span>
+      </div>
+    </section>;
+  }
+
+  const signalFor = (name) => signals.find((item) => item.signal === name);
+  const bgp = signalFor("bgp");
+  const ping = signalFor("ping-slash24");
+  const merit = signalFor("merit-nt");
+  const hasValue = (item) => item && item.latest_value != null && Number.isFinite(Number(item.latest_value));
+  const signalSentence = (item, label, contextOnly = false) => {
+    if (!hasValue(item)) return null;
+    const freshnessText = item.freshness_status === "stale"
+      ? "آخرین مشاهده قدیمی است"
+      : item.freshness_status === "fresh"
+        ? "آخرین مشاهده تازه است"
+        : "تازگی آخرین مشاهده نامشخص است";
+    const trendText = item.trend_1h_label || item.plain_explanation || "روند قابل محاسبه نیست";
+    return `${label}: ${number(item.latest_value)} ${item.unit || ""}؛ آخرین مشاهده ${time(item.last_observed_at)}؛ ${freshnessText}. ${contextOnly ? "این شاخص فقط شاهد کمکی است و به‌تنهایی وضعیت اینترنت را تعیین نمی‌کند." : trendText}`;
+  };
+
+  // When the national verdict is indeterminate, still describe the actual stored
+  // measurements instead of replacing them with a "wait for enough data" message.
+  const bestEffortSummary = {
+    ...(summary || {}),
+    tone: "neutral",
+    title: "آخرین داده‌های ذخیره‌شده چه تصویری نشان می‌دهند؟",
+    summary: [
+      hasValue(ping)
+        ? `در آخرین مشاهدهٔ شاخص پاسخ‌گویی شبکه، مقدار ${number(ping.latest_value)} ثبت شده و ${ping.trend_1h_label || "روند یک‌ساعته قابل محاسبه نیست"}؛ ${ping.current_anomaly ? "این شاخص انحرافی نیازمند بررسی نشان می‌دهد." : "انحرافی بالاتر از آستانهٔ تشخیص ثبت نشده است."}`
+        : "برای شاخص پاسخ‌گویی شبکه مقدار ذخیره‌شده‌ای در این Snapshot موجود نیست.",
+      hasValue(bgp)
+        ? `شاخص دیدپذیری مسیرهای اینترنت مقدار ${number(bgp.latest_value)} را در ${time(bgp.last_observed_at)} ثبت کرده، اما ${bgp.freshness_status === "stale" ? "این مشاهده از حد تازگی عبور کرده است." : "تازگی این مشاهده باید همراه سایر شاخص‌ها سنجیده شود."}`
+        : "مقدار ذخیره‌شدهٔ شاخص دیدپذیری BGP موجود نیست.",
+      "این‌ها آخرین مشاهدات ذخیره‌شده‌اند؛ به دلیل محدودیت تازگی یا پوشش برخی منابع، از آن‌ها نتیجهٔ قطعی دربارهٔ سلامت یا قطع سراسری نمی‌گیریم."
+    ].filter(Boolean).join(" "),
+    condition_label: "ارزیابی ملی با اطمینان محدود",
+    outage_label: "قطع گسترده تأیید نشده",
+    outage_detail: "این عبارت به معنی اثبات سلامت کامل اینترنت نیست. شاخص‌های موجود باید با دادهٔ تازه و مستقل بیشتری تکمیل شوند.",
+    stability_label: hasValue(ping)
+      ? (ping.current_anomaly ? "در شاخص پایش فعال نشانهٔ غیرعادی دیده شده" : "در آخرین شاخص پایش فعال افت غیرعادی دیده نشده")
+      : "شاخص پایش فعال در Snapshot موجود نیست",
+    trend_label: ping?.trend_1h_label || bgp?.trend_1h_label || "روند از داده‌های موجود قابل محاسبه نیست",
+    trend_detail: [
+      ping?.trend_1h_label ? `پایش فعال: ${ping.trend_1h_label}.` : null,
+      bgp?.trend_1h_label ? `دیدپذیری BGP: ${bgp.trend_1h_label}.` : null,
+    ].filter(Boolean).join(" ") || "برای تعیین روند باید نمونه‌های زمانی بیشتری در دسترس باشد.",
+    confidence_label: "محدود",
+    confidence_detail: "نتایج زیر از مقادیر ذخیره‌شده نمایش داده می‌شوند، اما قدیمی بودن یا کم بودن نمونه‌های یک منبع، اطمینان به جمع‌بندی ملی را کاهش می‌دهد.",
+    reasoning: [
+      signalSentence(bgp, "دیدپذیری مسیرهای اینترنت"),
+      signalSentence(ping, "پاسخ‌گویی شبکه در پایش فعال"),
+      signalSentence(merit, "تلسکوپ شبکه (Merit)", true),
+    ].filter(Boolean),
+    scope_note: "این گزارش آخرین Snapshot موجود را نمایش می‌دهد. دادهٔ ناقص یا قدیمی حذف نمی‌شود؛ محدودیت آن کنار همان شاخص توضیح داده می‌شود.",
+  };
+  const displaySummary = summary?.condition === "unknown" ? bestEffortSummary : (summary || bestEffortSummary);
+
   const forecast = intelligence?.forecast || {};
   const providerList = Array.isArray(providers) ? providers : (providers?.providers || []);
   const infrastructure = providerList.filter((item) => item.group === "infrastructure");
@@ -168,37 +237,37 @@ function PublicSituationReport({ summary, intelligence, censorship, providers, d
   const anomalyDomains = Number(censorship?.anomaly_domain_count || 0);
   const forecastText = forecast.available
     ? `در افق آزمایشی ${number(forecast.horizon_minutes || 30, 0)} دقیقه، امتیاز نشانه‌های افت ${number(forecast.risk_index, 0)} از ۱۰۰ است: ${forecast.risk_label || "بدون برچسب"}.`
-    : "برای پیش‌بینی کوتاه‌مدت هنوز دادهٔ تازه و هم‌زمان از هر دو شاخص اصلی کافی نیست.";
+    : "در این Snapshot پیش‌بینی عددی منتشر نشده است؛ روندهای قابل محاسبهٔ هر شاخص در بخش هوش مصنوعی جداگانه نمایش داده می‌شوند.";
   const providerText = infrastructure.length
-    ? `${number(infrastructure.length, 0)} سرویس زیرساختی بین‌المللی بررسی می‌شوند؛ ${number(affectedInfrastructure.length, 0)} مورد در صفحهٔ رسمی خود نشانهٔ افت یا اختلال اعلام کرده‌اند.`
+    ? `${number(infrastructure.length, 0)} سرویس زیرساختی بین‌المللی بین منابع بررسی‌شده‌اند؛ ${number(affectedInfrastructure.length, 0)} مورد در صفحهٔ رسمی خود نشانهٔ افت یا اختلال اعلام کرده‌اند.`
     : "اطلاعات وضعیت سرویس‌های زیرساختی جهانی هنوز در دسترس نیست.";
-  const tone = summary?.tone || "neutral";
+  const tone = displaySummary.tone || "neutral";
   return <section className={"public-assessment " + tone}>
     <div className="public-assessment-head">
       <div>
         <small>گزارش عمومی نت‌گارد · وضعیت اینترنت داخل ایران</small>
-        <h2>{summary?.title || "در انتظار دادهٔ کافی برای ارزیابی"}</h2>
-        <p>{summary?.summary || "پس از دریافت دادهٔ کافی از شاخص‌های اصلی، ارزیابی ملی در این بخش نمایش داده می‌شود."}</p>
+        <h2>{displaySummary.title}</h2>
+        <p>{displaySummary.summary}</p>
       </div>
-      <span className="public-verdict">{summary?.condition_label || "در حال بررسی"}</span>
+      <span className="public-verdict">{displaySummary.condition_label || "آخرین دادهٔ ذخیره‌شده"}</span>
     </div>
     <div className="situation-grid">
-      <article><small>اتصال و مسیرهای اینترنت</small><b>{summary?.stability_label || "نامشخص"}</b><p>{summary?.outage_detail || "برای بررسی اختلال گسترده باید چند شاخص مستقل و تازه در دسترس باشند."}</p></article>
-      <article><small>دسترسی به وب‌سایت‌ها</small><b>{number(confirmedDomains, 0)} دامنه با شاهد مسدودسازی</b><p>{measuredDomains ? `در ${number(measuredDomains, 0)} دامنه نتیجهٔ آزمون OONI وجود دارد؛ ${number(anomalyDomains, 0)} مورد دیگر نشانهٔ اختلال دارند، اما لزوماً فیلترشده نیستند.` : "نتایج آزمون دسترسی هنوز در این گزارش بارگذاری نشده‌اند."}</p></article>
+      <article><small>اتصال و مسیرهای اینترنت</small><b>{displaySummary.stability_label || "نامشخص"}</b><p>{displaySummary.outage_detail || "توضیح وضعیت از آخرین شاخص‌های ذخیره‌شده در دسترس است."}</p></article>
+      <article><small>دسترسی به وب‌سایت‌ها</small><b>{number(confirmedDomains, 0)} دامنه با شاهد مسدودسازی</b><p>{measuredDomains ? `در ${number(measuredDomains, 0)} دامنه نتیجهٔ آزمون OONI وجود دارد؛ ${number(anomalyDomains, 0)} مورد دیگر نشانهٔ اختلال دارند، اما لزوماً فیلترشده نیستند.` : "نتایج آزمون دسترسی در آخرین Snapshot موجود نیست."}</p></article>
       <article><small>مراکز داده داخل ایران</small><b>{number(domesticCount, 0)} مرکز یا محل میزبانی ثبت‌شده</b><p>{directlyMonitored ? `${number(directlyMonitored, 0)} مورد پایش مستقیم دارند.` : "برای مراکز فهرست‌شده هنوز سنجش زندهٔ مستقل NetGuard از داخل ایران نداریم؛ بنابراین وضعیت عملیاتی آن‌ها نامشخص است."}</p></article>
       <article><small>زیرساخت خارج از ایران</small><b>{number(cloudflare?.data_center_count, 0)} نقطهٔ حضور Cloudflare</b><p>{providerText} این وضعیت‌ها جهانی‌اند و به‌تنهایی دسترسی از داخل ایران را ثابت نمی‌کنند.</p></article>
-      <article><small>روند یک ساعت اخیر</small><b>{summary?.trend_label || "نامشخص"}</b><p>{summary?.trend_detail || "برای مقایسهٔ روند به نمونه‌های کافی در دو پنجرهٔ زمانی نیاز است."}</p></article>
-      <article><small>چشم‌انداز کوتاه‌مدت</small><b>{forecast.available ? `امتیاز نشانه‌های افت: ${number(forecast.risk_index, 0)} از ۱۰۰` : "پیش‌بینی در دسترس نیست"}</b><p>{forecastText} این امتیاز احتمال قطعی یا پیش‌بینی قطعی خاموشی نیست.</p></article>
-      <article><small>کیفیت و اطمینان داده</small><b>{summary?.confidence_label || "نامشخص"} · پوشش {number(dataQuality?.window_coverage_percent, 0)}٪</b><p>{summary?.confidence_detail || "تازگی و کامل بودن داده‌ها بر میزان اطمینان اثر می‌گذارد."}</p></article>
+      <article><small>روند یک ساعت اخیر</small><b>{displaySummary.trend_label || "نامشخص"}</b><p>{displaySummary.trend_detail || "روند بر اساس آخرین نمونه‌های ذخیره‌شده نمایش داده می‌شود."}</p></article>
+      <article><small>چشم‌انداز کوتاه‌مدت</small><b>{forecast.available ? `امتیاز نشانه‌های افت: ${number(forecast.risk_index, 0)} از ۱۰۰` : "روند قابل اندازه‌گیری؛ پیش‌بینی عددی منتشر نشده"}</b><p>{forecastText} این امتیاز احتمال قطعی یا پیش‌بینی قطعی خاموشی نیست.</p></article>
+      <article><small>کیفیت و اطمینان داده</small><b>{displaySummary.confidence_label || "محدود"} · پوشش {number(dataQuality?.window_coverage_percent, 0)}٪</b><p>{displaySummary.confidence_detail || "تازگی و کامل بودن داده‌ها بر میزان اطمینان اثر می‌گذارد."}</p></article>
     </div>
     <div className="public-explanation">
       <b>جمع‌بندی را چطور بخوانیم؟</b>
       <ul>
-        {(summary?.reasoning || []).map((item) => <li key={item}>{item}</li>)}
+        {(displaySummary.reasoning || []).map((item) => <li key={item}>{item}</li>)}
         <li>آزمون‌های OONI دربارهٔ دسترسی به دامنه‌های آزمایش‌شده‌اند؛ همهٔ سایت‌ها یا همهٔ اپراتورها را پوشش نمی‌دهند.</li>
         <li>وضعیت جهانی شرکت‌ها و فهرست دیتاسنترها جای اندازه‌گیری مستقیم از شهرها و اپراتورهای داخل ایران را نمی‌گیرد.</li>
       </ul>
-      <p>{summary?.scope_note || "این گزارش بر شواهد عمومی و ملی تکیه دارد و کیفیت اتصال تک‌تک کاربران را اندازه نمی‌گیرد."} آخرین مشاهدهٔ شاخص‌های اصلی: {time(checkedAt)} · آخرین آزمون OONI: {time(censorship?.sync?.finished_at)} · آخرین بررسی زیرساخت جهانی: {time(providers?.checked_at)}.</p>
+      <p>{displaySummary.scope_note || "این گزارش بر شواهد عمومی و ملی تکیه دارد و کیفیت اتصال تک‌تک کاربران را اندازه نمی‌گیرد."} آخرین مشاهدهٔ شاخص‌های اصلی: {time(checkedAt)} · آخرین آزمون OONI: {time(censorship?.sync?.finished_at)} · آخرین بررسی زیرساخت جهانی: {time(providers?.checked_at)}.</p>
     </div>
   </section>;
 }
@@ -508,7 +577,7 @@ export default function App() {
 
   let body;
   if (page === "overview") body = <>
-    <PublicSituationReport summary={analysis.public_summary} intelligence={analysis.intelligence} censorship={censorship} providers={providerData} datacenters={datacenterData} dataQuality={dataQuality} checkedAt={lastPrimaryObservation}/>
+    <PublicSituationReport summary={analysis.public_summary} signals={signals} intelligence={analysis.intelligence} censorship={censorship} providers={providerData} datacenters={datacenterData} dataQuality={dataQuality} checkedAt={lastPrimaryObservation} isLoading={data.busy} error={data.error}/>
     <div className="hero">
       <div><small>سلامت سامانهٔ پایش · ایران</small><h2>{overall}</h2>
         <p>{number(fresh, 0)} منبع تازه · {number(attention, 0)} منبع قدیمی یا خطادار</p>
