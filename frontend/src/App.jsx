@@ -7,6 +7,7 @@ import {
 
 const NAV = [
   ["overview", "نمای کلی", Globe2],
+  ["censorship", "سایت‌های فیلترشده", ShieldAlert],
   ["analysis", "تحلیل وضعیت", Activity],
   ["signals", "سیگنال‌ها", Signal],
   ["events", "رخدادها", AlertTriangle],
@@ -120,6 +121,35 @@ function PublicAssessment({ summary }) {
   </section>;
 }
 
+
+function PublicStatus({ summary, checkedAt }) {
+  if (!summary) return <section className="public-status neutral">
+    <div><small>وضعیت اینترنت ایران</small><h2>در حال دریافت آخرین وضعیت</h2><p>نتیجهٔ آخرین بررسی در این بخش نمایش داده می‌شود.</p></div>
+  </section>;
+
+  const states = {
+    stable: ["پایدار", "good", "شاخص‌های اصلی در محدودهٔ معمول هستند و فعلاً نشانه‌ای از اختلال گسترده دیده نمی‌شود."],
+    attention: ["نیازمند توجه", "warn", "در یکی از شاخص‌های اصلی تغییر غیرعادی دیده شده؛ هنوز شواهد کافی برای نتیجه‌گیری دربارهٔ کل شبکه وجود ندارد."],
+    possible_disruption: ["احتمال اختلال", "danger", "هر دو شاخص اصلی افت هم‌زمان نشان داده‌اند؛ این وضعیت نیازمند بررسی بیشتر است."],
+    unknown: ["وضعیت نامشخص", "neutral", "برای نتیجهٔ قابل اتکا، دادهٔ تازه و تاریخچهٔ کافی از هر دو شاخص اصلی در دسترس نیست."],
+  };
+  const [label, tone, description] = states[summary.condition] || states.unknown;
+  return <section className={"public-status " + tone}>
+    <div className="public-status-main">
+      <small>وضعیت اینترنت ایران</small>
+      <div className="public-status-title"><h2>{label}</h2><span>{summary.condition_label || label}</span></div>
+      <p>{description}</p>
+      <em>آخرین مشاهدهٔ شاخص‌های اصلی: {time(checkedAt)}</em>
+    </div>
+    <div className="public-status-details">
+      <article><small>پایداری زیرساخت</small><b>{summary.stability_label || "نامشخص"}</b></article>
+      <article><small>روند یک ساعت اخیر</small><b>{summary.trend_label || "نامشخص"}</b></article>
+      <article><small>اطمینان ارزیابی</small><b>{summary.confidence_label || "نامشخص"}</b></article>
+    </div>
+    <div className="public-status-note">سرعت و کیفیت تجربهٔ شخصی کاربران مستقیماً اندازه‌گیری نمی‌شود.</div>
+  </section>;
+}
+
 function Chart({ rows = [], compact = false }) {
   const valid = rows.filter((row) => row.quality === "valid" && Number.isFinite(Number(row.value)));
   if (!valid.length) return <Empty title="تاریخچهٔ معتبری موجود نیست" />;
@@ -191,10 +221,32 @@ export default function App() {
   const [page, setPage] = useState("overview");
   const [windowHours, setWindowHours] = useState(168);
   const [eventFilter, setEventFilter] = useState("all");
+  const [siteFilter, setSiteFilter] = useState("confirmed");
+  const [siteQuery, setSiteQuery] = useState("");
+  const [censorship, setCensorship] = useState({
+    domains: [], sync: null, generated_at: null, error: "", busy: true,
+  });
   const [data, setData] = useState({
     sources: [], observations: [], analysis: null, events: [],
     generated_at: null, error: "", busy: true,
   });
+
+  const loadCensorship = useCallback(async () => {
+    if (!API) return;
+    setCensorship((value) => ({ ...value, busy: true }));
+    try {
+      const response = await fetch(API + "/api/censorship", {
+        headers: { Accept: "application/json" }, cache: "no-store",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "دریافت فهرست سایت‌ها ناموفق بود.");
+      setCensorship({ ...payload, error: "", busy: false });
+    } catch (error) {
+      setCensorship((value) => ({
+        ...value, busy: false, error: error.message || "فهرست سایت‌ها در دسترس نیست.",
+      }));
+    }
+  }, []);
 
   const load = useCallback(async () => {
     if (!API) {
@@ -225,6 +277,12 @@ export default function App() {
     return () => { active = false; clearTimeout(timer); };
   }, [load]);
 
+  useEffect(() => {
+    loadCensorship();
+    const timer = window.setInterval(loadCensorship, 15 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, [loadCensorship]);
+
   const groups = useMemo(() => data.observations.reduce((accumulator, row) => {
     (accumulator[row.source_id] ||= []).push(row);
     return accumulator;
@@ -243,10 +301,27 @@ export default function App() {
   const filteredEvents = useMemo(() => events.filter((event) =>
     eventFilter === "all" || event.severity === eventFilter
   ), [events, eventFilter]);
+  const confirmedSites = censorship.domains.filter((site) => site.confirmed_blocked);
+  const possibleSites = censorship.domains.filter((site) => !site.confirmed_blocked);
+  const filteredDomains = useMemo(() => {
+    const query = siteQuery.trim().toLowerCase();
+    return censorship.domains.filter((site) => {
+      const matchesFilter = siteFilter === "all"
+        || (siteFilter === "confirmed" && site.confirmed_blocked)
+        || (siteFilter === "possible" && !site.confirmed_blocked);
+      return matchesFilter && (!query || String(site.domain || "").toLowerCase().includes(query));
+    });
+  }, [censorship.domains, siteFilter, siteQuery]);
+  const lastPrimaryObservation = data.sources
+    .filter((source) => ["bgp", "ping-slash24"].includes(source.signal))
+    .map((source) => source.last_observed_at)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
 
   let body;
   if (page === "overview") body = <>
-    <PublicAssessment summary={analysis.public_summary}/>
+    <PublicStatus summary={analysis.public_summary} checkedAt={lastPrimaryObservation}/>
     <div className="hero">
       <div><small>سلامت سامانهٔ پایش · ایران</small><h2>{overall}</h2>
         <p>{number(fresh, 0)} منبع تازه · {number(attention, 0)} منبع قدیمی یا خطادار</p>
@@ -314,6 +389,69 @@ export default function App() {
       <div className="notice"><Info size={17}/><div><b>مبنای ارزیابی</b><p>NetGuard رفتار هر شاخص را با سابقهٔ همان شاخص مقایسه می‌کند، تغییرات هم‌زمان را میان منابع مستقل می‌سنجد و داده‌های ناقص یا قدیمی را جداگانه در نظر می‌گیرد. نتیجهٔ آماری به‌تنهایی علت اختلال را اثبات نمی‌کند.</p></div></div>
     </div>;
   }
+  else if (page === "censorship") body = <div className="stack">
+    <div className="intro page-intro">
+      <small><ShieldAlert size={14}/> پایش دسترسی وب‌سایت‌ها</small>
+      <h2>وب‌سایت‌های فیلترشده</h2>
+      <p>بر پایهٔ آزمون‌های Web Connectivity از داخل ایران در داده‌های ۹۰ روز اخیر OONI.</p>
+    </div>
+    <div className="metrics">
+      <Stat icon={Globe2} label="دامنه‌های ثبت‌شده" value={number(censorship.domains.length, 0)} hint="دامنهٔ یکتا در بازهٔ ۹۰ روز"/>
+      <Stat icon={ShieldCheck} label="مسدودیت تأییدشده" value={number(confirmedSites.length, 0)} hint="دارای نشانهٔ تأییدشدهٔ OONI"/>
+      <Stat icon={AlertTriangle} label="نیازمند بررسی" value={number(possibleSites.length, 0)} hint="فقط دارای ناهنجاری در آزمون"/>
+      <Stat icon={Clock3} label="آخرین دریافت" value={censorship.sync?.finished_at ? time(censorship.sync.finished_at, false) : "—"} hint="به‌روزرسانی دوره‌ای"/>
+    </div>
+    <div className="toolbar">
+      <div className="range-tabs">
+        {[
+          ["confirmed", "تأییدشده"],
+          ["possible", "نشانهٔ اختلال"],
+          ["all", "همه"],
+        ].map(([value, label]) => <button key={value} className={siteFilter === value ? "active" : ""} onClick={() => setSiteFilter(value)}>{label}</button>)}
+      </div>
+      <input
+        className="site-search"
+        type="search"
+        value={siteQuery}
+        onChange={(event) => setSiteQuery(event.target.value)}
+        placeholder="جست‌وجوی دامنه…"
+        aria-label="جست‌وجوی دامنه"
+      />
+    </div>
+    {censorship.error && <div className="warning"><AlertTriangle/><div><b>دریافت فهرست با مشکل روبه‌رو شد</b><p>{censorship.error} آخرین دادهٔ ذخیره‌شده، در صورت وجود، همچنان نمایش داده می‌شود.</p></div></div>}
+    {censorship.sync && <div className="site-sync-note">
+      <span>آخرین همگام‌سازی: {time(censorship.sync.finished_at)}</span>
+      <span>وضعیت دریافت: {censorship.sync.status === "success" ? "موفق" : censorship.sync.status === "partial" ? "ناقص" : "ناموفق"}</span>
+      <span>رکوردهای دریافتی: {number(censorship.sync.records_received, 0)}</span>
+    </div>}
+    <Panel tag="نتایج آزمون‌های OONI" title={siteFilter === "confirmed" ? "مسدودیت‌های تأییدشده" : siteFilter === "possible" ? "موارد دارای نشانهٔ اختلال" : "همهٔ دامنه‌ها"} note="هر ردیف به آزمون ثبت‌شده از داخل ایران متصل است؛ نبود یک دامنه در این فهرست به معنی دسترسی آزاد نیست.">
+      {filteredDomains.length ? <div className="site-list">{filteredDomains.map((site) =>
+        <article className="site-row" key={site.domain}>
+          <div className="site-row-main">
+            <div className="site-domain-line">
+              <b dir="ltr">{site.domain}</b>
+              <Badge value={site.confirmed_blocked ? "confirmed" : "possible"} map={{
+                confirmed: ["مسدودیت تأییدشده", "warn"],
+                possible: ["نشانهٔ اختلال", "neutral"],
+              }}/>
+            </div>
+            <small>آخرین آزمون: {time(site.last_observed_at)} · {number(site.probe_networks, 0)} شبکهٔ ثبت‌کننده</small>
+          </div>
+          <div className="site-evidence">
+            <span>{number(site.confirmed_measurements, 0)} آزمون تأییدشده · {number(site.anomaly_measurements, 0)} آزمون غیرعادی</span>
+            {site.source_url && <a href={site.source_url} target="_blank" rel="noreferrer">مشاهدهٔ شواهد ↗</a>}
+          </div>
+        </article>
+      )}</div> : <Empty
+        title={censorship.busy ? "در حال دریافت فهرست" : "دامنه‌ای در این گروه ثبت نشده"}
+        note={censorship.error || "نتایج آزمون‌های موجود در بازهٔ انتخابی پس از همگام‌سازی نمایش داده می‌شوند."}
+      />}
+    </Panel>
+    <div className="notice"><Info size={17}/><div>
+      <b>تفاوت مسدودیت تأییدشده با نشانهٔ اختلال</b>
+      <p>OONI زمانی یک وب‌سایت را «تأییدشده» علامت می‌زند که اثر انگشت صفحهٔ مسدودسازی یا نشانی شناخته‌شدهٔ فیلترینگ شناسایی شود. ناهنجاری به‌تنهایی اثبات فیلترینگ نیست و ممکن است مثبت کاذب باشد. نتایج به شبکه‌هایی محدود است که در آن‌ها آزمون انجام شده است.</p>
+    </div></div>
+  </div>;
   else if (page === "signals") body = <div className="stack">
     <div className="intro page-intro"><small><Signal size={14}/> پایش شاخص‌ها</small><h2>سیگنال‌های شبکه</h2><p>هر سیگنال با واحد، خط مبنا، دامنه و نمودار مستقل خودش بررسی می‌شود؛ مقادیر ناهم‌واحد با هم ادغام نمی‌شوند.</p></div>
     <div className="toolbar">
