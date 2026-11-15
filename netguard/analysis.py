@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from math import isfinite
 from statistics import median
 from typing import Any
@@ -147,6 +147,286 @@ def _history_events(
     return events
 
 
+PRIMARY_SIGNAL_GUIDANCE = {
+    "bgp": (
+        "دیدپذیری مسیرهای اینترنت",
+        "این شاخص نشان می‌دهد چه تعداد بخش از شبکه‌های IPv4 از مسیرهای اینترنتی قابل مشاهده‌اند. افت محسوس می‌تواند نشانه کاهش دیدپذیری یا اختلال در مسیرها باشد، اما تجربهٔ همهٔ کاربران را نشان نمی‌دهد.",
+    ),
+    "ping-slash24": (
+        "پاسخ‌گویی شبکه‌ها به پایش فعال",
+        "این شاخص تعداد بخش‌های شبکه‌ای را می‌شمارد که از نقاط اندازه‌گیری IODA پاسخ داده‌اند. افت محسوس می‌تواند نشانه کاهش دسترسی از این نقاط باشد، اما به‌تنهایی وضعیت همهٔ کاربران را مشخص نمی‌کند.",
+    ),
+    "merit-nt": (
+        "مشاهدات تلسکوپ شبکه",
+        "این شاخص تعداد IPهای یکتای دیده‌شده در تلسکوپ شبکه را نشان می‌دهد. تغییر آن ممکن است از الگوی ترافیک هم تأثیر بگیرد؛ بنابراین به‌تنهایی معیار خوب یا بد بودن اینترنت نیست.",
+    ),
+}
+
+TREND_CHANGE_THRESHOLD = 5.0
+
+
+def _signal_trend(rows: list[dict[str, Any]], signal: str) -> dict[str, Any]:
+    if signal not in ("bgp", "ping-slash24"):
+        return {
+            "trend_1h_change_percent": None,
+            "trend_1h_direction": "context_only" if signal == "merit-nt" else "unknown",
+            "trend_1h_label": (
+                "شاخص کمکی؛ جهت تغییر آن به‌تنهایی کیفیت را مشخص نمی‌کند"
+                if signal == "merit-nt" else "روند قابل محاسبه نیست"
+            ),
+        }
+    if len(rows) < 6:
+        return {
+            "trend_1h_change_percent": None,
+            "trend_1h_direction": "unknown",
+            "trend_1h_label": "برای مقایسهٔ یک‌ساعته دادهٔ کافی نیست",
+        }
+
+    latest_at = rows[-1]["_time"]
+    recent_start = latest_at - timedelta(hours=1)
+    previous_start = latest_at - timedelta(hours=2)
+    recent = [row["_value"] for row in rows if recent_start <= row["_time"] <= latest_at]
+    previous = [
+        row["_value"] for row in rows
+        if previous_start <= row["_time"] < recent_start
+    ]
+    if len(recent) < 3 or len(previous) < 3:
+        return {
+            "trend_1h_change_percent": None,
+            "trend_1h_direction": "unknown",
+            "trend_1h_label": "برای مقایسهٔ یک‌ساعته دادهٔ کافی نیست",
+        }
+
+    previous_median = median(previous)
+    recent_median = median(recent)
+    if abs(previous_median) < 1e-9:
+        change = None
+    else:
+        change = (recent_median - previous_median) / abs(previous_median) * 100.0
+    if change is None:
+        direction = "unknown"
+        label = "روند قابل محاسبه نیست"
+    elif change >= TREND_CHANGE_THRESHOLD:
+        direction = "improving"
+        label = "بهبود در شاخص دسترسی/دیدپذیری"
+    elif change <= -TREND_CHANGE_THRESHOLD:
+        direction = "worsening"
+        label = "افت در شاخص دسترسی/دیدپذیری"
+    else:
+        direction = "stable"
+        label = "تقریباً بدون تغییر محسوس"
+    return {
+        "trend_1h_change_percent": round(change, 1) if change is not None else None,
+        "trend_1h_direction": direction,
+        "trend_1h_label": label,
+    }
+
+
+def _plain_signal_explanation(
+    signal: str,
+    data_state: str,
+    current_anomaly: bool,
+    change_percent: float | None,
+) -> str:
+    _, meaning = PRIMARY_SIGNAL_GUIDANCE.get(
+        signal,
+        ("شاخص کمکی", "این شاخص فقط به‌عنوان شاهد مکمل بررسی می‌شود."),
+    )
+    if data_state != "usable":
+        return meaning + " در حال حاضر دادهٔ این شاخص برای نتیجه‌گیری کافی یا به‌روز نیست."
+    if current_anomaly and change_percent is not None and change_percent < 0:
+        return meaning + " در اندازه‌گیری‌های اخیر افت غیرعادی دیده شده و باید در کنار شاخص‌های دیگر بررسی شود."
+    if current_anomaly and change_percent is not None and change_percent > 0:
+        return meaning + " مقدار اخیر افزایش غیرعادی داشته؛ افزایش این شاخص به‌خودی‌خود نشانهٔ اختلال نیست."
+    return meaning + " در داده‌های اخیر افتی بالاتر از آستانهٔ تشخیص ثبت نشده است."
+
+
+def _build_public_summary(signals: list[dict[str, Any]]) -> dict[str, Any]:
+    primary = {
+        item.get("signal"): item
+        for item in signals
+        if item.get("signal") in ("bgp", "ping-slash24")
+    }
+    bgp = primary.get("bgp")
+    ping = primary.get("ping-slash24")
+    primary_items = [item for item in (bgp, ping) if item is not None]
+    usable_primary = [
+        item for item in primary_items
+        if item.get("data_state") == "usable"
+        and item.get("freshness_status") == "fresh"
+    ]
+    down = [
+        item for item in usable_primary
+        if item.get("current_anomaly")
+        and item.get("change_percent") is not None
+        and item["change_percent"] < 0
+    ]
+
+    both_down_together = False
+    if len(down) == 2:
+        left = _parse_time(down[0].get("last_observed_at"))
+        right = _parse_time(down[1].get("last_observed_at"))
+        both_down_together = (
+            left is not None and right is not None
+            and abs((left - right).total_seconds()) <= 3600
+        )
+
+    if both_down_together:
+        condition = "possible_disruption"
+        tone = "danger"
+        condition_label = "نشانه‌های اختلال گسترده"
+        title = "چند شاخص اصلی هم‌زمان افت کرده‌اند"
+        summary = (
+            "در هر دو شاخص اصلیِ مسیرهای اینترنت و پاسخ‌گویی شبکه‌ها افت غیرعادی دیده شده است. "
+            "این یک هشدار جدی برای بررسی اختلال گسترده است؛ اما قطع کامل یا علت آن هنوز تأیید نشده."
+        )
+        outage_state = "multiple_indicators"
+        outage_label = "نشانهٔ اختلال گسترده دیده می‌شود"
+        outage_detail = (
+            "دو شاخص مستقل در فاصلهٔ زمانی نزدیک افت کرده‌اند. برای تأیید قطعی، "
+            "اندازه‌گیری‌های مستقل و پایدار بیشتری لازم است."
+        )
+    elif down:
+        condition = "attention"
+        tone = "warn"
+        condition_label = "نیازمند بررسی"
+        title = "یک شاخص اصلی افت غیرعادی داشته است"
+        affected = "دیدپذیری مسیرهای اینترنت" if down[0].get("signal") == "bgp" else "پاسخ‌گویی شبکه‌ها به پایش فعال"
+        summary = (
+            f"در شاخص «{affected}» افت غیرعادی دیده شده، اما شاخص اصلی دیگر آن را هم‌زمان تأیید نمی‌کند. "
+            "بنابراین فعلاً نمی‌توان از قطع گسترده یا سراسری نتیجه گرفت."
+        )
+        outage_state = "single_signal_drop"
+        outage_label = "یک نشانهٔ افت؛ قطع سراسری تأیید نشده"
+        outage_detail = (
+            "یک شاخص به‌تنهایی برای اعلام قطعی کافی نیست؛ ممکن است تغییر محدود، محلی به نقاط اندازه‌گیری "
+            "یا ناشی از عامل دیگری باشد."
+        )
+    elif len(usable_primary) == 2:
+        condition = "stable"
+        tone = "good"
+        condition_label = "فعلاً پایدار"
+        title = "فعلاً نشانه‌ای از اختلال گسترده دیده نمی‌شود"
+        summary = (
+            "در دو شاخص اصلیِ پایش، افت غیرعادیِ هم‌زمان مشاهده نشده است. "
+            "پس داده‌های فعلی نشانه‌ای از قطع گسترده نشان نمی‌دهند؛ این به معنی تضمین اتصال یا کیفیت یکسان برای همه نیست."
+        )
+        outage_state = "no_widespread_signal"
+        outage_label = "نشانه‌ای از قطع گسترده دیده نمی‌شود"
+        outage_detail = (
+            "هر دو شاخص اصلی دادهٔ تازه و قابل استفاده دارند و افت غیرعادی ثبت نکرده‌اند. "
+            "این نتیجه نبودِ شواهد در این پایش است، نه اثبات اینکه هیچ کاربری قطعی ندارد."
+        )
+    else:
+        condition = "unknown"
+        tone = "neutral"
+        condition_label = "قابل قضاوت نیست"
+        title = "برای قضاوت دربارهٔ وضعیت شبکه دادهٔ کافی نداریم"
+        summary = (
+            "برای ارزیابی قابل اتکا باید هر دو شاخص اصلی، دادهٔ تازه و تاریخچهٔ کافی داشته باشند. "
+            "دادهٔ ناقص را نمی‌توان به معنی سالم بودن شبکه در نظر گرفت."
+        )
+        outage_state = "insufficient_data"
+        outage_label = "وضعیت قطعی نامشخص است"
+        outage_detail = (
+            "حداقل یکی از شاخص‌های اصلی قدیمی، محدود یا فاقد تاریخچهٔ کافی است؛ "
+            "بنابراین اعلام قطع یا سلامت شبکه مسئولانه نیست."
+        )
+
+    trend_items = [
+        item for item in primary_items
+        if item.get("data_state") == "usable"
+        and item.get("trend_1h_direction") in ("improving", "worsening", "stable")
+    ]
+    directions = [item["trend_1h_direction"] for item in trend_items]
+    if len(directions) >= 2:
+        if all(direction == "improving" for direction in directions):
+            trend_state = "improving"
+            trend_label = "در حال بهبود"
+            trend_detail = "هر دو شاخص اصلی در مقایسه با ساعت قبل بهتر شده‌اند."
+        elif all(direction == "worsening" for direction in directions):
+            trend_state = "worsening"
+            trend_label = "رو به بدتر شدن"
+            trend_detail = "هر دو شاخص اصلی در مقایسه با ساعت قبل افت کرده‌اند."
+        elif all(direction == "stable" for direction in directions):
+            trend_state = "stable"
+            trend_label = "تقریباً ثابت"
+            trend_detail = "در یک ساعت اخیر تغییر معناداری در دو شاخص اصلی دیده نمی‌شود."
+        else:
+            trend_state = "mixed"
+            trend_label = "روند یکدست نیست"
+            trend_detail = "شاخص‌های اصلی جهت یکسانی ندارند؛ از اعلام بهبود یا بدترشدن قطعی خودداری می‌کنیم."
+    elif len(directions) == 1:
+        trend_state = directions[0]
+        trend_label = {
+            "improving": "یک شاخص رو به بهبود است",
+            "worsening": "یک شاخص رو به افت است",
+            "stable": "یک شاخص تقریباً ثابت است",
+        }[trend_state]
+        trend_detail = "این برداشت فقط از یک شاخص به دست آمده و اطمینان کمتری دارد."
+    else:
+        trend_state = "unknown"
+        trend_label = "روند نامشخص"
+        trend_detail = "برای مقایسهٔ یک ساعت اخیر با ساعت قبل، نمونه‌های کافی در دسترس نیست."
+
+    if len(usable_primary) == 2 and all(item.get("sample_count", 0) >= 24 for item in usable_primary):
+        confidence = "medium"
+        confidence_label = "متوسط"
+        confidence_detail = (
+            "دو شاخص اصلی دادهٔ تازه و تاریخچهٔ کافی دارند؛ بااین‌حال هر دو از یک ارائه‌دهنده‌اند "
+            "و اندازه‌گیری مستقیم تجربهٔ کاربران نیستند."
+        )
+    elif usable_primary:
+        confidence = "low"
+        confidence_label = "کم"
+        confidence_detail = "فقط بخشی از شاخص‌های اصلی قابل استفاده‌اند یا تاریخچهٔ آن‌ها محدود است."
+    else:
+        confidence = "low"
+        confidence_label = "پایین"
+        confidence_detail = "دادهٔ تازه و کافی برای یک نتیجهٔ مطمئن در دسترس نیست."
+
+    if condition == "unknown":
+        stability_label = "پایداری شبکه قابل ارزیابی نیست"
+    elif condition == "possible_disruption":
+        stability_label = "نشانه‌های افت هم‌زمان دیده شده"
+    elif condition == "attention":
+        stability_label = "یک نشانهٔ نیازمند بررسی دیده شده"
+    else:
+        stability_label = "شاخص‌های اصلی فعلاً پایدارند"
+
+    return {
+        "tone": tone,
+        "condition": condition,
+        "condition_label": condition_label,
+        "title": title,
+        "summary": summary,
+        "outage_state": outage_state,
+        "outage_label": outage_label,
+        "outage_detail": outage_detail,
+        "stability_label": stability_label,
+        "quality_state": "not_measured",
+        "quality_label": "کیفیت تجربهٔ کاربران مستقیماً سنجیده نشده",
+        "quality_detail": (
+            "این نسخه تعداد شبکه‌های قابل مشاهده و پاسخ‌گو را بررسی می‌کند؛ "
+            "سرعت دانلود و آپلود، تأخیر، نوسان و از دست رفتن بسته‌ها را از دستگاه کاربران اندازه نمی‌گیرد."
+        ),
+        "trend_state": trend_state,
+        "trend_label": trend_label,
+        "trend_detail": trend_detail,
+        "confidence": confidence,
+        "confidence_label": confidence_label,
+        "confidence_detail": confidence_detail,
+        "checked_primary_signals": len(usable_primary),
+        "total_primary_signals": 2,
+        "reasoning": [
+            "برای ارزیابی پایداری زیرساخت، فقط دو شاخص BGP و پایش فعال در نتیجهٔ اصلی اثر داده شده‌اند.",
+            "تلسکوپ شبکه یک شاهد کمکی است؛ تغییر آن به‌تنهایی به معنی بهتر یا بدتر شدن اینترنت نیست.",
+            "نبود هشدار به معنی اثبات سلامت کامل اینترنت یا وصل بودن همهٔ کاربران نیست.",
+        ],
+        "scope_note": "این نتیجه در سطح ملی و بر اساس داده‌های عمومی IODA است؛ وضعیت شهر، اپراتور یا تجربهٔ یک کاربر را مشخص نمی‌کند.",
+    }
+
+
 def analyze_dashboard(
     sources: list[dict[str, Any]],
     observations: list[dict[str, Any]],
@@ -252,6 +532,14 @@ def analyze_dashboard(
         else:
             data_state = "usable"
 
+        trend_info = _signal_trend(rows, source.get("signal", ""))
+        plain_explanation = _plain_signal_explanation(
+            source.get("signal", ""), data_state, current_anomaly, change
+        )
+        signal_title, _ = PRIMARY_SIGNAL_GUIDANCE.get(
+            source.get("signal", ""), ("شاخص کمکی", "")
+        )
+
         signal_results.append({
             "source_id": source_id,
             "display_name": source.get("display_name") or source_id,
@@ -283,6 +571,9 @@ def analyze_dashboard(
                 "limited": "وضعیت داده نامشخص یا محدود",
             }[data_state],
             "event_count": len(source_events),
+            "plain_title": signal_title,
+            "plain_explanation": plain_explanation,
+            **trend_info,
         })
 
     # A single signal can raise an alert, but cross-signal corroboration is
@@ -399,4 +690,5 @@ def analyze_dashboard(
             "یک سیگنال منفرد یا کاهش یک شاخص، فیلترینگ، تحریم یا قطعی را اثبات نمی‌کند.",
         ],
     }
+    analysis["public_summary"] = _build_public_summary(signal_results)
     return analysis, events

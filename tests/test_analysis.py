@@ -107,3 +107,59 @@ def test_old_corroborated_events_do_not_keep_current_status_elevated():
     assert any(event["status"] == "suspected" for event in events)
     assert result["assessment"] == "no_anomaly_detected"
     assert result["anomalous_sources"] == 0
+
+
+
+def test_public_summary_does_not_claim_full_internet_health():
+    first = "ioda:IR:bgp"
+    second = "ioda:IR:ping-slash24"
+    rows = observations(first, [1000 + (index % 2) for index in range(36)])
+    rows += observations(second, [800 + (index % 2) for index in range(36)])
+    result, _ = analyze_dashboard(
+        [source(first), source(second)], rows, generated_at=NOW
+    )
+    public = result["public_summary"]
+    assert public["condition"] == "stable"
+    assert public["outage_state"] == "no_widespread_signal"
+    assert public["quality_state"] == "not_measured"
+    assert public["confidence"] == "medium"
+    assert "شهر" in public["scope_note"]
+
+
+def test_public_summary_detects_worsening_trend_without_confirming_outage():
+    first = "ioda:IR:bgp"
+    second = "ioda:IR:ping-slash24"
+    first_values = [1000] * 12 + [800] * 12
+    second_values = [900] * 12 + [700] * 12
+    rows = observations(first, first_values) + observations(second, second_values)
+    result, _ = analyze_dashboard(
+        [source(first), source(second)], rows, generated_at=NOW
+    )
+    public = result["public_summary"]
+    assert public["trend_state"] == "worsening"
+    assert public["condition"] == "possible_disruption"
+    assert public["outage_state"] == "multiple_indicators"
+    assert "تأیید" in public["summary"]
+
+
+def test_public_summary_does_not_call_a_single_signal_a_national_outage():
+    first = "ioda:IR:bgp"
+    values = [1000] * 30 + [500, 480, 470]
+    result, _ = analyze_dashboard(
+        [source(first)], observations(first, values), generated_at=NOW
+    )
+    public = result["public_summary"]
+    assert public["condition"] == "attention"
+    assert public["outage_state"] == "single_signal_drop"
+    assert public["confidence"] == "low"
+
+
+def test_one_hour_trend_labels_improvement_when_both_primary_signals_rise():
+    first = "ioda:IR:bgp"
+    second = "ioda:IR:ping-slash24"
+    rows = observations(first, [1000] * 12 + [1100] * 12)
+    rows += observations(second, [800] * 12 + [900] * 12)
+    result, _ = analyze_dashboard(
+        [source(first), source(second)], rows, generated_at=NOW
+    )
+    assert result["public_summary"]["trend_state"] == "improving"

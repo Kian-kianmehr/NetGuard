@@ -72,6 +72,54 @@ function Stat({ icon: Icon = Activity, label, value, hint, tone = "default" }) {
     <small>{label}</small><b>{value}</b>{hint && <em>{hint}</em>}
   </article>;
 }
+
+function PublicAssessment({ summary }) {
+  if (!summary) return null;
+  const tone = summary.tone || "neutral";
+  return <section className={"public-assessment " + tone}>
+    <div className="public-assessment-head">
+      <div>
+        <small>جمع‌بندی ساده · وضعیت فعلی اینترنت ایران</small>
+        <h2>{summary.title}</h2>
+        <p>{summary.summary}</p>
+      </div>
+      <span className="public-verdict">{summary.condition_label}</span>
+    </div>
+    <div className="public-verdict-grid">
+      <article>
+        <small>آیا نشانهٔ قطع گسترده هست؟</small>
+        <b>{summary.outage_label}</b>
+        <p>{summary.outage_detail}</p>
+      </article>
+      <article>
+        <small>وضعیت پایداری زیرساخت</small>
+        <b>{summary.stability_label}</b>
+        <p>این ارزیابی از دو شاخص اصلیِ مسیرهای اینترنت و پاسخ‌گویی شبکه‌ها استفاده می‌کند.</p>
+      </article>
+      <article>
+        <small>کیفیت اینترنت برای کاربران</small>
+        <b>{summary.quality_label}</b>
+        <p>{summary.quality_detail}</p>
+      </article>
+      <article>
+        <small>روند یک ساعت اخیر</small>
+        <b>{summary.trend_label}</b>
+        <p>{summary.trend_detail}</p>
+      </article>
+      <article>
+        <small>میزان اطمینان به این جمع‌بندی</small>
+        <b>{summary.confidence_label}</b>
+        <p>{summary.confidence_detail}</p>
+      </article>
+    </div>
+    <div className="public-explanation">
+      <b>این نتیجه از کجا آمده؟</b>
+      <ul>{(summary.reasoning || []).map((item) => <li key={item}>{item}</li>)}</ul>
+      <p>{summary.scope_note}</p>
+    </div>
+  </section>;
+}
+
 function Chart({ rows = [], compact = false }) {
   const valid = rows.filter((row) => row.quality === "valid" && Number.isFinite(Number(row.value)));
   if (!valid.length) return <Empty title="تاریخچهٔ معتبری موجود نیست" />;
@@ -190,7 +238,7 @@ export default function App() {
   }, {});
   const fresh = counts.fresh || 0;
   const attention = (counts.stale || 0) + (counts.degraded || 0);
-  const overall = !data.sources.length ? "نامشخص" : fresh === data.sources.length ? "دریافت داده فعال" : "داده نیازمند بررسی";
+  const overall = !data.sources.length ? "وضعیت دریافت داده نامشخص" : fresh === data.sources.length ? "داده‌های پایش به‌روز هستند" : "دریافت داده نیازمند بررسی";
   const current = NAV.find((item) => item[0] === page) || NAV[0];
   const filteredEvents = useMemo(() => events.filter((event) =>
     eventFilter === "all" || event.severity === eventFilter
@@ -198,12 +246,14 @@ export default function App() {
 
   let body;
   if (page === "overview") body = <>
+    <PublicAssessment summary={analysis.public_summary}/>
     <div className="hero">
-      <div><small>مرکز پایش ملی · ایران</small><h2>{overall}</h2>
+      <div><small>سلامت سامانهٔ پایش · ایران</small><h2>{overall}</h2>
         <p>{number(fresh, 0)} منبع تازه · {number(attention, 0)} منبع قدیمی یا خطادار</p>
         <div className="meta"><span>آخرین مشاهده: {time(data.sources.map((source) => source.last_observed_at).filter(Boolean).sort().at(-1))}</span><span>آخرین دریافت API: {time(data.generated_at)}</span></div>
       </div><div className="orb"><Globe2 size={40}/><b>IR</b></div>
     </div>
+    <div className="section-kicker">جزئیات فنی سامانهٔ پایش</div>
     <div className="metrics">
       {[[RadioTower, "منابع ثبت‌شده", data.sources.length], [CheckCircle2, "منابع تازه", fresh], [AlertTriangle, "قدیمی یا خطادار", attention], [Activity, "مشاهدات بازه", data.observations.length]].map(([Icon, label, value]) =>
         <Stat key={label} icon={Icon} label={label} value={number(value, 0)} hint="دادهٔ ثبت‌شده"/>
@@ -226,6 +276,7 @@ export default function App() {
     const tone = assessmentTone[analysis.assessment] || "neutral";
     body = <div className="stack">
       <div className="intro page-intro"><small><Sparkles size={14}/> موتور تحلیل هوشمند NetGuard</small><h2>تحلیل وضعیت شبکه</h2><p>ارزیابی توضیح‌پذیر از رفتار سیگنال‌های ملی، کفایت داده و رخدادهای شناسایی‌شده.</p></div>
+      <PublicAssessment summary={analysis.public_summary}/>
       <section className={"analysis-hero " + tone}>
         <div className="analysis-mark"><AssessmentIcon size={27}/></div>
         <div className="analysis-main"><small>ارزیابی فعلی</small><h2>{analysis.assessment_label || "دادهٔ کافی نیست"}</h2><p>{analysis.summary || "پس از دریافت دادهٔ معتبر، تحلیل نمایش داده می‌شود."}</p>
@@ -276,6 +327,7 @@ export default function App() {
       const trend = signal.change_percent;
       return <Panel key={signal.source_id} className="signal-panel" tag={signal.provider + " · " + signal.signal} title={signal.display_name} note={signal.description}>
         <div className="signal-card-head"><Badge value={signal.freshness_status}/><span>{signal.data_state_label}</span><a href={signal.source_url} target="_blank" rel="noreferrer">مستندات منبع ↗</a></div>
+        <div className="plain-explanation"><b>{signal.plain_title || "این شاخص چه می‌گوید؟"}</b><p>{signal.plain_explanation || signal.description}</p>{signal.trend_1h_label && <small>روند یک ساعت اخیر: {signal.trend_1h_label}{signal.trend_1h_change_percent == null ? "" : " · " + number(signal.trend_1h_change_percent) + "٪"}</small>}</div>
         <div className="signal-stats">
           <div><small>آخرین مقدار</small><b>{number(signal.latest_value)}</b><em>{signal.unit}</em></div>
           <div><small>خط مبنای آماری</small><b>{number(signal.baseline_value)}</b><em>میانهٔ پنجرهٔ قبلی</em></div>
