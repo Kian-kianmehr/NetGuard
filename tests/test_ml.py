@@ -55,6 +55,10 @@ def test_forecast_is_explicitly_not_a_calibrated_probability():
     assert forecast["horizon_minutes"] == 30
     assert forecast["calibrated_probability"] is None
     assert forecast["risk_index"] is not None
+    projections = forecast["components"][0]["horizon_projections"]
+    assert [item["minutes"] for item in projections] == [15, 30, 60]
+    assert projections[1]["projected_change_percent"] == forecast["components"][0]["projected_change_30m_percent"]
+    assert all(item["method"] == "linear_trend_extension" for item in projections)
 
 
 def test_cause_analysis_requires_correlated_primary_signals():
