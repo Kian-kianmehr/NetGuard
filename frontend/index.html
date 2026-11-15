@@ -7,6 +7,27 @@
 <meta name="description" content="نت‌گارد؛ پایش و تحلیل شواهد عمومی وضعیت اینترنت ایران"/>
 <title>نت‌گارد | پایش اینترنت ایران</title>
 <link rel="preconnect" href="https://fsglerccgxktvcpybuzk.supabase.co" crossorigin/>
+<style>
+html,body{min-height:100%;margin:0;background:#080f1d;color:#e8edf6;font-family:system-ui,"Segoe UI",Tahoma,Arial,sans-serif}
+.boot-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(ellipse at 50% 38%,#102b36 0%,#080f1d 62%);color:#dce8f3}
+.boot-mark{width:52px;height:52px;display:grid;place-items:center;border:1px solid #35606a;border-radius:16px;background:#133340;color:#70dfc2;font-weight:800;font-size:21px}
+.boot-screen strong{letter-spacing:2px;font-size:17px}
+.boot-screen p{margin:0;color:#93a8bb;font-size:13px}
+.boot-track{width:150px;height:3px;overflow:hidden;border-radius:5px;background:#1c3041}
+.boot-track span{display:block;width:38%;height:100%;border-radius:5px;background:#70dfc2;animation:boot-progress 1.4s ease-in-out infinite alternate}
+@keyframes boot-progress{from{transform:translateX(0)}to{transform:translateX(165px)}}
+@media(prefers-reduced-motion:reduce){.boot-track span{animation:none;width:100%}}
+</style>
 </head>
-<body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body>
+<body>
+<div id="root">
+  <div class="boot-screen" role="status" aria-live="polite">
+    <div class="boot-mark">NG</div>
+    <strong>NETGUARD</strong>
+    <p>در حال آماده‌سازی مرکز پایش...</p>
+    <div class="boot-track"><span></span></div>
+  </div>
+</div>
+<script type="module" src="/src/main.jsx"></script>
+</body>
 </html>
