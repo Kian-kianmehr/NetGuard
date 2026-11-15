@@ -541,6 +541,39 @@ def _fetch_google_cloud_status() -> dict[str, Any]:
         }
 
 
+def _build_iran_datacenters_snapshot() -> dict[str, Any]:
+    project_url, key = _supabase_config()
+    try:
+        with httpx.Client(timeout=httpx.Timeout(8.0, connect=4.0)) as client:
+            sites = _read_view(
+                client, project_url, key, "iran_datacenters",
+                {"select": "site_id,name,operator,city,province,asset_type,evidence_level,source_name,source_url,monitoring_status,status_label,last_checked_at,notes",
+                 "order": "city.asc,name.asc", "limit": "500"},
+            )
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.warning("Iran datacenter inventory read failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="فهرست مراکز دادهٔ ایران فعلاً در دسترس نیست.") from None
+    for site in sites:
+        site["live_status_available"] = False
+        site["status_label"] = site.get("status_label") or "پایش مستقیم فعال نیست"
+    return {
+        "sites": sites,
+        "total_sites": len(sites),
+        "directly_monitored": sum(1 for site in sites if site.get("live_status_available")),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "scope_note": (
+            "این فهرست، موجودی اولیهٔ مراکز و مکان‌های میزبانیِ مستندشده یا ثبت‌شده در دایرکتوری‌هاست. "
+            "در حال حاضر برای این سایت‌ها نقطهٔ سنجش مستقل داخل ایران در NetGuard نداریم؛ بنابراین "
+            "وضعیت عملیاتی آن‌ها نامشخص است و از روی سالم بودن وب‌سایت اپراتور نتیجه‌گیری نمی‌شود."
+        ),
+    }
+
+
+@app.get("/api/iran/datacenters")
+def iran_datacenters() -> dict[str, Any]:
+    return _read_snapshot("iran_datacenters", stale_after_seconds=1800)
+
+
 @app.get("/api/providers/status")
 def providers_status() -> dict[str, Any]:
     return _read_snapshot("providers_status", stale_after_seconds=900)
@@ -574,6 +607,13 @@ def collect_snapshots(x_netguard_token: str = Header(default="")) -> dict[str, A
             except Exception as exc:
                 logger.exception("Snapshot build failed for censorship")
                 failures.append({"dataset": "censorship", "error": type(exc).__name__})
+            try:
+                payload = _build_iran_datacenters_snapshot()
+                _save_snapshot(client, project_url, key, x_netguard_token, "iran_datacenters", payload, len(payload.get("sites", [])))
+                completed.append("iran_datacenters")
+            except Exception as exc:
+                logger.exception("Snapshot build failed for Iranian data centers")
+                failures.append({"dataset": "iran_datacenters", "error": type(exc).__name__})
     except httpx.HTTPError as exc:
         logger.exception("Snapshot persistence failed")
         raise HTTPException(status_code=502, detail="snapshot_persistence_failed") from None
