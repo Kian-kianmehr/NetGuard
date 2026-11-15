@@ -79,6 +79,8 @@ function normalizeDomain(raw: unknown): string | null {
 
 async function fetchMeasurements(classification: "confirmed" | "anomaly", since: string, until: string) {
   const collected: Record<string, unknown>[] = [];
+  let fetchError: string | null = null;
+
   for (let page = 0; page < MAX_PAGES; page++) {
     const params = new URLSearchParams({
       probe_cc: COUNTRY,
@@ -91,12 +93,29 @@ async function fetchMeasurements(classification: "confirmed" | "anomaly", since:
       order_by: "measurement_start_time",
       order: "desc",
     });
-    const response = await fetch(`${OONI_API_URL}?${params.toString()}`, {
-      headers: { Accept: "application/json", "User-Agent": "NetGuard/1.0 (public Iran internet monitoring)" },
-      signal: AbortSignal.timeout(25000),
-    });
-    if (!response.ok) throw new Error(`ooni_${classification}_http_${response.status}`);
-    const payload = await response.json();
+
+    let response: Response;
+    try {
+      response = await fetch(`${OONI_API_URL}?${params.toString()}`, {
+        headers: { Accept: "application/json", "User-Agent": "NetGuard/1.0 (public Iran internet monitoring)" },
+        signal: AbortSignal.timeout(25000),
+      });
+    } catch (error) {
+      fetchError = error instanceof Error ? error.message : "ooni_request_error";
+      break;
+    }
+    if (!response.ok) {
+      fetchError = `ooni_${classification}_http_${response.status}`;
+      break;
+    }
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = await response.json();
+    } catch {
+      fetchError = "ooni_invalid_json";
+      break;
+    }
     const results = payload && Array.isArray(payload.results) ? payload.results : [];
     for (const raw of results) {
       if (!raw || typeof raw !== "object") continue;
@@ -117,14 +136,22 @@ async function fetchMeasurements(classification: "confirmed" | "anomaly", since:
       const asnMatch = typeof rawAsn === "string" ? rawAsn.trim().match(/^(?:AS)?(\d+)$/i) : null;
       const probeAsnNumber = typeof rawAsn === "number" ? rawAsn : Number(asnMatch?.[1]);
       const probeAsn = Number.isSafeInteger(probeAsnNumber) && probeAsnNumber > 0 ? probeAsnNumber : null;
+
+      // Keep the legacy identity stable so historical rows can be updated with the corrected ASN.
+      const legacyAsnNumber = Number(rawAsn);
+      const identityAsn = Number.isSafeInteger(legacyAsnNumber) && legacyAsnNumber > 0
+        ? legacyAsnNumber
+        : null;
       const categoryCode = typeof item.category_code === "string" ? item.category_code : null;
       const testName = typeof item.test_name === "string" ? item.test_name : "web_connectivity";
       const identity = [
         reportId ?? "",
         input,
         measuredAt.toISOString(),
+        identityAsn ?? "",
         classification,
       ].join("|");
+
       collected.push({
         measurement_id: await sha256(identity),
         domain,
@@ -139,7 +166,8 @@ async function fetchMeasurements(classification: "confirmed" | "anomaly", since:
     }
     if (results.length < PAGE_SIZE) break;
   }
-  return collected;
+
+  return { rows: collected, error: fetchError };
 }
 
 async function saveRows(key: string, rows: Record<string, unknown>[]) {
@@ -187,19 +215,20 @@ Deno.serve(async (request: Request) => {
 
     const until = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const since = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const outcomes = await Promise.allSettled([
+    const outcomes = await Promise.all([
       fetchMeasurements("confirmed", since, until),
       fetchMeasurements("anomaly", since, until),
     ]);
-    const errors = outcomes.filter((item) => item.status === "rejected");
-    const rows = outcomes.flatMap((item) => item.status === "fulfilled" ? item.value : []);
+    const rows = outcomes.flatMap((item) => item.rows);
+    const errors = outcomes.map((item) => item.error).filter((item): item is string => Boolean(item));
     if (rows.length) await saveRows(key, rows);
 
-    const status = errors.length === 2 ? "error" : errors.length === 1 ? "partial" : "success";
-    const errorCode = errors.length
-      ? errors.map((item) => item.status === "rejected" && item.reason instanceof Error
-        ? item.reason.message.split("_http_")[0] : "ooni_request_error").join(",")
-      : null;
+    const status = errors.length === 2 && rows.length === 0
+      ? "error"
+      : errors.length > 0
+      ? "partial"
+      : "success";
+    const errorCode = errors.length ? errors.join(",").slice(0, 500) : null;
     const finishedAt = new Date();
     await dbRequest(key, "censorship_sync_runs", "POST", {
       id: crypto.randomUUID(),
