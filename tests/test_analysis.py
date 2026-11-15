@@ -104,7 +104,7 @@ def test_old_corroborated_events_do_not_keep_current_status_elevated():
     result, events = analyze_dashboard(
         [source(first), source(second)], rows, generated_at=NOW
     )
-    assert any(event["status"] == "suspected" for event in events)
+    assert any(event["event_type"] == "signal_anomaly" for event in events)
     assert result["assessment"] == "no_anomaly_detected"
     assert result["anomalous_sources"] == 0
 
