@@ -3,6 +3,7 @@ const OONI_API_URL = "https://api.ooni.io/api/v1/measurements";
 const COUNTRY = "IR";
 const LOOKBACK_DAYS = 90;
 const PAGE_SIZE = 100;
+const TEST_LIST_BATCH_SIZE = 250;
 const MAX_PAGES = 5;
 const TEST_LIST_URL = "https://raw.githubusercontent.com/citizenlab/test-lists/master/lists/ir.csv";
 const EXCLUDED_TEST_CATEGORIES = new Set(["ALDR", "GMB", "PORN", "DATE", "XED"]);
@@ -47,7 +48,10 @@ async function dbRequest(
     headers: { ...dbHeaders(key), Prefer: prefer },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!response.ok) throw new Error(`database_${table}_http_${response.status}`);
+  if (!response.ok) {
+    const detail = (await response.text()).replace(/[\\r\\n]+/g, " ").slice(0, 240);
+    throw new Error(`database_${table}_http_${response.status}_${detail}`);
+  }
   return response;
 }
 
@@ -245,12 +249,12 @@ async function fetchTestListDomains() {
 }
 
 async function saveTestListDomains(key: string, rows: Record<string, unknown>[]) {
-  for (let offset = 0; offset < rows.length; offset += PAGE_SIZE) {
+  for (let offset = 0; offset < rows.length; offset += TEST_LIST_BATCH_SIZE) {
     await dbRequest(
       key,
       "censorship_test_domains",
       "POST",
-      rows.slice(offset, offset + PAGE_SIZE),
+      rows.slice(offset, offset + TEST_LIST_BATCH_SIZE),
       "?on_conflict=domain",
       "resolution=merge-duplicates,return=minimal",
     );
@@ -307,13 +311,31 @@ Deno.serve(async (request: Request) => {
       fetchMeasurements("anomaly", since, until),
       fetchTestListDomains(),
     ]);
-    const rows = [...confirmedResult.rows, ...anomalyResult.rows];
-    const errors = [confirmedResult.error, anomalyResult.error, testListResult.error]
-      .filter((item): item is string => Boolean(item));
-    if (rows.length) await saveRows(key, rows);
-    if (testListResult.rows.length) await saveTestListDomains(key, testListResult.rows);
-
-    const status = errors.length === 3 && rows.length === 0 && testListResult.rows.length === 0
+    const collected = [...confirmedResult.rows, ...anomalyResult.rows];
+    const rows = [...new Map(collected.map((row) => [String(row.measurement_id), row])).values()];
+    let measurementSaveError: string | null = null;
+    let testListSaveError: string | null = testListResult.error;
+    let testListSaved = 0;
+    if (testListResult.rows.length) {
+      try {
+        await saveTestListDomains(key, testListResult.rows);
+        testListSaved = testListResult.rows.length;
+      } catch (error) {
+        testListSaveError = error instanceof Error ? error.message.slice(0, 240) : "database_censorship_test_domains";
+      }
+    }
+    if (rows.length) {
+      try {
+        await saveRows(key, rows);
+      } catch (error) {
+        measurementSaveError = error instanceof Error ? error.message.slice(0, 240) : "database_censorship_measurements";
+      }
+    }
+    const errors = [
+      confirmedResult.error, anomalyResult.error, testListSaveError, measurementSaveError,
+    ].filter((item): item is string => Boolean(item));
+    const successfulWork = testListSaved > 0 || (rows.length > 0 && !measurementSaveError);
+    const status = errors.length === 4 && !successfulWork
       ? "error"
       : errors.length > 0
       ? "partial"
@@ -325,16 +347,18 @@ Deno.serve(async (request: Request) => {
       finished_at: finishedAt.toISOString(),
       status,
       records_received: rows.length,
-      error_code: [confirmedResult.error, anomalyResult.error].filter(Boolean).join(",").slice(0, 500) || null,
-      test_list_records_received: testListResult.rows.length,
-      test_list_error_code: testListResult.error,
+      error_code: [
+        confirmedResult.error, anomalyResult.error, measurementSaveError,
+      ].filter(Boolean).join(",").slice(0, 500) || null,
+      test_list_records_received: testListSaved,
+      test_list_error_code: testListSaveError,
     });
 
     return Response.json({
       status,
       records_received: rows.length,
-      test_list_records_received: testListResult.rows.length,
-      test_list_error_code: testListResult.error,
+      test_list_records_received: testListSaved,
+      test_list_error_code: testListSaveError,
       since,
       until,
       generated_at: finishedAt.toISOString(),
@@ -342,7 +366,7 @@ Deno.serve(async (request: Request) => {
   } catch (error) {
     const finishedAt = new Date();
     const errorCode = error instanceof Error
-      ? error.message.split("_http_")[0]
+      ? error.message.replace(/[\\r\\n]+/g, " ").slice(0, 240)
       : "collector_error";
     try {
       const key = getServiceKey();
