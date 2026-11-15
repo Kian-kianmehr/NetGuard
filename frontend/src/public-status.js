@@ -63,3 +63,10 @@ export function deriveLimitedNationalVerdict({ bgp, ping } = {}) {
     summary: "دادهٔ تازه و قابل استفاده از شاخص‌های اصلی برای اعلام پایداری یا اختلال گسترده کافی نیست. نبود داده به معنی سالم بودن شبکه نیست.",
   };
 }
+
+export function deriveDisplayNationalSummary(summary, signals = []) {
+  if (!summary || summary.condition !== "unknown") return summary;
+  const bgp = signals.find((item) => item.signal === "bgp");
+  const ping = signals.find((item) => item.signal === "ping-slash24");
+  return { ...summary, ...deriveLimitedNationalVerdict({ bgp, ping }) };
+}
