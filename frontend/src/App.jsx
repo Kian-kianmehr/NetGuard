@@ -383,6 +383,14 @@ export default function App() {
         <Stat key={label} icon={Icon} label={label} value={number(value, 0)} hint="دادهٔ ثبت‌شده"/>
       )}
     </div>
+    <Panel tag="کیفیت تاریخچه" title="پوشش واقعی بازهٔ انتخاب‌شده" note={dataQuality.interpretation || "پوشش تاریخچه، تازگی آخرین مشاهده و پیوستگی نمونه‌ها جداگانه محاسبه می‌شوند."}>
+      <div className="overview-quality-grid">
+        <div><small>پوشش نمونه‌ها در بازه</small><b>{number(dataQuality.window_coverage_percent, 1)}٪</b><QualityBar value={dataQuality.window_coverage_percent}/></div>
+        <div><small>طول زمانی تاریخچه</small><b>{number(dataQuality.observed_span_percent, 1)}٪</b><QualityBar value={dataQuality.observed_span_percent}/></div>
+        <div><small>نمونهٔ معتبر</small><b>{number(dataQuality.valid_observations, 0)} / {number(dataQuality.expected_observations, 0)}</b><span>{number(dataQuality.invalid_observations, 0)} نمونهٔ نامعتبر یا حذف‌شده</span></div>
+      </div>
+      <button className="text-action" onClick={() => setPage("quality")}>بررسی کیفیت و پیوستگی داده‌ها <ArrowDownRight size={15}/></button>
+    </Panel>
     <div className="columns">
       <Panel tag="تحلیل وضعیت" title={analysis.assessment_label || "منتظر داده"} note={analysis.summary || "تحلیل پس از دریافت تاریخچهٔ کافی نمایش داده می‌شود."}>
         <div className="inline-meta"><Badge value={analysis.assessment} map={Object.fromEntries(Object.entries(assessmentTone).map(([key, tone]) => [key, [analysis.assessment_label || key, tone]]))}/><span>پوشش داده: {number(analysis.data_coverage_percent, 0)}٪</span></div>
@@ -395,6 +403,41 @@ export default function App() {
     </div>
     <Panel tag="سلامت ورودی داده" title="وضعیت منابع"><SourceTable rows={data.sources}/></Panel>
   </>;
+  else if (page === "quality") {
+    const quality = analysis.data_quality || {};
+    const sourceQuality = quality.source_details || [];
+    body = <div className="stack">
+      <div className="intro page-intro">
+        <small><Database size={14}/> کیفیت، پوشش و پیوستگی داده</small>
+        <h2>آیا داده برای ارزیابی کافی است؟</h2>
+        <p>تعداد نمونه، طول واقعی تاریخچه، تازگی آخرین مشاهده و فاصلهٔ بین اندازه‌گیری‌ها جداگانه بررسی می‌شوند.</p>
+      </div>
+      <div className="toolbar">
+        <div className="range-tabs" aria-label="بازهٔ بررسی کیفیت">
+          {[[24, "۲۴ ساعت"], [72, "۳ روز"], [168, "۷ روز"]].map(([hours, label]) =>
+            <button key={hours} className={windowHours === hours ? "active" : ""} onClick={() => setWindowHours(hours)}>{label}</button>
+          )}
+        </div>
+        <span className="toolbar-note">پنجره: {quality.window_start ? time(quality.window_start) : "—"} تا {quality.window_end ? time(quality.window_end) : "—"}</span>
+      </div>
+      <div className="metrics">
+        <Stat icon={Gauge} label="پوشش نمونه در بازه" value={number(quality.window_coverage_percent, 1) + "٪"} hint={quality.coverage_label || "بر اساس cadence هر منبع"}/>
+        <Stat icon={Clock3} label="طول تاریخچهٔ موجود" value={number(quality.observed_span_percent, 1) + "٪"} hint="از کل بازهٔ انتخابی"/>
+        <Stat icon={Database} label="مشاهدات معتبر" value={number(quality.valid_observations, 0)} hint={"از " + number(quality.expected_observations, 0) + " نمونهٔ مورد انتظار"}/>
+        <Stat icon={AlertTriangle} label="منابع با شکاف غیرمنتظره" value={number(quality.sources_with_gaps, 0)} hint={"از " + number(quality.sources_total, 0) + " منبع"}/>
+      </div>
+      <div className="notice"><Info size={17}/><div>
+        <b>چطور این اعداد را بخوانیم؟</b>
+        <p>«پوشش نمونه» سهم اندازه‌گیری‌های معتبر از تعداد مورد انتظار با توجه به فاصلهٔ ثبت‌شدهٔ هر منبع است. «طول تاریخچه» نشان می‌دهد اندازه‌گیری‌ها چه بخش زمانی از بازه را پوشش می‌دهند. تازگی آخرین نمونه و شکاف بین نمونه‌ها نیز مستقل‌اند؛ پوشش پایین در بازهٔ ۷ روزه لزوماً به معنی بد بودن داده‌های چند ساعت اخیر نیست.</p>
+      </div></div>
+      <Panel tag="بررسی مستقل هر منبع" title="کیفیت داده به تفکیک شاخص" note="BGP و Merit معمولاً هر پنج دقیقه و Ping فعال حدود هر ده دقیقه نمونه‌برداری می‌شود؛ cadence هر منبع جداگانه لحاظ شده است.">
+        {sourceQuality.length ? <div className="source-quality-grid">{sourceQuality.map((item) => <SourceQualityCard key={item.source_id} item={item}/>)}</div> : <Empty title="هنوز جزئیات کیفیت دریافت نشده" note="پس از دریافت پاسخ جدید API، شاخص‌های کیفیت در این صفحه نمایش داده می‌شوند."/>}
+      </Panel>
+      <Panel tag="سلامت عملیات" title="وضعیت آخرین دریافت‌ها">
+        <SourceTable rows={data.sources}/>
+      </Panel>
+    </div>;
+  }
   else if (page === "analysis") {
     const AssessmentIcon = assessmentIcon[analysis.assessment] || CircleHelp;
     const tone = assessmentTone[analysis.assessment] || "neutral";
