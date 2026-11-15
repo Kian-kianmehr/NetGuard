@@ -36,10 +36,14 @@ def observations(source_id, values, step=300):
 
 
 def test_stable_series_is_not_reported_as_an_anomaly():
-    rows = observations("ioda:IR:bgp", [1000 + (index % 3) for index in range(36)])
-    result, events = analyze_dashboard([source()], rows, generated_at=NOW)
+    first = "ioda:IR:bgp"
+    second = "ioda:IR:ping-slash24"
+    values = [1000 + (index % 3) for index in range(36)]
+    rows = observations(first, values) + observations(second, [800 + (index % 2) for index in range(36)])
+    result, events = analyze_dashboard([source(first), source(second)], rows, generated_at=NOW)
     assert result["assessment"] == "no_anomaly_detected"
-    assert result["signals"][0]["data_state"] == "usable"
+    assert result["usable_sources"] == 2
+    assert all(signal["data_state"] == "usable" for signal in result["signals"])
     assert events == []
 
 
