@@ -135,6 +135,27 @@ def dashboard(
     }
 
 
+PUBLIC_INTEREST_DOMAINS = frozenset({
+    "facebook.com",
+    "youtube.com",
+    "instagram.com",
+    "twitter.com",
+    "x.com",
+    "discord.com",
+    "tiktok.com",
+    "vk.com",
+    "clubhouse.com",
+    "reddit.com",
+    "telegram.org",
+    "t.me",
+    "whatsapp.com",
+    "linkedin.com",
+    "pinterest.com",
+    "medium.com",
+    "9gag.com",
+})
+
+
 @app.get("/api/censorship")
 def censorship() -> dict[str, Any]:
     """Return cached OONI measurements collected from probes inside Iran."""
@@ -171,6 +192,11 @@ def censorship() -> dict[str, Any]:
             detail="Censorship monitoring data is temporarily unavailable.",
         ) from None
 
+    total_domains_observed = len(domains)
+    domains = [
+        item for item in domains
+        if item.get("domain") in PUBLIC_INTEREST_DOMAINS
+    ]
     for item in domains:
         domain = item.get("domain")
         if isinstance(domain, str) and domain:
@@ -181,6 +207,11 @@ def censorship() -> dict[str, Any]:
 
     return {
         "domains": domains,
+        "total_domains_observed": total_domains_observed,
+        "scope_note": (
+            "این نمای عمومی سرویس‌های عمومی منتخب را نشان می‌دهد؛ "
+            "تعداد کل دامنه‌های مشاهده‌شده فقط به‌صورت آماری گزارش می‌شود."
+        ),
         "sync": runs[0] if runs else None,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "lookback_days": 90,
