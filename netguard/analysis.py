@@ -195,6 +195,7 @@ def _source_quality(
         "freshness_status": source.get("freshness_status") or "unknown",
         "cadence_status": (
             "stale" if source.get("freshness_status") == "stale"
+            else "degraded" if source.get("freshness_status") == "degraded"
             else "delayed" if latest_age is not None and latest_age > interval * 3
             else "fresh" if source.get("freshness_status") == "fresh"
             else "unknown"
