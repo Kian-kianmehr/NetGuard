@@ -7,8 +7,10 @@ from random import Random
 from statistics import median
 from typing import Any
 
+from netguard.deep_learning import forecast_series
 
-MODEL_NAME = "Hybrid Isolation Forest"
+
+MODEL_NAME = "Neural Temporal MLP + Isolation Forest Ensemble"
 FEATURE_NAMES = ("سطح سیگنال", "تغییر نرمال‌شده در ساعت", "فاصله از خط مبنا")
 MIN_RAW_POINTS = 45
 MIN_TRAINING_POINTS = 32
@@ -332,31 +334,59 @@ def _forecast_component(
         return {
             "signal": signal,
             "available": False,
-            "reason": "خط مبنای نزدیک صفر اجازهٔ محاسبهٔ درصد تغییر نمی‌دهد",
+            "reason": "خط مبنای نزدیک صفر اجازهٔ محاسبهٔ درصد تغییر را نمی‌دهد",
             "sample_count": len(rows),
         }
-    change = (recent_median - previous_median) / abs(previous_median) * 100.0
-    change = max(-80.0, min(80.0, change))
-    projected = max(0.0, latest * (1.0 + change / 100.0))
+
+    neural = forecast_series(
+        [value for _, value in rows],
+        [timestamp.timestamp() for timestamp, _ in rows],
+        interval,
+    )
+    if not neural.get("available"):
+        return {
+            "signal": signal,
+            "available": False,
+            "reason": neural.get("reason") or "مدل یادگیری عمیق هنوز آماده نیست",
+            "sample_count": len(rows),
+            "previous_window_samples": len(previous),
+            "recent_window_samples": len(recent),
+            "observation_age_seconds": round(age_seconds),
+            "expected_interval_seconds": interval,
+            "neural_model": neural,
+        }
+
     horizon_projections = []
-    for minutes in (15, 30, 60):
-        multiplier = minutes / FORECAST_WINDOW_MINUTES
-        horizon_change = max(-80.0, min(80.0, change * multiplier))
-        horizon_value = max(0.0, latest * (1.0 + horizon_change / 100.0))
+    for point in neural.get("projections", []):
+        projected_value = float(point["projected_value"])
+        projected_change = (
+            (projected_value - latest) / max(abs(latest), 1e-9) * 100.0
+        )
         horizon_projections.append({
-            "minutes": minutes,
-            "projected_value": round(horizon_value, 2),
-            "projected_change_percent": round(horizon_change, 1),
-            "method": "linear_trend_extension",
+            **point,
+            "projected_change_percent": round(projected_change, 2),
         })
+    projection_30 = next(
+        (item for item in horizon_projections if item["minutes"] == 30),
+        horizon_projections[0] if horizon_projections else None,
+    )
+    if projection_30 is None:
+        return {
+            "signal": signal,
+            "available": False,
+            "reason": "مدل برای افق درخواستی خروجی تولید نکرد",
+            "sample_count": len(rows),
+            "neural_model": neural,
+        }
+    change = projection_30["projected_change_percent"]
     return {
         "signal": signal,
         "available": True,
         "current_value": round(latest, 2),
         "previous_window_median": round(previous_median, 2),
         "recent_window_median": round(recent_median, 2),
-        "projected_value_30m": round(projected, 2),
-        "projected_change_30m_percent": round(change, 1),
+        "projected_value_30m": round(float(projection_30["projected_value"]), 2),
+        "projected_change_30m_percent": round(change, 2),
         "horizon_projections": horizon_projections,
         "anomaly_score": model.get("score"),
         "sample_count": len(rows),
@@ -364,6 +394,12 @@ def _forecast_component(
         "recent_window_samples": len(recent),
         "observation_age_seconds": round(age_seconds),
         "expected_interval_seconds": interval,
+        "forecast_model": neural.get("model_name"),
+        "forecast_architecture": neural.get("architecture"),
+        "validation_mae_percent": neural.get("validation_mae_percent"),
+        "baseline_mae_percent": neural.get("baseline_mae_percent"),
+        "model_skill_percent": neural.get("model_skill_percent"),
+        "neural_model": neural,
     }
 
 
@@ -568,7 +604,7 @@ def analyze_intelligence(
     )
     return {
         "model_name": MODEL_NAME,
-        "model_family": "unsupervised_anomaly_detection",
+        "model_family": "unsupervised_anomaly_detection_and_deep_learning_forecasting",
         "model_status": "ready" if trained else "collecting_history",
         "model_status_label": (
             f"مدل آمادهٔ امتیازدهی برای {len(trained)} شاخص"
@@ -582,6 +618,17 @@ def analyze_intelligence(
         "minimum_raw_points": MIN_RAW_POINTS,
         "feature_window_minutes": FEATURE_WINDOW_MINUTES,
         "signals": models,
+        "deep_learning": {
+            "model_name": "Two-hidden-layer temporal MLP",
+            "architecture": "12-24-12-1",
+            "sequence_length": 12,
+            "hidden_layers": [24, 12],
+            "minimum_training_sequences": 64,
+            "validation_split_percent": 20,
+            "available_signals": sum(1 for item in components if item.get("available")),
+            "trained_signals": sum(1 for item in components if item.get("neural_model", {}).get("available")),
+            "training_method": "chronological_holdout_with_persistence_baseline",
+        },
         "cause_analysis": causes,
         "recovery_estimate": {
             "available": False,
@@ -604,9 +651,9 @@ def analyze_intelligence(
             "note": note,
         },
         "method_note": (
-            "ترکیب Isolation Forest بدون‌نظارت و انحراف مقاوم؛ تغییر هر نمونه بر حسب زمان واقعی "
-            "به نرخ ساعتی تبدیل می‌شود و فاصله از خط مبنا در پنجرهٔ ۶۰ دقیقه‌ای سنجیده می‌شود. "
-            "نمایش افق‌های ۱۵، ۳۰ و ۶۰ دقیقه‌ای، امتداد خطی آزمایشی روند دو پنجرهٔ ۳۰ دقیقه‌ای است؛ "
+            "تشخیص ناهنجاری با Isolation Forest و انحراف مقاوم؛ پیش‌بینی کوتاه‌مدت با شبکهٔ عصبی MLP دارای دو لایهٔ پنهان و توالی ورودی ۱۲ نمونه‌ای. "
+            "مدل با ۸۰٪ توالی‌های قدیمی‌تر آموزش می‌بیند و با ۲۰٪ انتهاییِ کنارگذاشته‌شده ارزیابی می‌شود. "
+            "پیش‌بینی ۱۵، ۳۰ و ۶۰ دقیقه‌ای به‌صورت بازگشتی از خروجی شبکهٔ عصبی ساخته می‌شود؛ "
             "این برآوردها احتمال آماری کالیبره‌شده نیستند."
         ),
     }

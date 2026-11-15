@@ -927,9 +927,9 @@ export default function App() {
         <Stat icon={Gauge} label="امتیاز نشانه‌های افت" value={forecast.risk_index == null ? "—" : <span dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</span>} hint="امتیاز آزمایشی؛ نه درصد احتمال اختلال"/>
         <Stat icon={Activity} label="شاخص‌های آمادهٔ امتیازدهی" value={number(intelligence.trained_signals, 0)} hint={"از " + number(modelSignals.length, 0) + " شاخص؛ دادهٔ تازه و تاریخچهٔ کافی لازم است"}/>
         <Stat icon={AlertTriangle} label="رفتارهای غیرمعمول" value={number(modelSignals.filter((item) => item.is_anomaly).length, 0)} hint="نیازمند بررسی چندمنبعی"/>
-        <Stat icon={Clock3} label="افق‌های برآورد" value="۱۵، ۳۰، ۶۰ دقیقه" hint="امتداد آزمایشی روند"/>
+        <Stat icon={Clock3} label="افق‌های برآورد" value="۱۵، ۳۰، ۶۰ دقیقه" hint="پیش‌بینی بازگشتی شبکهٔ عصبی"/>
       </div>
-      <Panel tag="پیش‌بینی آزمایشی" title="برآورد روند کوتاه‌مدت" note="امتیاز ملی فقط با دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی محاسبه می‌شود.">
+      <Panel tag="پیش‌بینی مبتنی بر یادگیری عمیق" title="پیش‌بینی عصبی روند کوتاه‌مدت" note="امتیاز ملی فقط با دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی محاسبه می‌شود.">
         {forecast.available ? <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>امتیاز آزمایشی نشانه‌های افت در مقیاس ۰ تا ۱۰۰</small><strong dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</strong><span>{forecast.risk_label}</span></div><p>این امتیاز احتمال آماری یا درصد احتمال خاموشی نیست؛ فقط یک شاخص ترکیبی برای اولویت‌بندی بررسی است.</p></div> : <div className="notice"><Info size={17}/><div><b>امتیاز ترکیبی ملی فعلاً قابل انتشار نیست</b><p>{forecast.note || "برای جمع‌بندی هم‌زمان، دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی لازم است."}</p></div></div>}
         {(forecast.components || []).some((item) => item.available) ? <>
           <div className="forecast-grid">{forecast.components.filter((item) => item.available).map((item) => <article key={item.signal}>
@@ -938,12 +938,12 @@ export default function App() {
               <small>{number(point.minutes, 0)} دقیقهٔ آینده</small>
               <b>{number(point.projected_value, 1)}</b>
               <span>مقدار برآوردی شاخص</span>
-              <em>تغییر نسبت به مقدار فعلی: {formatIndexDelta(Number(point.projected_value) - Number(item.current_value))}</em>
+              <em>تغییر نسبت به مقدار فعلی: {formatIndexDelta(Number(point.projected_value) - Number(item.current_value))}</em>{point.lower_90 != null && point.upper_90 != null && <small>بازهٔ ارزیابی ۹۰٪: {number(point.lower_90, 1)} تا {number(point.upper_90, 1)}</small>}
             </div>)}</div>
             <span>آخرین مشاهده: {number((item.observation_age_seconds || 0) / 60, 0)} دقیقه قبل · مقدار فعلی {number(item.current_value)}</span>
-            <span>تغییر برآوردی در ۳۰ دقیقه: {formatIndexDelta(Number(item.projected_value_30m) - Number(item.current_value))} · امتیاز ناهنجاری: {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span>
+            <span>تغییر برآوردی در ۳۰ دقیقه: {formatIndexDelta(Number(item.projected_value_30m) - Number(item.current_value))} · امتیاز ناهنجاری: {item.anomaly_score == null ? "—" : number(item.anomaly_score, 2)}</span><span>مدل: {item.forecast_model || "در حال آماده‌سازی"} · معماری: {item.forecast_architecture || "—"} · خطای اعتبارسنجی: {item.validation_mae_percent == null ? "—" : number(item.validation_mae_percent, 2) + "٪"}</span>
           </article>)}</div>
-          <p className="forecast-method-note">این اعداد مقدار شاخص را بر پایهٔ امتداد خطی روند دو پنجرهٔ ۳۰ دقیقه‌ای نشان می‌دهند؛ آن‌ها درصد احتمال اختلال یا پیش‌بینی قطعی نیستند. وقتی فقط یک شاخص آماده باشد، نتیجه صرفاً مستقل و محدود به همان شاخص است.</p>
+          <p className="forecast-method-note">این برآوردها از شبکهٔ عصبی MLP دو لایهٔ پنهان و توالی ۱۲ مشاهده ساخته می‌شوند. مدل با ۸۰٪ دادهٔ قدیمی‌تر آموزش و با ۲۰٪ انتهایی ارزیابی می‌شود؛ بازهٔ ۹۰٪ از خطاهای اعتبارسنجی به دست می‌آید و احتمال قطعی اختلال نیست. اگر مدل از خط مبنای ساده بهتر یا هم‌سطح نباشد، پیش‌بینی منتشر نمی‌شود. وقتی فقط یک شاخص آماده باشد، خروجی صرفاً مستقل و محدود به همان شاخص است.</p>
         </> : <Empty title="هنوز برآورد مستقلی آماده نیست" note="برای هر شاخص باید دادهٔ تازه و نمونهٔ کافی در دو پنجرهٔ ۳۰ دقیقه‌ای موجود باشد."/>}
       </Panel>
       <Panel tag="تحلیل شواهد" title="فرضیه‌های علت احتمالی" note={cause.scope_note || "این تحلیل علت قطعی اختلال را تعیین نمی‌کند."}>
@@ -975,7 +975,7 @@ export default function App() {
           <article><small>حداقل ویژگی آموزشی</small><b>۳۲ نمونه</b></article>
           <article><small>آستانهٔ ناهنجاری</small><b>۰٫۶۵ از ۱</b></article>
         </div>
-        <p className="ml-feature-note">ویژگی‌های مدل: لگاریتم سطح سیگنال، نرخ تغییر نرمال‌شده با فاصلهٔ زمانی واقعی و فاصله از خط مبنای مقاوم یک‌ساعته (MAD). امتیاز نهایی هر شاخص ترکیبی از Isolation Forest و انحراف مقاوم است.</p>
+        <p className="ml-feature-note">لایهٔ تشخیص ناهنجاری از Isolation Forest و انحراف مقاوم روی ویژگی‌های زمانی استفاده می‌کند. لایهٔ پیش‌بینی، یک شبکهٔ عصبی MLP با دو لایهٔ پنهان است که ۱۲ مشاهدهٔ متوالی را می‌گیرد و مقدار بعدی را به‌صورت بازگشتی پیش‌بینی می‌کند. ارزیابی با جداسازی زمانی انجام می‌شود تا دادهٔ آینده وارد آموزش نشود.</p>
         {modelSignals.length ? <div className="ml-list">{modelSignals.map((item) => <article className={"ml-row " + (item.is_anomaly ? "is-anomaly" : "")} key={item.source_id}>
           <div className="ml-row-head">
             <div><b>{item.display_name}</b><small dir="ltr">{item.signal} · مدل مستقل برای این شاخص</small></div>
