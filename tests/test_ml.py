@@ -55,3 +55,35 @@ def test_forecast_is_explicitly_not_a_calibrated_probability():
     assert forecast["horizon_minutes"] == 30
     assert forecast["calibrated_probability"] is None
     assert forecast["risk_index"] is not None
+
+
+def test_cause_analysis_requires_correlated_primary_signals():
+    sources, rows = [], []
+    for source_id, signal, base in (
+        ("ioda:IR:bgp", "bgp", 1000),
+        ("ioda:IR:ping", "ping-slash24", 900),
+        ("ioda:IR:merit", "merit-nt", 700),
+    ):
+        source, source_rows = make_data([base] * 6 + [base * 0.8] * 6, source_id, signal)
+        sources.append(source)
+        rows.extend(source_rows)
+    result = analyze_intelligence(sources, rows)
+    cause = result["cause_analysis"]
+    assert cause["hypothesis_id"] == "widespread_connectivity_degradation"
+    assert cause["evidence_strength"] == "strong"
+    assert set(cause["corroborating_signals"]) == {"BGP", "Ping", "Merit"}
+
+
+def test_cause_analysis_does_not_claim_cause_from_single_signal():
+    bgp, bgp_rows = make_data([1000] * 6 + [700] * 6, "ioda:IR:bgp", "bgp")
+    ping, ping_rows = make_data([900] * 12, "ioda:IR:ping", "ping-slash24")
+    cause = analyze_intelligence([bgp, ping], bgp_rows + ping_rows)["cause_analysis"]
+    assert cause["hypothesis_id"] == "routing_visibility_change"
+    assert cause["evidence_strength"] == "limited"
+
+
+def test_recovery_duration_is_not_invented_without_labeled_events():
+    source, rows = make_data([1000] * 48, "ioda:IR:bgp", "bgp")
+    result = analyze_intelligence([source], rows)
+    assert result["recovery_estimate"]["available"] is False
+    assert result["recovery_estimate"]["estimated_duration_minutes"] is None
