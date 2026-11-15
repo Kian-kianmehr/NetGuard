@@ -655,12 +655,12 @@ def analyze_dashboard(
                 "end_at": source.get("last_observed_at"),
                 "occurred_at": source.get("last_collected_at") or source.get("last_observed_at"),
                 "severity": "warning",
-                "evidence_score": 65,
+                "evidence_score": None,
                 "robust_z_score": None,
                 "sample_count": sample_count,
                 "corroboration": "operational",
                 "status": "detected",
-                "status_label": "مشکل تازگی داده",
+                "status_label": "هشدار عملیاتی؛ نه رخداد شبکه",
                 "scope": "country",
             })
         elif source.get("last_run_status") in ("error", "no_data"):
