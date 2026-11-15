@@ -72,25 +72,35 @@ function indexSnapshotRows(rows) {
   }
   return indexed;
 }
-const number = (value, digits = 1) => value == null || !Number.isFinite(Number(value))
-  ? "—"
-  : new Intl.NumberFormat("fa-IR", { maximumFractionDigits: digits }).format(Number(value));
+const numberFormatters = new Map();
+const number = (value, digits = 1) => {
+  const numericValue = Number(value);
+  if (value == null || !Number.isFinite(numericValue)) return "—";
+  let formatter = numberFormatters.get(digits);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("fa-IR", { maximumFractionDigits: digits });
+    numberFormatters.set(digits, formatter);
+  }
+  return formatter.format(numericValue);
+};
 const formatIndexDelta = (value) => {
   const delta = Number(value);
   if (!Number.isFinite(delta)) return "—";
   if (Math.abs(delta) < 0.05) return "تقریباً بدون تغییر";
   return (delta > 0 ? "+" : "−") + number(Math.abs(delta), 1) + " واحد شاخص";
 };
+const dateTimeWithDate = new Intl.DateTimeFormat("fa-IR", {
+  timeZone: "Asia/Tehran", month: "short", day: "2-digit",
+  hour: "2-digit", minute: "2-digit",
+});
+const dateTimeWithoutDate = new Intl.DateTimeFormat("fa-IR", {
+  timeZone: "Asia/Tehran", hour: "2-digit", minute: "2-digit",
+});
 const time = (value, withDate = true) => {
   if (!value) return "نامشخص";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "نامشخص";
-  return new Intl.DateTimeFormat("fa-IR", {
-    timeZone: "Asia/Tehran",
-    ...(withDate ? { month: "short", day: "2-digit" } : {}),
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return (withDate ? dateTimeWithDate : dateTimeWithoutDate).format(date);
 };
 const freshness = {
   fresh: ["تازه", "good"], delayed: ["با تأخیر", "warn"], stale: ["قدیمی", "warn"],
@@ -492,6 +502,7 @@ export default function App() {
   const [showOverviewDetails, setShowOverviewDetails] = useState(false);
   const [siteFilter, setSiteFilter] = useState("all");
   const [siteQuery, setSiteQuery] = useState("");
+  const [visibleDomainLimit, setVisibleDomainLimit] = useState(100);
   const [snapshotStore, setSnapshotStore] = useState(() => {
     const rows = readCachedSnapshotRows();
     return { byKey: indexSnapshotRows(rows), loaded: rows.length > 0 };
@@ -500,6 +511,9 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshInFlight = useRef(false);
   const pendingKeysRef = useRef(new Set());
+  const pendingForceRef = useRef(false);
+  const snapshotStoreRef = useRef(snapshotStore);
+  snapshotStoreRef.current = snapshotStore;
 
   const keysForPage = useMemo(() => {
     if (page === "censorship") return ["censorship"];
@@ -555,11 +569,19 @@ export default function App() {
         busy: !datacenterSnapshot,
       };
 
-  const loadSnapshots = useCallback(async (requestedKeys = keysForPage) => {
-    const keys = [...new Set(requestedKeys)].filter((key) => SNAPSHOT_KEYS.includes(key));
+  const loadSnapshots = useCallback(async (requestedKeys = keysForPage, force = false) => {
+    const now = Date.now();
+    const keys = [...new Set(requestedKeys)].filter((key) => {
+      if (!SNAPSHOT_KEYS.includes(key)) return false;
+      if (force) return true;
+      const snapshot = snapshotStoreRef.current.byKey[key];
+      const snapshotTime = Date.parse(snapshot?.snapshot_at || snapshot?.collected_at || "");
+      return !Number.isFinite(snapshotTime) || now - snapshotTime > SNAPSHOT_STALE_AFTER[key] * 1000;
+    });
     if (!keys.length) return;
     if (refreshInFlight.current) {
       keys.forEach((key) => pendingKeysRef.current.add(key));
+      pendingForceRef.current = pendingForceRef.current || force;
       return;
     }
     refreshInFlight.current = true;
@@ -612,8 +634,10 @@ export default function App() {
       setIsRefreshing(false);
       if (pendingKeysRef.current.size) {
         const pendingKeys = [...pendingKeysRef.current];
+        const pendingForce = pendingForceRef.current;
         pendingKeysRef.current.clear();
-        loadSnapshots(pendingKeys);
+        pendingForceRef.current = false;
+        loadSnapshots(pendingKeys, pendingForce);
       }
     }
   }, [keysForPage]);
@@ -656,9 +680,12 @@ export default function App() {
   const filteredEvents = useMemo(() => events.filter((event) =>
     eventFilter === "all" || event.severity === eventFilter
   ), [events, eventFilter]);
-  const confirmedSites = censorship.domains.filter((site) => site.confirmed_blocked);
-  const possibleSites = censorship.domains.filter((site) => site.has_measurements && !site.confirmed_blocked);
-  const candidateSites = censorship.domains.filter((site) => site.candidate_only);
+  const domainCounts = useMemo(() => censorship.domains.reduce((counts, site) => {
+    if (site.confirmed_blocked) counts.confirmed += 1;
+    else if (site.has_measurements) counts.possible += 1;
+    if (site.candidate_only) counts.candidates += 1;
+    return counts;
+  }, { confirmed: 0, possible: 0, candidates: 0 }), [censorship.domains]);
   const filteredDomains = useMemo(() => {
     const query = siteQuery.trim().toLowerCase();
     return censorship.domains.filter((site) => {
@@ -669,6 +696,10 @@ export default function App() {
       return matchesFilter && (!query || String(site.domain || "").toLowerCase().includes(query));
     });
   }, [censorship.domains, siteFilter, siteQuery]);
+  const visibleDomains = useMemo(
+    () => filteredDomains.slice(0, visibleDomainLimit),
+    [filteredDomains, visibleDomainLimit]
+  );
   const lastPrimaryObservation = data.sources
     .filter((source) => ["bgp", "ping-slash24"].includes(source.signal))
     .map((source) => source.last_observed_at)
@@ -814,8 +845,8 @@ export default function App() {
       <Stat icon={Cloud} label="دامنه‌های فهرست آزمایش" value={number(censorship.total_test_domains, 0)} hint="نامزد آزمون؛ نه فهرست فیلترها"/>
       <Stat icon={Network} label="شبکه‌های اندازه‌گیری" value={number(censorship.coverage?.probe_networks, 0)} hint="شبکه‌های متمایز با آزمون ثبت‌شده"/>
       <Stat icon={Gauge} label="پوشش شناسهٔ شبکه" value={number(censorship.coverage?.asn_coverage_percent, 1) + "٪"} hint="میزان ثبت شناسهٔ شبکه در آزمون‌ها"/>
-      <Stat icon={ShieldCheck} label="دارای شاهد مسدودسازی" value={number(confirmedSites.length, 0)} hint="نشانهٔ روشن در نتیجهٔ OONI"/>
-      <Stat icon={AlertTriangle} label="دارای نشانهٔ اختلال" value={number(possibleSites.length, 0)} hint="هنوز فیلتر بودن قطعی نیست"/>
+      <Stat icon={ShieldCheck} label="دارای شاهد مسدودسازی" value={number(domainCounts.confirmed, 0)} hint="نشانهٔ روشن در نتیجهٔ OONI"/>
+      <Stat icon={AlertTriangle} label="دارای نشانهٔ اختلال" value={number(domainCounts.possible, 0)} hint="هنوز فیلتر بودن قطعی نیست"/>
       <Stat icon={Clock3} label="آخرین دریافت" value={censorship.sync?.finished_at ? time(censorship.sync.finished_at, false) : "—"} hint="به‌روزرسانی دوره‌ای"/>
     </div>
     <div className="toolbar">
@@ -825,10 +856,10 @@ export default function App() {
           ["possible", "نشانهٔ اختلال"],
           ["candidates", "هنوز بررسی‌نشده"],
           ["all", "همه"],
-        ].map(([value, label]) => <button key={value} className={siteFilter === value ? "active" : ""} onClick={() => setSiteFilter(value)}>{label}</button>)}
+        ].map(([value, label]) => <button key={value} className={siteFilter === value ? "active" : ""} onClick={() => { setSiteFilter(value); setVisibleDomainLimit(100); }}>{label}</button>)}
       </div>
       <input className="site-search" type="search" value={siteQuery}
-        onChange={(event) => setSiteQuery(event.target.value)}
+        onChange={(event) => { setSiteQuery(event.target.value); setVisibleDomainLimit(100); }}
         placeholder="جست‌وجوی نام دامنه…" aria-label="جست‌وجوی دامنه"/>
     </div>
     {censorship.error && <div className="warning"><AlertTriangle/><div><b>دریافت فهرست با مشکل روبه‌رو شد</b><p>{censorship.error} آخرین دادهٔ ذخیره‌شده، در صورت وجود، همچنان نمایش داده می‌شود.</p></div></div>}
@@ -842,7 +873,8 @@ export default function App() {
     <Panel tag="نتیجهٔ آزمون یا فهرست پژوهشی"
       title={siteFilter === "confirmed" ? "دارای شاهد مسدودسازی" : siteFilter === "possible" ? "دارای نشانهٔ اختلال" : siteFilter === "candidates" ? "نامزدهای آزمون بدون نتیجهٔ تازه" : "همهٔ دامنه‌های قابل بررسی"}
       note="دامنهٔ فهرست پژوهشی فقط برای آزمایش پیشنهاد شده است؛ تا وقتی نتیجهٔ تازه‌ای نباشد وضعیت آن نامشخص است.">
-      {filteredDomains.length ? <div className="site-list">{filteredDomains.map((site) =>
+      {filteredDomains.length ? <>
+      <div className="site-list">{visibleDomains.map((site) =>
         <article className="site-row" key={site.domain}>
           <div className="site-row-main">
             <div className="site-domain-line">
@@ -860,7 +892,13 @@ export default function App() {
             {site.source_url && <a href={site.source_url} target="_blank" rel="noreferrer">{site.candidate_only ? "منبع فهرست پژوهشی ↗" : "مشاهدهٔ شواهد ↗"}</a>}
           </div>
         </article>
-      )}</div> : <Empty
+      )}</div>
+      {visibleDomains.length < filteredDomains.length && <button
+        className="text-action site-more"
+        type="button"
+        onClick={() => setVisibleDomainLimit((current) => Math.min(current + 100, filteredDomains.length))}
+      >نمایش {number(Math.min(100, filteredDomains.length - visibleDomains.length), 0)} دامنهٔ دیگر · {number(filteredDomains.length - visibleDomains.length, 0)} مورد باقی‌مانده</button>}
+      </> : <Empty
         title={censorship.busy ? "در حال دریافت فهرست" : "دامنه‌ای در این گروه ثبت نشده"}
         note={censorship.error || "با انتخاب گروه دیگر یا جست‌وجوی نام دامنه می‌توانی فهرست را بررسی کنی."}
       />}
@@ -1099,7 +1137,7 @@ export default function App() {
     </aside>
     <main>
       <header className="topbar"><div className="topbar-crumb">نت‌گارد <b>/</b> <strong>{current[1]}</strong></div>
-        <div className="actions"><span className="scope-label"><i/> ایران · پایش ملی</span><button onClick={() => loadSnapshots(keysForPage)} disabled={isRefreshing}><RefreshCw size={15}/>{isRefreshing ? "در حال دریافت" : "به‌روزرسانی"}</button></div>
+        <div className="actions"><span className="scope-label"><i/> ایران · پایش ملی</span><button onClick={() => loadSnapshots(keysForPage, true)} disabled={isRefreshing}><RefreshCw size={15}/>{isRefreshing ? "در حال دریافت" : "به‌روزرسانی"}</button></div>
       </header>
       <div className="content">
         {data.error && <div className="warning"><AlertTriangle/><div><b>دریافت داده ناموفق بود</b><p>{data.error} دادهٔ ساختگی جایگزین نمی‌شود.</p></div></div>}
