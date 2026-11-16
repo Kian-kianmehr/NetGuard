@@ -27,15 +27,27 @@ def test_isolation_forest_scores_sudden_drop_as_more_unusual():
     assert result["is_anomaly"] is True
 
 
-def test_model_does_not_score_a_reading_far_behind_expected_cadence():
+def test_model_accepts_data_within_source_specific_freshness_window():
     source, rows = make_data([1000 + (index % 2) for index in range(60)], "ioda:IR:bgp", "bgp")
+    source["stale_after_seconds"] = 1800
     latest = datetime.fromisoformat(max(row["observed_at"] for row in rows))
     result = analyze_intelligence([source], rows, now=latest + timedelta(minutes=20))
     signal = result["signals"][0]
+    assert signal["status"] == "ready"
+    assert signal["score"] is not None
+    assert signal["observation_age_seconds"] == 20 * 60
+
+
+def test_model_does_not_score_a_reading_beyond_source_freshness_window():
+    source, rows = make_data([1000 + (index % 2) for index in range(60)], "ioda:IR:bgp", "bgp")
+    source["stale_after_seconds"] = 1800
+    latest = datetime.fromisoformat(max(row["observed_at"] for row in rows))
+    result = analyze_intelligence([source], rows, now=latest + timedelta(minutes=35))
+    signal = result["signals"][0]
     assert signal["status"] == "stale_data"
     assert signal["score"] is None
-    assert signal["observation_age_seconds"] == 20 * 60
-    assert "امتیاز جاری نمایش داده نمی‌شود" in signal["interpretation"]
+    assert signal["observation_age_seconds"] == 35 * 60
+    assert "پنجرهٔ تازگی 30 دقیقه‌ای" in signal["interpretation"]
 
 
 def test_model_waits_for_real_history_instead_of_making_up_training_data():
@@ -81,14 +93,16 @@ def test_forecast_uses_fresh_ping_when_bgp_observation_is_too_old():
         source, source_rows = make_data([base] * 120, source_id, signal)
         sources.append(source)
         rows.extend(source_rows)
+    sources[0]["stale_after_seconds"] = 1800
+    sources[1]["stale_after_seconds"] = 2400
     latest = datetime.fromisoformat(max(row["observed_at"] for row in rows))
-    result = analyze_intelligence(sources, rows, now=latest + timedelta(minutes=20))
+    result = analyze_intelligence(sources, rows, now=latest + timedelta(minutes=35))
     forecast = result["forecast"]
     by_signal = {item["signal"]: item for item in forecast["components"]}
     assert forecast["available"] is False
     assert forecast["risk_index"] is None
     assert by_signal["bgp"]["available"] is False
-    assert "سه فاصلهٔ معمول" in by_signal["bgp"]["reason"]
+    assert "آستانهٔ تازگی" in by_signal["bgp"]["reason"]
     assert by_signal["ping-slash24"]["available"] is True
 
 
@@ -151,7 +165,7 @@ def test_stale_primary_signal_blocks_forecast_even_when_history_is_long():
     sources[0]["freshness_status"] = "stale"
     forecast = analyze_intelligence(sources, rows)["forecast"]
     assert forecast["available"] is False
-    assert forecast["components"][0]["reason"] == "دادهٔ تازه برای این شاخص موجود نیست"
+    assert forecast["components"][0]["reason"] == "Collector این منبع را در وضعیت تازه/سالم گزارش نکرده است"
 
 
 
@@ -184,8 +198,10 @@ def test_joint_model_refuses_stale_primary_signal():
         source, source_rows = make_data([base] * 120, source_id, signal)
         sources.append(source)
         rows.extend(source_rows)
+    sources[0]["stale_after_seconds"] = 1800
+    sources[1]["stale_after_seconds"] = 2400
     latest = datetime.fromisoformat(max(row["observed_at"] for row in rows))
-    joint = analyze_intelligence(sources, rows, now=latest + timedelta(minutes=20))["joint_model"]
+    joint = analyze_intelligence(sources, rows, now=latest + timedelta(minutes=35))["joint_model"]
     assert joint["available"] is False
     assert joint["status"] == "stale_data"
     assert joint["score"] is None
@@ -195,6 +211,8 @@ def test_stale_signal_is_excluded_from_trend_cause_analysis_and_brief():
     ping, ping_rows = make_data([900] * 100, "ioda:IR:ping-slash24", "ping-slash24", step_minutes=10)
     bgp["expected_interval_seconds"] = 300
     ping["expected_interval_seconds"] = 600
+    bgp["stale_after_seconds"] = 900
+    ping["stale_after_seconds"] = 2400
     latest = max(datetime.fromisoformat(row["observed_at"]) for row in bgp_rows + ping_rows)
     result = analyze_intelligence(
         [bgp, ping], bgp_rows + ping_rows, now=latest + timedelta(minutes=20)

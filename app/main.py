@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+import subprocess
+import sys
 from time import monotonic
 from datetime import datetime, timedelta, timezone
 from typing import Any
+import uuid
 from urllib.parse import quote
 
 import httpx
@@ -12,7 +16,6 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from netguard.analysis import analyze_dashboard
-from netguard.ml import analyze_intelligence
 
 logger = logging.getLogger("netguard.api")
 
@@ -154,9 +157,6 @@ def _build_dashboard_snapshot(hours: int = 168) -> dict[str, Any]:
     analysis, events = analyze_dashboard(
         sources, observations, generated_at=now, window_hours=hours
     )
-    analysis["intelligence"] = analyze_intelligence(
-        sources, observations, now=now
-    )
     return {
         "sources": sources,
         "observations": observations,
@@ -167,8 +167,8 @@ def _build_dashboard_snapshot(hours: int = 168) -> dict[str, Any]:
     }
 
 
-def _build_dashboard_snapshots(client: httpx.Client) -> dict[str, dict[str, Any]]:
-    """Build all public dashboard windows from one bounded Supabase read."""
+def _build_dashboard_stage(client: httpx.Client) -> dict[str, Any]:
+    """Persist one immutable input batch for the independent AI worker."""
     project_url, key = _supabase_config()
     now = datetime.now(timezone.utc)
     sources = _read_view(
@@ -178,7 +178,7 @@ def _build_dashboard_snapshots(client: httpx.Client) -> dict[str, dict[str, Any]
         "dashboard_sources",
         {"select": "*", "order": "source_id.asc"},
     )
-    all_observations = _read_view_all(
+    observations = _read_view_all(
         client,
         project_url,
         key,
@@ -193,43 +193,14 @@ def _build_dashboard_snapshots(client: httpx.Client) -> dict[str, dict[str, Any]
             "limit": "6000",
         },
     )
-
-    parsed_observations: list[tuple[datetime, dict[str, Any]]] = []
-    for row in all_observations:
-        raw_timestamp = row.get("observed_at")
-        try:
-            observed_at = datetime.fromisoformat(str(raw_timestamp).replace("Z", "+00:00"))
-        except (TypeError, ValueError):
-            continue
-        if observed_at.tzinfo is None:
-            observed_at = observed_at.replace(tzinfo=timezone.utc)
-        parsed_observations.append((observed_at, row))
-
-    # The intelligence ensemble is window-independent: it uses the full
-    # available history for anomaly detection and temporal forecasting.
-    # Compute it once per collection cycle, then attach the same evidence-backed
-    # result to each dashboard window instead of training three times.
-    intelligence = analyze_intelligence(sources, all_observations, now=now)
-
-    snapshots: dict[str, dict[str, Any]] = {}
-    for hours in (24, 72, 168):
-        cutoff = now - timedelta(hours=hours)
-        observations = [
-            row for observed_at, row in parsed_observations if observed_at >= cutoff
-        ]
-        analysis, events = analyze_dashboard(
-            sources, observations, generated_at=now, window_hours=hours
-        )
-        analysis["intelligence"] = intelligence
-        snapshots[f"dashboard_{hours}"] = {
-            "sources": sources,
-            "observations": observations,
-            "analysis": analysis,
-            "events": events,
-            "generated_at": now.isoformat(),
-            "window_hours": hours,
-        }
-    return snapshots
+    return {
+        "cycle_id": str(uuid.uuid4()),
+        "generated_at": now.isoformat(),
+        "sources": sources,
+        "observations": observations,
+        "observation_count": len(observations),
+        "cycle_interval_seconds": 600,
+    }
 
 
 _SNAPSHOT_CACHE_TTL_SECONDS = 60
@@ -671,32 +642,22 @@ def collect_snapshots(x_netguard_token: str = Header(default="")) -> dict[str, A
     project_url, key = _supabase_config()
     completed: list[str] = []
     failures: list[dict[str, str]] = []
+    staged_cycle_id: str | None = None
     try:
         with httpx.Client(timeout=httpx.Timeout(35.0, connect=6.0), follow_redirects=True) as client:
             try:
-                dashboard_payloads = _build_dashboard_snapshots(client)
-            except Exception as exc:
-                logger.exception("Dashboard snapshot batch build failed")
-                dashboard_payloads = {}
-                failures.extend(
-                    {"dataset": f"dashboard_{hours}", "error": type(exc).__name__}
-                    for hours in (24, 72, 168)
+                dashboard_stage = _build_dashboard_stage(client)
+                _save_snapshot(
+                    client, project_url, key, x_netguard_token,
+                    "dashboard_staging", dashboard_stage,
+                    len(dashboard_stage.get("sources", [])),
                 )
+                staged_cycle_id = dashboard_stage["cycle_id"]
+                completed.append("dashboard_staging")
+            except Exception as exc:
+                logger.exception("Dashboard data staging failed")
+                failures.append({"dataset": "dashboard_staging", "error": type(exc).__name__})
 
-            for hours in (24, 72, 168):
-                dataset_key = f"dashboard_{hours}"
-                payload = dashboard_payloads.get(dataset_key)
-                if payload is None:
-                    continue
-                try:
-                    _save_snapshot(
-                        client, project_url, key, x_netguard_token, dataset_key,
-                        payload, len(payload.get("sources", []))
-                    )
-                    completed.append(dataset_key)
-                except Exception as exc:
-                    logger.exception("Snapshot persistence failed for %s", dataset_key)
-                    failures.append({"dataset": dataset_key, "error": type(exc).__name__})
             try:
                 payload = _build_censorship_snapshot()
                 _save_snapshot(client, project_url, key, x_netguard_token, "censorship", payload, len(payload.get("domains", [])))
@@ -711,13 +672,50 @@ def collect_snapshots(x_netguard_token: str = Header(default="")) -> dict[str, A
             except Exception as exc:
                 logger.exception("Snapshot build failed for Iranian data centers")
                 failures.append({"dataset": "iran_datacenters", "error": type(exc).__name__})
-    except httpx.HTTPError as exc:
+    except httpx.HTTPError:
         logger.exception("Snapshot persistence failed")
         raise HTTPException(status_code=502, detail="snapshot_persistence_failed") from None
     return {
         "status": "success" if not failures else "partial",
-        "completed": completed, "failures": failures,
+        "completed": completed,
+        "failures": failures,
+        "staged_cycle_id": staged_cycle_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
 
 
+@app.post("/internal/analyze-dashboard-cycle")
+def analyze_dashboard_cycle(x_netguard_token: str = Header(default="")) -> dict[str, Any]:
+    """Run the CPU-bound AI pipeline in a child process, never in a dashboard request."""
+    expected = os.getenv("NETGUARD_COLLECTOR_TOKEN", "")
+    if not expected or not x_netguard_token or not __import__("hmac").compare_digest(x_netguard_token, expected):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "netguard.ai_worker"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=105,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("AI analysis worker exceeded the 105-second execution budget")
+        raise HTTPException(status_code=504, detail="analysis_worker_timeout") from None
+    if result.returncode != 0:
+        logger.error("AI analysis worker failed: %s", (result.stderr or "")[-1600:])
+        raise HTTPException(status_code=500, detail="analysis_worker_failed")
+    lines = [line for line in (result.stdout or "").splitlines() if line.strip()]
+    if not lines:
+        raise HTTPException(status_code=500, detail="analysis_worker_empty_response")
+    try:
+        payload = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        logger.error("AI worker returned invalid JSON")
+        raise HTTPException(status_code=500, detail="analysis_worker_invalid_response") from None
+    if payload.get("status") == "published":
+        project_url, _ = _supabase_config()
+        with _SNAPSHOT_CACHE_LOCK:
+            for cache_key in tuple(_SNAPSHOT_CACHE):
+                if cache_key.startswith(f"{project_url}:dashboard_"):
+                    _SNAPSHOT_CACHE.pop(cache_key, None)
+    return payload

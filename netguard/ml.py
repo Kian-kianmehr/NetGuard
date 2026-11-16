@@ -181,16 +181,19 @@ def _reference_now(
     return max(latest) if latest else datetime.now(timezone.utc)
 
 
+def _stale_after_seconds(source: dict[str, Any]) -> int:
+    interval = _interval_seconds(source)
+    try:
+        return max(1, int(source.get("stale_after_seconds") or max(1800, interval * 3)))
+    except (TypeError, ValueError):
+        return max(1800, interval * 3)
+
+
 def _is_fresh(source: dict[str, Any], rows: list[tuple[datetime, float]], now: datetime) -> bool:
     if not rows or source.get("freshness_status", "fresh") != "fresh":
         return False
     latest = rows[-1][0]
-    interval = _interval_seconds(source)
-    try:
-        stale_after = int(source.get("stale_after_seconds") or max(1800, interval * 3))
-    except (TypeError, ValueError):
-        stale_after = max(1800, interval * 3)
-    return max(0.0, (now - latest).total_seconds()) <= stale_after
+    return max(0.0, (now - latest).total_seconds()) <= _stale_after_seconds(source)
 
 
 def _signal_model(
@@ -206,12 +209,8 @@ def _signal_model(
     observation_age = (
         max(0.0, (now - rows[-1][0]).total_seconds()) if rows else None
     )
-    cadence_delayed = (
-        source_fresh
-        and observation_age is not None
-        and observation_age > interval * 3
-    )
-    fresh = source_fresh and not cadence_delayed
+    stale_after = _stale_after_seconds(source)
+    fresh = source_fresh
     result = {
         "source_id": source_id,
         "signal": source.get("signal"),
@@ -220,13 +219,12 @@ def _signal_model(
         "training_samples": max(0, len(features) - 1),
         "expected_interval_seconds": interval,
         "observation_age_seconds": round(observation_age) if observation_age is not None else None,
-        "cadence_delay_after_seconds": interval * 3,
+        "cadence_delay_after_seconds": stale_after,
         "score": None,
         "status": "collecting_history" if fresh else "stale_data",
         "status_label": (
             "در حال جمع‌آوری تاریخچه" if fresh
-            else "آخرین مشاهده نسبت به cadence منبع با تأخیر است" if cadence_delayed
-            else "دادهٔ تازه برای امتیازدهی موجود نیست"
+            else "آخرین مشاهده از پنجرهٔ تازگی منبع عبور کرده است"
         ),
         "is_anomaly": False,
         "dominant_feature": None,
@@ -234,9 +232,9 @@ def _signal_model(
         "interpretation": (
             f"برای آموزش اولیهٔ مدل حداقل {MIN_RAW_POINTS} مشاهدهٔ معتبر و تاریخچهٔ پیوسته لازم است."
             if fresh else (
-                f"آخرین مشاهده {round(observation_age / 60)} دقیقه قبل است و از سه فاصلهٔ معمول "
-                f"نمونه‌برداری ({round(interval * 3 / 60)} دقیقه) قدیمی‌تر است؛ امتیاز جاری نمایش داده نمی‌شود."
-                if cadence_delayed else
+                f"آخرین مشاهده {round(observation_age / 60)} دقیقه قبل ثبت شده و از پنجرهٔ "
+                f"تازگی {round(stale_after / 60)} دقیقه‌ای این منبع عبور کرده است."
+                if observation_age is not None else
                 "آخرین مشاهدهٔ معتبر برای امتیازدهی فعلی به‌اندازهٔ کافی تازه نیست."
             )
         ),
@@ -290,23 +288,23 @@ def _forecast_component(
     now: datetime,
 ) -> dict[str, Any]:
     interval = _interval_seconds(source)
-    if not _is_fresh(source, rows, now):
+    if not rows or source.get("freshness_status", "fresh") != "fresh":
         return {
             "signal": signal,
             "available": False,
-            "reason": "دادهٔ تازه برای این شاخص موجود نیست",
+            "reason": "Collector این منبع را در وضعیت تازه/سالم گزارش نکرده است",
             "sample_count": len(rows),
         }
     latest_time = rows[-1][0]
     age_seconds = max(0.0, (now - latest_time).total_seconds())
-    maximum_forecast_age = interval * 3
+    maximum_forecast_age = _stale_after_seconds(source)
     if age_seconds > maximum_forecast_age:
         return {
             "signal": signal,
             "available": False,
             "reason": (
                 f"آخرین مشاهده {round(age_seconds / 60)} دقیقه قبل ثبت شده و از "
-                f"سه فاصلهٔ معمول نمونه‌برداری ({round(maximum_forecast_age / 60)} دقیقه) قدیمی‌تر است"
+                f"آستانهٔ تازگی {round(maximum_forecast_age / 60)} دقیقه‌ای این منبع عبور کرده است"
             ),
             "sample_count": len(rows),
             "observation_age_seconds": round(age_seconds),
@@ -427,9 +425,9 @@ def _signal_trend(
     latest_time = rows[-1][0]
     observation_age = max(0.0, (now - latest_time).total_seconds())
     result["observation_age_seconds"] = round(observation_age)
-    if observation_age > interval * 3:
+    if observation_age > _stale_after_seconds(source):
         result["status"] = "stale_data"
-        result["stale_reason"] = "آخرین مشاهده از سه فاصلهٔ معمول نمونه‌برداری قدیمی‌تر است"
+        result["stale_reason"] = "آخرین مشاهده از پنجرهٔ تازگی تعریف‌شده برای منبع عبور کرده است"
         return result
     recent_start = latest_time - timedelta(minutes=FORECAST_WINDOW_MINUTES)
     previous_start = recent_start - timedelta(minutes=FORECAST_WINDOW_MINUTES)
@@ -471,9 +469,9 @@ def _joint_signal_model(
                 return {"available": False, "status": "stale_data", "status_label": "دادهٔ تازهٔ هر دو شاخص اصلی لازم است", "reason": f"دادهٔ تازهٔ {signal} موجود نیست", "score": None}
             continue
         interval = _interval_seconds(source)
-        if max(0.0, (now - rows[-1][0]).total_seconds()) > interval * 3:
+        if max(0.0, (now - rows[-1][0]).total_seconds()) > _stale_after_seconds(source):
             if signal in required:
-                return {"available": False, "status": "stale_data", "status_label": "آخرین مشاهدهٔ یکی از شاخص‌های اصلی قدیمی است", "reason": f"آخرین مشاهدهٔ {signal} از سه فاصلهٔ نمونه‌برداری قدیمی‌تر است", "score": None}
+                return {"available": False, "status": "stale_data", "status_label": "آخرین مشاهدهٔ یکی از شاخص‌های اصلی از پنجرهٔ تازگی عبور کرده است", "reason": f"آخرین مشاهدهٔ {signal} از آستانهٔ تازگی همان منبع عبور کرده است", "score": None}
             continue
         buckets: dict[int, list[float]] = defaultdict(list)
         for timestamp, value in rows:
@@ -489,8 +487,11 @@ def _joint_signal_model(
 
     latest_bucket_end = datetime.fromtimestamp((common[-1] + 1) * 600, tz=timezone.utc)
     aligned_age = max(0.0, (now - latest_bucket_end).total_seconds())
-    if aligned_age > 1800:
-        return {"available": False, "status": "stale_data", "status_label": "آخرین پنجرهٔ مشترک قدیمی است", "reason": "آخرین بازهٔ مشترک بیش از ۳۰ دقیقه قبل بوده است", "score": None}
+    joint_freshness_limit = min(
+        _stale_after_seconds(source_by_signal[signal]) for signal in required
+    )
+    if aligned_age > joint_freshness_limit:
+        return {"available": False, "status": "stale_data", "status_label": "آخرین پنجرهٔ مشترک از پنجرهٔ تازگی شاخص‌های اصلی عبور کرده است", "reason": "آخرین بازهٔ مشترک خارج از آستانهٔ تازگی BGP یا پایش فعال است", "score": None}
 
     active = list(required)
     merit = bucketed.get("merit-nt", {})

@@ -134,6 +134,10 @@ def _source_quality(
     window_hours: int,
 ) -> dict[str, Any]:
     interval = _interval_seconds(source)
+    try:
+        stale_after = max(1, int(source.get("stale_after_seconds") or max(1800, interval * 3)))
+    except (TypeError, ValueError):
+        stale_after = max(1800, interval * 3)
     duration_seconds = max(1, window_hours * 3600)
     expected = max(1, ceil(duration_seconds / interval))
     sample_count = len(rows)
@@ -196,11 +200,11 @@ def _source_quality(
         "cadence_status": (
             "stale" if source.get("freshness_status") == "stale"
             else "degraded" if source.get("freshness_status") == "degraded"
-            else "delayed" if latest_age is not None and latest_age > interval * 3
+            else "delayed" if latest_age is not None and latest_age > stale_after
             else "fresh" if source.get("freshness_status") == "fresh"
             else "unknown"
         ),
-        "cadence_delay_after_seconds": interval * 3,
+        "cadence_delay_after_seconds": stale_after,
         "last_run_status": source.get("last_run_status") or "unknown",
         "last_run_started_at": source.get("last_run_started_at"),
         "last_run_error_code": source.get("last_run_error_code"),
@@ -624,7 +628,7 @@ def analyze_dashboard(
         observation_age = (
             max(0.0, (now - latest["_time"]).total_seconds()) if latest else None
         )
-        cadence_delay_after = interval * 3
+        cadence_delay_after = stale_after
         is_delayed = (
             freshness_status == "fresh"
             and observation_age is not None

@@ -238,10 +238,9 @@ def test_internal_snapshot_collector_rejects_requests_without_secret(monkeypatch
 
 
 
-def test_batched_dashboard_snapshot_builder_reads_shared_history_once_and_preserves_windows(monkeypatch):
+def test_dashboard_stage_builder_reads_shared_history_without_running_models(monkeypatch):
     from datetime import datetime, timedelta, timezone
-
-    from app.main import _build_dashboard_snapshots
+    from app.main import _build_dashboard_stage
 
     monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
     monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test")
@@ -249,10 +248,8 @@ def test_batched_dashboard_snapshot_builder_reads_shared_history_once_and_preser
     observations = [
         {"source_id": "ioda:IR:bgp", "observed_at": (now - timedelta(hours=12)).isoformat(), "value": 10},
         {"source_id": "ioda:IR:bgp", "observed_at": (now - timedelta(hours=48)).isoformat(), "value": 20},
-        {"source_id": "ioda:IR:bgp", "observed_at": (now - timedelta(hours=120)).isoformat(), "value": 30},
     ]
     reads = []
-    analyzed = []
 
     def fake_read_view(client, project_url, key, view, params):
         reads.append(("view", view, params))
@@ -262,31 +259,17 @@ def test_batched_dashboard_snapshot_builder_reads_shared_history_once_and_preser
         reads.append(("all", view, params))
         return observations
 
-    def fake_analyze_dashboard(sources, rows, generated_at, window_hours):
-        analyzed.append((window_hours, [row["value"] for row in rows]))
-        return {"window_hours": window_hours}, []
-
-    def fake_analyze_intelligence(sources, rows, now):
-        return {"observation_count": len(rows)}
-
     monkeypatch.setattr("app.main._read_view", fake_read_view)
     monkeypatch.setattr("app.main._read_view_all", fake_read_view_all)
-    monkeypatch.setattr("app.main.analyze_dashboard", fake_analyze_dashboard)
-    monkeypatch.setattr("app.main.analyze_intelligence", fake_analyze_intelligence)
+    stage = _build_dashboard_stage(object())
 
-    snapshots = _build_dashboard_snapshots(object())
+    assert stage["cycle_id"]
+    assert stage["generated_at"]
+    assert stage["cycle_interval_seconds"] == 600
+    assert stage["observations"] == observations
+    assert stage["observation_count"] == 2
+    assert {item[1] for item in reads} == {"dashboard_sources", "dashboard_observations"}
 
-    assert set(snapshots) == {"dashboard_24", "dashboard_72", "dashboard_168"}
-    assert len([item for item in reads if item[0] == "view"]) == 1
-    history_reads = [item for item in reads if item[0] == "all"]
-    assert len(history_reads) == 1
-    assert history_reads[0][1] == "dashboard_observations"
-    assert history_reads[0][2]["observed_at"].startswith("gte.")
-    assert {hours: values for hours, values in analyzed} == {
-        24: [10], 72: [10, 20], 168: [10, 20, 30]
-    }
-    assert snapshots["dashboard_24"]["analysis"]["intelligence"]["observation_count"] == 3
-    assert snapshots["dashboard_168"]["analysis"]["intelligence"]["observation_count"] == 3
 
 def test_snapshot_api_caches_repeated_reads_briefly(monkeypatch):
     import app.main as main
@@ -314,46 +297,40 @@ def test_snapshot_api_caches_repeated_reads_briefly(monkeypatch):
     assert first.json()["snapshot_at"] == second.json()["snapshot_at"]
     assert len(calls) == 1
 
+def test_internal_ai_worker_rejects_requests_without_secret(monkeypatch):
+    monkeypatch.delenv("NETGUARD_COLLECTOR_TOKEN", raising=False)
+    with TestClient(app) as client:
+        response = client.post("/internal/analyze-dashboard-cycle")
+    assert response.status_code == 401
 
-def test_dashboard_snapshot_batch_runs_intelligence_once_on_full_history(monkeypatch):
-    from datetime import datetime, timedelta, timezone
-    from app.main import _build_dashboard_snapshots
 
-    now = datetime.now(timezone.utc)
-    observations = [
-        {
-            "source_id": "ioda:IR:bgp",
-            "observed_at": (now - timedelta(hours=hours)).isoformat(),
-            "value": 1000 - hours,
-            "quality": "valid",
-        }
-        for hours in (1, 30, 100)
-    ]
-    intelligence_calls = []
-    analysis_windows = []
+def test_internal_ai_worker_runs_outside_the_dashboard_request_path(monkeypatch):
+    import json
+    import app.main as main
 
-    monkeypatch.setattr("app.main._supabase_config", lambda: ("https://example.supabase.co", "test-key"))
-    monkeypatch.setattr("app.main._read_view", lambda *args, **kwargs: [{"source_id": "ioda:IR:bgp"}])
-    monkeypatch.setattr("app.main._read_view_all", lambda *args, **kwargs: observations)
+    monkeypatch.setenv("NETGUARD_COLLECTOR_TOKEN", "x" * 48)
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "sb_publishable_test")
+    calls = []
 
-    def fake_analyze_dashboard(sources, window_observations, generated_at, window_hours):
-        analysis_windows.append(window_hours)
-        return {"window_hours": window_hours}, []
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return main.subprocess.CompletedProcess(
+            command, 0, stdout=json.dumps({"status": "published", "cycle_id": "cycle-123"}),
+            stderr="",
+        )
 
-    def fake_analyze_intelligence(sources, model_observations, now):
-        intelligence_calls.append((sources, model_observations, now))
-        return {"analysis_brief": {"headline": "evidence-backed"}}
+    monkeypatch.setattr(main.subprocess, "run", fake_run)
+    monkeypatch.setattr(main, "_SNAPSHOT_CACHE", {"https://example.supabase.co:dashboard_24": (0, {})})
+    with TestClient(app) as client:
+        response = client.post(
+            "/internal/analyze-dashboard-cycle",
+            headers={"x-netguard-token": "x" * 48},
+        )
 
-    monkeypatch.setattr("app.main.analyze_dashboard", fake_analyze_dashboard)
-    monkeypatch.setattr("app.main.analyze_intelligence", fake_analyze_intelligence)
+    assert response.status_code == 200
+    assert response.json()["status"] == "published"
+    assert calls[0][0][1:3] == ["-m", "netguard.ai_worker"]
+    assert calls[0][1]["timeout"] == 105
+    assert main._SNAPSHOT_CACHE == {}
 
-    snapshots = _build_dashboard_snapshots(object())
-
-    assert analysis_windows == [24, 72, 168]
-    assert len(intelligence_calls) == 1
-    assert intelligence_calls[0][1] is observations
-    assert set(snapshots) == {"dashboard_24", "dashboard_72", "dashboard_168"}
-    assert all(snapshot["analysis"]["intelligence"] is snapshots["dashboard_168"]["analysis"]["intelligence"]
-               for snapshot in snapshots.values())
-    assert all(snapshot["analysis"]["intelligence"]["analysis_brief"]["headline"] == "evidence-backed"
-               for snapshot in snapshots.values())
