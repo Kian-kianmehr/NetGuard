@@ -330,7 +330,7 @@ def test_internal_ai_worker_runs_outside_the_dashboard_request_path(monkeypatch)
 
     assert response.status_code == 200
     assert response.json()["status"] == "published"
-    assert calls[0][0][1:3] == ("-m", "netguard.ai_worker")
+    assert calls[0][0][1:3] == ["-m", "netguard.ai_worker"]
     assert calls[0][1]["timeout"] == 105
     assert main._SNAPSHOT_CACHE == {}
 
