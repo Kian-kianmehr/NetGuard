@@ -47,7 +47,7 @@ def test_model_does_not_score_a_reading_beyond_source_freshness_window():
     assert signal["status"] == "stale_data"
     assert signal["score"] is None
     assert signal["observation_age_seconds"] == 35 * 60
-    assert "امتیاز جاری نمایش داده نمی‌شود" in signal["interpretation"]
+    assert "پنجرهٔ تازگی 30 دقیقه‌ای" in signal["interpretation"]
 
 
 def test_model_waits_for_real_history_instead_of_making_up_training_data():
@@ -165,7 +165,7 @@ def test_stale_primary_signal_blocks_forecast_even_when_history_is_long():
     sources[0]["freshness_status"] = "stale"
     forecast = analyze_intelligence(sources, rows)["forecast"]
     assert forecast["available"] is False
-    assert forecast["components"][0]["reason"] == "دادهٔ تازه برای این شاخص موجود نیست"
+    assert forecast["components"][0]["reason"] == "Collector این منبع را در وضعیت تازه/سالم گزارش نکرده است"
 
 
 
