@@ -212,11 +212,11 @@ def test_stale_signal_is_excluded_from_trend_cause_analysis_and_brief():
 
 def test_analysis_brief_explains_two_fresh_primary_signals_without_overclaiming():
     sources, rows = [], []
-    for source_id, signal, base, interval in (
-        ("ioda:IR:bgp", "bgp", 1000, 300),
-        ("ioda:IR:ping-slash24", "ping-slash24", 900, 600),
+    for source_id, signal, base, interval, count in (
+        ("ioda:IR:bgp", "bgp", 1000, 300, 320),
+        ("ioda:IR:ping-slash24", "ping-slash24", 900, 600, 160),
     ):
-        source, source_rows = make_data([base + (index % 2) for index in range(160)], source_id, signal,
+        source, source_rows = make_data([base + (index % 2) for index in range(count)], source_id, signal,
                                         step_minutes=interval // 60)
         source["expected_interval_seconds"] = interval
         sources.append(source)
