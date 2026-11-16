@@ -504,20 +504,78 @@ function ProviderCard({ item }) {
 }
 
 
-function IntelligenceBrief({ brief }) {
+function IntelligenceBrief({ brief, intelligence }) {
   if (!brief) return null;
   const tone = brief.status === "alert" ? "alert"
     : brief.status === "normal" ? "normal"
       : brief.status === "limited" ? "limited" : "insufficient";
+  const forecastComponents = (intelligence?.forecast?.components || [])
+    .filter((item) => item?.available && Array.isArray(item.horizon_projections));
+  const signalLabels = {
+    bgp: "دیدپذیری BGP",
+    "ping-slash24": "پایش فعال شبکه",
+    "merit-nt": "تلسکوپ شبکه",
+  };
   return <section className={"intelligence-brief " + tone} aria-live="polite">
     <div className="intelligence-brief-head">
       <div>
-        <small>برداشت تحلیلی از داده‌های زنده</small>
+        <small>برداشت تحلیلی از داده‌های پایش</small>
         <h2>{brief.headline || "جمع‌بندی در حال آماده‌سازی"}</h2>
         <p>{brief.summary || "پس از رسیدن دادهٔ تازه، جمع‌بندی شواهد نمایش داده می‌شود."}</p>
       </div>
       <span className="intelligence-confidence">{brief.confidence_label || "اطمینان نامشخص"}</span>
     </div>
+    {forecastComponents.length > 0 && <div className="intelligence-model-output">
+      <div className="intelligence-model-output-head">
+        <b>خروجی واقعی مدل پیش‌بینی</b>
+        <span>برآورد مستقل هر شاخص · نه پیش‌بینی ملی</span>
+      </div>
+      <div className="intelligence-model-output-grid">
+        {forecastComponents.map((component) => {
+          const projection = component.horizon_projections.find((item) => item.minutes === 30)
+            || component.horizon_projections[0];
+          if (!projection) return null;
+          const change = Number(projection.projected_change_percent);
+          const signalModel = (intelligence?.signals || []).find(
+            (item) => item.signal === component.signal
+          );
+          const changeLabel = Number.isFinite(change)
+            ? (change > 0 ? "+" : "") + number(change, 2) + "٪"
+            : "—";
+          return <article className="intelligence-model-output-card" key={component.signal}>
+            <div className="intelligence-model-output-title">
+              <div>
+                <small>{signalLabels[component.signal] || component.signal}</small>
+                <b>پیش‌بینی ۳۰ دقیقهٔ آینده</b>
+              </div>
+              <strong className={Number.isFinite(change) && change < 0 ? "negative" : "positive"}>
+                {changeLabel}
+              </strong>
+            </div>
+            <p>
+              مقدار فعلی {number(component.current_value, 0)}؛ مقدار برآوردی{" "}
+              {number(projection.projected_value, 0)}.
+              آخرین مشاهده {number((component.observation_age_seconds || 0) / 60, 0)} دقیقه قبل بوده است.
+            </p>
+            <div className="intelligence-model-output-meta">
+              <span>
+                امتیاز ناهنجاری: <b>{number(component.anomaly_score, 3)}</b>
+                {signalModel?.status_label ? " · " + signalModel.status_label : ""}
+              </span>
+              <span>
+                خطای اعتبارسنجی: <b>{component.validation_mae_percent == null
+                  ? "—" : number(component.validation_mae_percent, 3) + "٪"}</b>
+                {component.baseline_mae_percent == null
+                  ? "" : " · خط مبنا " + number(component.baseline_mae_percent, 3) + "٪"}
+              </span>
+            </div>
+          </article>;
+        })}
+      </div>
+      {intelligence?.forecast?.available !== true && <p className="intelligence-model-output-note">
+        این خروجی فقط برای شاخصی است که دادهٔ تازه و کافی دارد. تا تازه‌شدن هم‌زمان BGP و پایش فعال، امتیاز ترکیبی ملی منتشر نمی‌شود.
+      </p>}
+    </div>}
     {brief.evidence?.length > 0 && <div className="intelligence-brief-evidence">
       <b>شواهدی که این برداشت بر آن‌ها تکیه دارد</b>
       <ul>{brief.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul>
@@ -745,7 +803,7 @@ export default function App() {
 
   let body;
   if (page === "overview") body = <>
-    <IntelligenceBrief brief={analysis.intelligence?.analysis_brief}/>
+    <IntelligenceBrief brief={analysis.intelligence?.analysis_brief} intelligence={analysis.intelligence}/>
     <PublicSituationReport summary={analysis.public_summary} signals={signals} intelligence={analysis.intelligence} censorship={censorship} providers={providerData} datacenters={datacenterData} dataQuality={dataQuality} checkedAt={lastPrimaryObservation} isLoading={data.busy} error={data.error}/>
     <div className="hero">
       <div><small>سلامت سامانهٔ پایش · ایران</small><h2>{overall}</h2>
@@ -962,7 +1020,7 @@ export default function App() {
         <Stat icon={BrainCircuit} label="ناهنجاری چندشاخصی" value={intelligence.joint_model?.score == null ? "—" : number(intelligence.joint_model.score, 3)} hint={intelligence.joint_model?.status_label || "تاریخچهٔ هم‌زمان کافی لازم است"}/>
         <Stat icon={Clock3} label="افق‌های برآورد" value="۱۵، ۳۰، ۶۰ دقیقه" hint="پیش‌بینی بازگشتی شبکهٔ عصبی"/>
       </div>
-      <IntelligenceBrief brief={intelligence.analysis_brief}/>
+      <IntelligenceBrief brief={intelligence.analysis_brief} intelligence={intelligence}/>
       <Panel tag="پیش‌بینی مبتنی بر یادگیری عمیق" title="پیش‌بینی عصبی روند کوتاه‌مدت" note="امتیاز ملی فقط با دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی محاسبه می‌شود.">
         {forecast.available ? <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>امتیاز آزمایشی نشانه‌های افت در مقیاس ۰ تا ۱۰۰</small><strong dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</strong><span>{forecast.risk_label}</span></div><p>این امتیاز احتمال آماری یا درصد احتمال خاموشی نیست؛ فقط یک شاخص ترکیبی برای اولویت‌بندی بررسی است.</p></div> : <div className="notice"><Info size={17}/><div><b>امتیاز ترکیبی ملی فعلاً قابل انتشار نیست</b><p>{forecast.note || "برای جمع‌بندی هم‌زمان، دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی لازم است."}</p></div></div>}
         {(forecast.components || []).some((item) => item.available) ? <>
