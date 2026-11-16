@@ -12,21 +12,26 @@ select s.source_id, s.provider, s.signal, s.display_name, s.unit, s.description,
        run.started_at as last_run_started_at,
        run.status as last_run_status,
        case
+         when latest.observed_at is null and run.status in ('error','no_data') then 'degraded'
          when latest.observed_at is null then 'unknown'
          when now()-latest.observed_at > make_interval(secs=>s.stale_after_seconds) then 'stale'
-         when run.status='error' then 'degraded'
+         when run.status in ('error','no_data') then 'degraded'
          when run.status is null then 'unknown'
          else 'fresh'
        end as freshness_status,
        s.expected_interval_seconds,
-       s.stale_after_seconds
+       s.stale_after_seconds,
+       run.error_code as last_run_error_code,
+       run.duration_ms as last_run_duration_ms,
+       run.records_received as last_run_records_received
 from public.sources s
 left join lateral (
   select o.observed_at,o.collected_at,o.value from public.observations o
   where o.source_id=s.source_id order by o.observed_at desc limit 1
 ) latest on true
 left join lateral (
-  select r.started_at,r.status from public.collector_runs r
+  select r.started_at,r.status,r.error_code,r.duration_ms,r.records_received
+  from public.collector_runs r
   where r.source_id=s.source_id order by r.started_at desc limit 1
 ) run on true
 where s.enabled;
