@@ -103,7 +103,7 @@ def test_forecast_uses_fresh_ping_when_bgp_observation_is_too_old():
     assert forecast["risk_index"] is None
     assert by_signal["bgp"]["available"] is False
     assert "آستانهٔ تازگی" in by_signal["bgp"]["reason"]
-    assert by_signal["ping-slash24"]["available"] is False
+    assert by_signal["ping-slash24"]["available"] is True
 
 
 def test_cause_analysis_requires_correlated_primary_signals():
