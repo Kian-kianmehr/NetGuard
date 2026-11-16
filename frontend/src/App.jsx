@@ -531,7 +531,7 @@ function IntelligenceBrief({ brief }) {
 
 export default function App() {
   const [page, setPage] = useState("overview");
-  const [windowHours, setWindowHours] = useState(168);
+  const [windowHours, setWindowHours] = useState(24);
   const [eventFilter, setEventFilter] = useState("all");
   const [showOverviewDetails, setShowOverviewDetails] = useState(false);
   const [siteFilter, setSiteFilter] = useState("all");
@@ -632,7 +632,7 @@ export default function App() {
             cache: "no-store",
           },
           {
-            timeoutMs: 7000,
+            timeoutMs: 30000,
             maxAttempts: 2,
             retryDelayMs: 350,
           }
