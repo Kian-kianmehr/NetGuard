@@ -313,3 +313,47 @@ def test_snapshot_api_caches_repeated_reads_briefly(monkeypatch):
     assert second.status_code == 200
     assert first.json()["snapshot_at"] == second.json()["snapshot_at"]
     assert len(calls) == 1
+
+
+def test_dashboard_snapshot_batch_runs_intelligence_once_on_full_history(monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from app.main import _build_dashboard_snapshots
+
+    now = datetime.now(timezone.utc)
+    observations = [
+        {
+            "source_id": "ioda:IR:bgp",
+            "observed_at": (now - timedelta(hours=hours)).isoformat(),
+            "value": 1000 - hours,
+            "quality": "valid",
+        }
+        for hours in (1, 30, 100)
+    ]
+    intelligence_calls = []
+    analysis_windows = []
+
+    monkeypatch.setattr("app.main._supabase_config", lambda: ("https://example.supabase.co", "test-key"))
+    monkeypatch.setattr("app.main._read_view", lambda *args, **kwargs: [{"source_id": "ioda:IR:bgp"}])
+    monkeypatch.setattr("app.main._read_view_all", lambda *args, **kwargs: observations)
+
+    def fake_analyze_dashboard(sources, window_observations, generated_at, window_hours):
+        analysis_windows.append(window_hours)
+        return {"window_hours": window_hours}, []
+
+    def fake_analyze_intelligence(sources, model_observations, now):
+        intelligence_calls.append((sources, model_observations, now))
+        return {"analysis_brief": {"headline": "evidence-backed"}}
+
+    monkeypatch.setattr("app.main.analyze_dashboard", fake_analyze_dashboard)
+    monkeypatch.setattr("app.main.analyze_intelligence", fake_analyze_intelligence)
+
+    snapshots = _build_dashboard_snapshots(object())
+
+    assert analysis_windows == [24, 72, 168]
+    assert len(intelligence_calls) == 1
+    assert intelligence_calls[0][1] is observations
+    assert set(snapshots) == {"dashboard_24", "dashboard_72", "dashboard_168"}
+    assert all(snapshot["analysis"]["intelligence"] is snapshots["dashboard_168"]["analysis"]["intelligence"]
+               for snapshot in snapshots.values())
+    assert all(snapshot["analysis"]["intelligence"]["analysis_brief"]["headline"] == "evidence-backed"
+               for snapshot in snapshots.values())
