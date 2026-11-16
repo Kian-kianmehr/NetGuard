@@ -189,3 +189,40 @@ def test_joint_model_refuses_stale_primary_signal():
     assert joint["available"] is False
     assert joint["status"] == "stale_data"
     assert joint["score"] is None
+
+def test_stale_signal_is_excluded_from_trend_cause_analysis_and_brief():
+    bgp, bgp_rows = make_data([1000] * 100, "ioda:IR:bgp", "bgp", step_minutes=5)
+    ping, ping_rows = make_data([900] * 100, "ioda:IR:ping-slash24", "ping-slash24", step_minutes=10)
+    bgp["expected_interval_seconds"] = 300
+    ping["expected_interval_seconds"] = 600
+    latest = max(datetime.fromisoformat(row["observed_at"]) for row in bgp_rows + ping_rows)
+    result = analyze_intelligence(
+        [bgp, ping], bgp_rows + ping_rows, now=latest + timedelta(minutes=20)
+    )
+    trends = {item["signal"]: item for item in result["cause_analysis"]["observed_changes"]}
+    assert trends["bgp"]["status"] == "stale_data"
+    assert trends["ping-slash24"]["status"] == "ready"
+    assert result["cause_analysis"]["hypothesis_id"] == "insufficient_evidence"
+    brief = result["analysis_brief"]
+    assert brief["status"] == "limited"
+    assert brief["fresh_primary_signals"] == 1
+    assert any("BGP" in item for item in brief["limitations"])
+    assert any("پایش فعال" in item for item in brief["evidence"])
+
+
+def test_analysis_brief_explains_two_fresh_primary_signals_without_overclaiming():
+    sources, rows = [], []
+    for source_id, signal, base, interval in (
+        ("ioda:IR:bgp", "bgp", 1000, 300),
+        ("ioda:IR:ping-slash24", "ping-slash24", 900, 600),
+    ):
+        source, source_rows = make_data([base + (index % 2) for index in range(160)], source_id, signal,
+                                        step_minutes=interval // 60)
+        source["expected_interval_seconds"] = interval
+        sources.append(source)
+        rows.extend(source_rows)
+    brief = analyze_intelligence(sources, rows)["analysis_brief"]
+    assert brief["status"] == "normal"
+    assert brief["fresh_primary_signals"] == 2
+    assert "سلامت همهٔ اپراتورها" in brief["summary"]
+    assert brief["method"] == "model_evidence_synthesis"
