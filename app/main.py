@@ -205,6 +205,12 @@ def _build_dashboard_snapshots(client: httpx.Client) -> dict[str, dict[str, Any]
             observed_at = observed_at.replace(tzinfo=timezone.utc)
         parsed_observations.append((observed_at, row))
 
+    # The intelligence ensemble is window-independent: it uses the full
+    # available history for anomaly detection and temporal forecasting.
+    # Compute it once per collection cycle, then attach the same evidence-backed
+    # result to each dashboard window instead of training three times.
+    intelligence = analyze_intelligence(sources, all_observations, now=now)
+
     snapshots: dict[str, dict[str, Any]] = {}
     for hours in (24, 72, 168):
         cutoff = now - timedelta(hours=hours)
@@ -214,9 +220,7 @@ def _build_dashboard_snapshots(client: httpx.Client) -> dict[str, dict[str, Any]
         analysis, events = analyze_dashboard(
             sources, observations, generated_at=now, window_hours=hours
         )
-        analysis["intelligence"] = analyze_intelligence(
-            sources, observations, now=now
-        )
+        analysis["intelligence"] = intelligence
         snapshots[f"dashboard_{hours}"] = {
             "sources": sources,
             "observations": observations,
