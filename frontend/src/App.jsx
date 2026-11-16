@@ -503,6 +503,32 @@ function ProviderCard({ item }) {
   </article>;
 }
 
+
+function IntelligenceBrief({ brief }) {
+  if (!brief) return null;
+  const tone = brief.status === "alert" ? "alert"
+    : brief.status === "normal" ? "normal"
+      : brief.status === "limited" ? "limited" : "insufficient";
+  return <section className={"intelligence-brief " + tone} aria-live="polite">
+    <div className="intelligence-brief-head">
+      <div>
+        <small>برداشت تحلیلی از داده‌های زنده</small>
+        <h2>{brief.headline || "جمع‌بندی در حال آماده‌سازی"}</h2>
+        <p>{brief.summary || "پس از رسیدن دادهٔ تازه، جمع‌بندی شواهد نمایش داده می‌شود."}</p>
+      </div>
+      <span className="intelligence-confidence">{brief.confidence_label || "اطمینان نامشخص"}</span>
+    </div>
+    {brief.evidence?.length > 0 && <div className="intelligence-brief-evidence">
+      <b>شواهدی که این برداشت بر آن‌ها تکیه دارد</b>
+      <ul>{brief.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul>
+    </div>}
+    {brief.limitations?.length > 0 && <div className="intelligence-brief-limits">
+      <b>محدودیت‌های نتیجه</b>
+      <ul>{brief.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul>
+    </div>}
+  </section>;
+}
+
 export default function App() {
   const [page, setPage] = useState("overview");
   const [windowHours, setWindowHours] = useState(168);
@@ -719,6 +745,7 @@ export default function App() {
 
   let body;
   if (page === "overview") body = <>
+    <IntelligenceBrief brief={analysis.intelligence?.analysis_brief}/>
     <PublicSituationReport summary={analysis.public_summary} signals={signals} intelligence={analysis.intelligence} censorship={censorship} providers={providerData} datacenters={datacenterData} dataQuality={dataQuality} checkedAt={lastPrimaryObservation} isLoading={data.busy} error={data.error}/>
     <div className="hero">
       <div><small>سلامت سامانهٔ پایش · ایران</small><h2>{overall}</h2>
@@ -935,6 +962,7 @@ export default function App() {
         <Stat icon={BrainCircuit} label="ناهنجاری چندشاخصی" value={intelligence.joint_model?.score == null ? "—" : number(intelligence.joint_model.score, 3)} hint={intelligence.joint_model?.status_label || "تاریخچهٔ هم‌زمان کافی لازم است"}/>
         <Stat icon={Clock3} label="افق‌های برآورد" value="۱۵، ۳۰، ۶۰ دقیقه" hint="پیش‌بینی بازگشتی شبکهٔ عصبی"/>
       </div>
+      <IntelligenceBrief brief={intelligence.analysis_brief}/>
       <Panel tag="پیش‌بینی مبتنی بر یادگیری عمیق" title="پیش‌بینی عصبی روند کوتاه‌مدت" note="امتیاز ملی فقط با دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی محاسبه می‌شود.">
         {forecast.available ? <div className={"risk-callout " + (forecast.risk_level || "unknown")}><div><small>امتیاز آزمایشی نشانه‌های افت در مقیاس ۰ تا ۱۰۰</small><strong dir="rtl" className="risk-score-rtl">{number(forecast.risk_index, 0)} از ۱۰۰</strong><span>{forecast.risk_label}</span></div><p>این امتیاز احتمال آماری یا درصد احتمال خاموشی نیست؛ فقط یک شاخص ترکیبی برای اولویت‌بندی بررسی است.</p></div> : <div className="notice"><Info size={17}/><div><b>امتیاز ترکیبی ملی فعلاً قابل انتشار نیست</b><p>{forecast.note || "برای جمع‌بندی هم‌زمان، دادهٔ تازه و نمونهٔ کافی از هر دو شاخص اصلی لازم است."}</p></div></div>}
         {(forecast.components || []).some((item) => item.available) ? <>

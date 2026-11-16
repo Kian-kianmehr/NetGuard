@@ -425,6 +425,12 @@ def _signal_trend(
         result["status"] = "stale_data"
         return result
     latest_time = rows[-1][0]
+    observation_age = max(0.0, (now - latest_time).total_seconds())
+    result["observation_age_seconds"] = round(observation_age)
+    if observation_age > interval * 3:
+        result["status"] = "stale_data"
+        result["stale_reason"] = "آخرین مشاهده از سه فاصلهٔ معمول نمونه‌برداری قدیمی‌تر است"
+        return result
     recent_start = latest_time - timedelta(minutes=FORECAST_WINDOW_MINUTES)
     previous_start = recent_start - timedelta(minutes=FORECAST_WINDOW_MINUTES)
     previous = _window_values(rows, previous_start, recent_start - timedelta(microseconds=1))
@@ -642,6 +648,132 @@ def _cause_analysis(trends: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+
+def _analysis_brief(
+    models: list[dict[str, Any]],
+    joint_model: dict[str, Any],
+    forecast: dict[str, Any],
+    now: datetime,
+) -> dict[str, Any]:
+    """Turn model outputs into a concise, evidence-linked public assessment."""
+    ready = [item for item in models if item.get("status") == "ready"]
+    stale = [item for item in models if item.get("status") == "stale_data"]
+    anomalies = [item for item in ready if item.get("is_anomaly")]
+    primary = {item.get("signal"): item for item in models if item.get("signal") in {"bgp", "ping-slash24"}}
+    ready_primary = [
+        primary[signal] for signal in ("bgp", "ping-slash24")
+        if signal in primary and primary[signal].get("status") == "ready"
+    ]
+    forecast_components = [
+        item for item in forecast.get("components", []) if item.get("available")
+    ]
+    evidence: list[str] = []
+    limitations: list[str] = []
+
+    for item in anomalies:
+        evidence.append(
+            f"{item.get('display_name')}: امتیاز ناهنجاری {float(item.get('score') or 0):.2f} "
+            f"از آستانهٔ {ANOMALY_THRESHOLD:.2f} عبور کرده است."
+        )
+    if joint_model.get("available"):
+        evidence.append(
+            f"مدل هم‌زمانی، {int(joint_model.get('sample_count') or 0)} بازهٔ هم‌تراز را "
+            f"در {len(joint_model.get('active_signals') or [])} شاخص بررسی کرده است؛ "
+            f"امتیاز {float(joint_model.get('score') or 0):.2f}."
+        )
+    for item in forecast_components:
+        delta = float(item.get("projected_change_30m_percent") or 0)
+        direction = "افزایش" if delta > 0.05 else "کاهش" if delta < -0.05 else "تغییر ناچیز"
+        signal_label = (
+            "پایش فعال شبکه" if item.get("signal") == "ping-slash24"
+            else "دیدپذیری BGP" if item.get("signal") == "bgp"
+            else str(item.get("signal"))
+        )
+        evidence.append(
+            f"پیش‌بینی ۳۰ دقیقه‌ای {signal_label}: {direction} حدود {abs(delta):.2f}٪ "
+            "در مقدار همان شاخص؛ این پیش‌بینی، احتمال اختلال نیست."
+        )
+    for item in ready:
+        if not item.get("is_anomaly") and item.get("signal") in {"bgp", "ping-slash24"}:
+            evidence.append(
+                f"{item.get('display_name')}: امتیاز {float(item.get('score') or 0):.2f} "
+                f"و پایین‌تر از آستانهٔ ناهنجاری {ANOMALY_THRESHOLD:.2f}."
+            )
+    for item in stale:
+        age = item.get("observation_age_seconds")
+        age_text = f"{round(float(age) / 60)} دقیقه" if age is not None else "زمان نامشخص"
+        limitations.append(f"{item.get('display_name')}: دادهٔ آخر {age_text} قبل ثبت شده و برای نتیجه‌گیری جاری کافی نیست.")
+
+    if anomalies or (joint_model.get("available") and joint_model.get("is_anomaly")):
+        status = "alert"
+        headline = "تغییر غیرمعمولی برای بررسی شناسایی شد"
+        names = "، ".join(item.get("display_name") or item.get("signal") for item in anomalies)
+        summary = (
+            f"مدل در {names or 'الگوی هم‌زمان شاخص‌ها'} تفاوتی با رفتار تاریخی دیده است. "
+            "این یک هشدار برای بررسی است؛ نه تأیید قطعی اختلال یا تعیین علت آن."
+        )
+    elif len(ready_primary) == 2:
+        status = "normal"
+        headline = "در شاخص‌های اصلی نشانهٔ هم‌زمانِ غیرعادی دیده نشد"
+        summary = (
+            "هر دو شاخص اصلی دادهٔ تازه و امتیاز قابل ارزیابی دارند و از آستانهٔ ناهنجاری عبور نکرده‌اند. "
+            "این نتیجه فقط به شاخص‌های ملیِ موجود مربوط است و سلامت همهٔ اپراتورها و مناطق را ثابت نمی‌کند."
+        )
+    elif forecast_components:
+        status = "limited"
+        headline = "روند قابل تحلیل است، اما تصویر ملی هنوز کامل نیست"
+        names = "، ".join(
+            "پایش فعال" if item.get("signal") == "ping-slash24" else "دیدپذیری BGP"
+            for item in forecast_components
+        )
+        summary = (
+            f"در حال حاضر فقط {names} برای پیش‌بینی مستقل شرایط لازم را دارد. "
+            "خروجی آن برای دنبال‌کردن روند کوتاه‌مدت مفید است، اما برای نتیجه‌گیری ملی باید شاخص‌های اصلی دیگر نیز تازه شوند."
+        )
+    elif ready:
+        status = "limited"
+        headline = "فقط بخشی از شواهد قابل ارزیابی است"
+        summary = (
+            "برای بعضی شاخص‌ها امتیاز جاری موجود است، اما دادهٔ هم‌زمان کافی برای پیش‌بینی یا جمع‌بندی ملی فراهم نیست."
+        )
+    else:
+        status = "insufficient"
+        headline = "دادهٔ تازه برای یک جمع‌بندی قابل اتکا کافی نیست"
+        summary = (
+            "مدل به‌جای حدس‌زدن، نتیجهٔ قطعی منتشر نمی‌کند. با رسیدن مشاهده‌های تازه و هم‌زمان، "
+            "ارزیابی ناهنجاری و روند دوباره محاسبه می‌شود."
+        )
+
+    if stale:
+        limitations.append("تا تازه‌شدن این منابع، نبود هشدار را نباید معادل نبود اختلال دانست.")
+    if not forecast.get("available"):
+        limitations.append("امتیاز ترکیبی ملی منتشر نشده؛ برای آن دادهٔ تازهٔ BGP و پایش فعال به‌طور هم‌زمان لازم است.")
+    confidence = (
+        "قوی‌تر؛ چند شاخص اصلی تازه" if len(ready_primary) == 2 and joint_model.get("available")
+        else "متوسط؛ دو شاخص اصلی تازه" if len(ready_primary) == 2
+        else "محدود؛ فقط بخشی از شاخص‌ها تازه‌اند" if ready_primary or ready
+        else "ناکافی؛ دادهٔ تازه در دسترس نیست"
+    )
+    return {
+        "status": status,
+        "headline": headline,
+        "summary": summary,
+        "confidence_label": confidence,
+        "evidence": evidence[:5],
+        "limitations": limitations[:4],
+        "fresh_primary_signals": len(ready_primary),
+        "evaluated_signals": len(ready),
+        "anomalous_signals": len(anomalies),
+        "generated_at": now.isoformat(),
+        "method": "model_evidence_synthesis",
+        "scope_note": (
+            "این جمع‌بندی از خروجی مدل‌های ناهنجاری، هم‌زمانی شاخص‌ها و پیش‌بینی سری زمانی ساخته شده است؛ "
+            "متن آزادِ یک مدل زبانی یا تشخیص قطعی علت اختلال نیست."
+        ),
+    }
+
+
+
 def analyze_intelligence(
     sources: list[dict[str, Any]],
     observations: list[dict[str, Any]],
@@ -722,7 +854,12 @@ def analyze_intelligence(
         + " ".join(f"{name}: {reason}." for name, reason in unavailable_reasons)
         + " دادهٔ ناکافی به معنی ریسک صفر نیست؛ پیش‌بینی مستقل شاخص واجد شرایط جداگانه نمایش داده می‌شود."
     )
+    brief = _analysis_brief(models, joint_model, {
+        "available": available,
+        "components": components,
+    }, reference_now)
     return {
+        "analysis_brief": brief,
         "model_name": MODEL_NAME,
         "model_family": "per_signal_and_multivariate_anomaly_detection_plus_deep_learning_forecasting",
         "model_status": "ready" if trained else "collecting_history",
