@@ -684,8 +684,13 @@ def _analysis_brief(
     for item in forecast_components:
         delta = float(item.get("projected_change_30m_percent") or 0)
         direction = "افزایش" if delta > 0.05 else "کاهش" if delta < -0.05 else "تغییر ناچیز"
+        signal_label = (
+            "پایش فعال شبکه" if item.get("signal") == "ping-slash24"
+            else "دیدپذیری BGP" if item.get("signal") == "bgp"
+            else str(item.get("signal"))
+        )
         evidence.append(
-            f"پیش‌بینی ۳۰ دقیقه‌ای {item.get('signal')}: {direction} حدود {abs(delta):.2f}٪ "
+            f"پیش‌بینی ۳۰ دقیقه‌ای {signal_label}: {direction} حدود {abs(delta):.2f}٪ "
             "در مقدار همان شاخص؛ این پیش‌بینی، احتمال اختلال نیست."
         )
     for item in ready:
