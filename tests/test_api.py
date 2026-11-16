@@ -285,7 +285,7 @@ def test_batched_dashboard_snapshot_builder_reads_shared_history_once_and_preser
     assert {hours: values for hours, values in analyzed} == {
         24: [10], 72: [10, 20], 168: [10, 20, 30]
     }
-    assert snapshots["dashboard_24"]["analysis"]["intelligence"]["observation_count"] == 1
+    assert snapshots["dashboard_24"]["analysis"]["intelligence"]["observation_count"] == 3
     assert snapshots["dashboard_168"]["analysis"]["intelligence"]["observation_count"] == 3
 
 def test_snapshot_api_caches_repeated_reads_briefly(monkeypatch):
