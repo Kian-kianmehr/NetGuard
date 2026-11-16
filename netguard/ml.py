@@ -288,11 +288,11 @@ def _forecast_component(
     now: datetime,
 ) -> dict[str, Any]:
     interval = _interval_seconds(source)
-    if not _is_fresh(source, rows, now):
+    if not rows or source.get("freshness_status", "fresh") != "fresh":
         return {
             "signal": signal,
             "available": False,
-            "reason": "دادهٔ تازه برای این شاخص موجود نیست",
+            "reason": "Collector این منبع را در وضعیت تازه/سالم گزارش نکرده است",
             "sample_count": len(rows),
         }
     latest_time = rows[-1][0]
@@ -304,7 +304,7 @@ def _forecast_component(
             "available": False,
             "reason": (
                 f"آخرین مشاهده {round(age_seconds / 60)} دقیقه قبل ثبت شده و از "
-                f"سه فاصلهٔ معمول نمونه‌برداری ({round(maximum_forecast_age / 60)} دقیقه) قدیمی‌تر است"
+                f"آستانهٔ تازگی {round(maximum_forecast_age / 60)} دقیقه‌ای این منبع عبور کرده است"
             ),
             "sample_count": len(rows),
             "observation_age_seconds": round(age_seconds),
