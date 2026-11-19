@@ -34,48 +34,50 @@ html,body{min-height:100%;margin:0;background:#080f1d;color:#e8edf6;font-family:
 <script>
 (() => {
   const root = document.getElementById("root");
+  const entry = document.getElementById("netguard-entry");
+  let retryCount = 0;
   let recoveryShown = false;
 
-  function showRecovery(reason) {
+  function showRecovery() {
     const splash = root?.querySelector(".boot-screen");
     if (!splash || recoveryShown) return;
     recoveryShown = true;
 
     const message = document.createElement("p");
-    message.textContent = reason
-      ? "خطای راه‌اندازی برنامه: " + String(reason).slice(0, 220)
-      : "برنامه در ۱۸ ثانیه شروع نشد. فایل‌های برنامه داخل همین صفحه قرار دارند؛ بنابراین احتمالاً خطای اجرای JavaScript رخ داده است.";
-
-    const detail = document.createElement("p");
-    detail.textContent = "برای دیدن جزئیات، Console مرورگر را باز کن.";
+    message.textContent = "بارگذاری برنامه کامل نشد. احتمالاً ارتباط هنگام دریافت فایل‌های سایت قطع شده است. اتصال را بررسی کن و دوباره تلاش کن.";
 
     const button = document.createElement("button");
     button.type = "button";
     button.className = "boot-recovery-button";
-    button.textContent = "بارگذاری دوباره";
-    button.addEventListener("click", () => {
-      const url = new URL(window.location.href);
-      url.searchParams.set("ng-reload", String(Date.now()));
-      window.location.replace(url.href);
-    });
+    button.textContent = "تلاش دوباره";
+    button.addEventListener("click", () => window.location.reload());
 
     splash.querySelector(".boot-track")?.remove();
-    splash.append(message, detail, button);
+    splash.append(message, button);
   }
 
-  window.addEventListener("error", (event) => {
-    if (root?.querySelector(".boot-screen")) {
-      showRecovery(event.message || "خطای JavaScript هنگام شروع برنامه");
+  function retryEntry() {
+    if (!root?.querySelector(".boot-screen") || recoveryShown) return;
+    if (retryCount >= 2) {
+      showRecovery();
+      return;
     }
-  });
 
-  window.addEventListener("unhandledrejection", (event) => {
-    if (root?.querySelector(".boot-screen")) {
-      showRecovery(event.reason?.message || event.reason || "خطای Promise هنگام شروع برنامه");
-    }
-  });
+    retryCount += 1;
+    window.setTimeout(() => {
+      if (!root?.querySelector(".boot-screen") || recoveryShown) return;
+      const retryScript = document.createElement("script");
+      retryScript.type = "module";
+      const separator = entry.src.includes("?") ? "&" : "?";
+      retryScript.src = entry.src + separator + "ng-retry=" + retryCount;
+      retryScript.addEventListener("error", retryEntry, { once: true });
+      document.body.appendChild(retryScript);
+    }, retryCount * 700);
+  }
 
-  window.setTimeout(() => showRecovery(), 18000);
+  entry?.addEventListener("error", retryEntry);
+  window.addEventListener("unhandledrejection", retryEntry);
+  window.setTimeout(showRecovery, 18000);
 })();
 </script>
 </body>
