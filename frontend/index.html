@@ -1,84 +1,57 @@
 <!doctype html>
 <html lang="fa" dir="rtl">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<meta name="theme-color" content="#080f1d"/>
-<meta name="description" content="نت‌گارد؛ پایش و تحلیل شواهد عمومی وضعیت اینترنت ایران"/>
-<title>نت‌گارد | پایش اینترنت ایران</title>
-<link rel="preconnect" href="https://fsglerccgxktvcpybuzk.supabase.co" crossorigin/>
-<style>
-html,body{min-height:100%;margin:0;background:#080f1d;color:#e8edf6;font-family:system-ui,"Segoe UI",Tahoma,Arial,sans-serif}
-.boot-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(ellipse at 50% 38%,#102b36 0%,#080f1d 62%);color:#dce8f3}
-.boot-mark{width:52px;height:52px;display:grid;place-items:center;border:1px solid #35606a;border-radius:16px;background:#133340;color:#70dfc2;font-weight:800;font-size:21px}
-.boot-screen strong{letter-spacing:2px;font-size:17px}
-.boot-screen p{margin:0;color:#93a8bb;font-size:13px;text-align:center;max-width:min(90vw,440px);line-height:1.9}
-.boot-track{width:150px;height:3px;overflow:hidden;border-radius:5px;background:#1c3041}
-.boot-track span{display:block;width:38%;height:100%;border-radius:5px;background:#70dfc2;animation:boot-progress 1.4s ease-in-out infinite alternate}
-@keyframes boot-progress{from{transform:translateX(0)}to{transform:translateX(165px)}}
-@media(prefers-reduced-motion:reduce){.boot-track span{animation:none;width:100%}}
-.boot-recovery-button{margin-top:8px;padding:10px 18px;border:1px solid #356b68;border-radius:9px;background:#153b3b;color:#9ae8d3;font:inherit;font-size:13px;cursor:pointer}
-.boot-recovery-button:hover{background:#1c4a48}
-</style>
-</head>
-<body>
-<div id="root">
-  <div class="boot-screen" role="status" aria-live="polite">
-    <div class="boot-mark">NG</div>
-    <strong>NETGUARD</strong>
-    <p>در حال آماده‌سازی مرکز پایش...</p>
-    <div class="boot-track"><span></span></div>
-  </div>
-</div>
-<script type="module" id="netguard-entry" src="/src/main.jsx"></script>
-<script>
-(() => {
-  const root = document.getElementById("root");
-  const entry = document.getElementById("netguard-entry");
-  let retryCount = 0;
-  let recoveryShown = false;
-
-  function showRecovery() {
-    const splash = root?.querySelector(".boot-screen");
-    if (!splash || recoveryShown) return;
-    recoveryShown = true;
-
-    const message = document.createElement("p");
-    message.textContent = "بارگذاری برنامه کامل نشد. احتمالاً ارتباط هنگام دریافت فایل‌های سایت قطع شده است. اتصال را بررسی کن و دوباره تلاش کن.";
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "boot-recovery-button";
-    button.textContent = "تلاش دوباره";
-    button.addEventListener("click", () => window.location.reload());
-
-    splash.querySelector(".boot-track")?.remove();
-    splash.append(message, button);
-  }
-
-  function retryEntry() {
-    if (!root?.querySelector(".boot-screen") || recoveryShown) return;
-    if (retryCount >= 2) {
-      showRecovery();
-      return;
-    }
-
-    retryCount += 1;
-    window.setTimeout(() => {
-      if (!root?.querySelector(".boot-screen") || recoveryShown) return;
-      const retryScript = document.createElement("script");
-      retryScript.type = "module";
-      const separator = entry.src.includes("?") ? "&" : "?";
-      retryScript.src = entry.src + separator + "ng-retry=" + retryCount;
-      retryScript.addEventListener("error", retryEntry, { once: true });
-      document.body.appendChild(retryScript);
-    }, retryCount * 700);
-  }
-
-  entry?.addEventListener("error", retryEntry);
-  window.addEventListener("unhandledrejection", retryEntry);
-  window.setTimeout(showRecovery, 18000);
-})();
-</script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a111d" />
+    <meta name="description" content="نت‌گارد؛ پایش شفاف و مستند وضعیت اینترنت ایران بر پایهٔ داده‌های عمومی" />
+    <meta name="color-scheme" content="dark" />
+    <title>نت‌گارد | مرکز پایش اینترنت ایران</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root{color-scheme:dark;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;background:#0a111d;color:#e8eef6}
+      *{box-sizing:border-box}
+      html,body{margin:0;min-height:100%;background:#0a111d}
+      .boot{min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(ellipse at 52% 36%,#132a36 0,transparent 48%),#0a111d}
+      .boot-inner{width:min(100%,380px);text-align:center;display:grid;justify-items:center;gap:14px}
+      .boot-mark{width:58px;height:58px;display:grid;place-items:center;border:1px solid #2c615e;border-radius:17px;background:#123238;color:#83e2c6;font-weight:850;letter-spacing:1px}
+      .boot-inner strong{font-size:15px;letter-spacing:3px}
+      .boot-inner p{margin:0;color:#9aabba;font-size:13px;line-height:2}
+      .boot-bar{width:130px;height:3px;background:#243646;border-radius:4px;overflow:hidden}
+      .boot-bar i{display:block;height:100%;width:35%;background:#79dec1;animation:load 1.3s ease-in-out infinite alternate}
+      .boot-help{display:none;max-width:320px;color:#d9c39b;font-size:12px;line-height:1.9}
+      .boot-retry{display:none;border:1px solid #45645e;background:#173532;color:#a6ebd6;border-radius:9px;padding:10px 18px;font:inherit;cursor:pointer}
+      @keyframes load{to{transform:translateX(95px)}}
+      @media(prefers-reduced-motion:reduce){.boot-bar i{animation:none;width:100%}}
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <main class="boot" role="status" aria-live="polite">
+        <div class="boot-inner">
+          <div class="boot-mark">NG</div>
+          <strong>NETGUARD</strong>
+          <p>در حال راه‌اندازی مرکز پایش...</p>
+          <div class="boot-bar"><i></i></div>
+          <p class="boot-help" id="boot-help">برنامه در مرورگر اجرا نشد. اتصال را بررسی کن و برای تلاش دوباره صفحه را بارگذاری کن.</p>
+          <button class="boot-retry" id="boot-retry" type="button">بارگذاری دوباره</button>
+        </div>
+      </main>
+    </div>
+    <script>
+      window.setTimeout(function () {
+        if (document.documentElement.dataset.netguardReady === "true") return;
+        var help = document.getElementById("boot-help");
+        var retry = document.getElementById("boot-retry");
+        if (help) help.style.display = "block";
+        if (retry) {
+          retry.style.display = "inline-block";
+          retry.addEventListener("click", function () { window.location.reload(); }, { once: true });
+        }
+        var bar = document.querySelector(".boot-bar");
+        if (bar) bar.style.display = "none";
+      }, 14000);
+    </script>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
 </html>
