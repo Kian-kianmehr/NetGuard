@@ -89,13 +89,11 @@ function SignalSummaryCard({ signal, observations }) {
 
 function AiBrief({ intelligence }) {
   const brief = intelligence?.analysis_brief;
-  if (!brief) return <EmptyState title="جمع‌بندی هوش مصنوعی آماده نیست" detail="مدل تا زمان دسترسی به تاریخچه و دادهٔ معتبر، نتیجهٔ ساختگی نمایش نمی‌دهد." />;
+  if (!brief) return <EmptyState title="جمع‌بندی فعلا آماده نیست" detail="برای نتیجه‌گیری باید دادهٔ کافی و به‌روز از منابع پایش دریافت شود." />;
   const tone = brief.status === "alert" ? "danger" : brief.status === "normal" ? "good" : "warning";
   return (
-    <Card className={"ai-brief ai-brief-" + tone} title={brief.headline || "گزارش هوشمند نت‌گارد"} eyebrow="برداشت تحلیلی از داده‌های پایش" subtitle={brief.summary}>
-      <div className="ai-brief-meta"><Badge tone={tone}>{brief.confidence_label || "اطمینان نامشخص"}</Badge><span>{brief.generated_at ? formatTime(brief.generated_at) : "زمان تولید نامشخص"}</span></div>
-      {brief.evidence?.length > 0 && <div className="evidence-list"><strong>شواهد</strong><ul>{brief.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
-      {brief.limitations?.length > 0 && <div className="evidence-list"><strong>محدودیت‌ها</strong><ul>{brief.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+    <Card className={"ai-brief ai-brief-" + tone} title="برداشت از وضعیت فعلی" eyebrow="خلاصهٔ سادهٔ پایش" subtitle={brief.summary || brief.headline || "هنوز جمع‌بندی روشنی از داده‌ها ممکن نیست."}>
+      <div className="ai-brief-meta"><Badge tone={tone}>{brief.confidence_label || "میزان اطمینان مشخص نیست"}</Badge><span>{brief.generated_at ? formatTime(brief.generated_at) : "زمان گزارش نامشخص"}</span></div>
     </Card>
   );
 }
@@ -326,47 +324,98 @@ function IntelligencePage({ dashboard, status, onRetry }) {
   const models = asArray(intelligence.signals);
   const cause = intelligence.cause_analysis || {};
   const recovery = intelligence.recovery_estimate || {};
+  const primarySignals = ["bgp", "ping-slash24"];
+  const primaryComponents = components.filter((item) => primarySignals.includes(item.signal));
+  const stalePrimary = models.filter((item) => primarySignals.includes(item.signal) && item.status === "stale_data");
+  const anomalous = models.filter((item) => item.is_anomaly);
+  const projection30 = (item) => asArray(item.horizon_projections).find((point) => point.minutes === 30);
+  const formatTrend = (item) => {
+    const point = projection30(item);
+    if (!point || point.projected_change_percent == null) return "روند ۳۰ دقیقه‌ای قابل محاسبه نیست.";
+    const change = Number(point.projected_change_percent);
+    if (Math.abs(change) < 0.01) return "تقریبا بدون تغییر";
+    return (change > 0 ? "افزایش حدود " : "کاهش حدود ") + num(Math.abs(change), 2) + "٪";
+  };
+  let outlookTitle = "فعلا نمی‌توان درباره وضعیت کلی اینترنت پیش‌بینی قابل اتکایی داد";
+  let outlookText = forecast.note || "برای پیش‌بینی وضعیت کلی، دادهٔ تازه از هر دو شاخص اصلی لازم است.";
+  if (primaryComponents.length === 2 && forecast.available) {
+    const score = Number(forecast.risk_index);
+    if (Number.isFinite(score) && score >= 60) {
+      outlookTitle = "نشانه‌های افت در داده‌های اصلی بیشتر شده‌اند";
+      outlookText = "هر دو شاخص اصلی برای ۳۰ دقیقهٔ آینده برآورد دارند و ترکیب آن‌ها نیاز به توجه بیشتر را نشان می‌دهد. بهتر است وضعیت در به‌روزرسانی بعدی دوباره بررسی شود؛ این نتیجه به معنی قطعی اینترنت نیست.";
+    } else if (Number.isFinite(score) && score >= 30) {
+      outlookTitle = "احتمال تغییر در وضعیت شبکه نیازمند پیگیری است";
+      outlookText = "داده‌های دو شاخص اصلی نشانه‌هایی برای بررسی بیشتر دارند، اما شواهد فعلی برای اعلام اختلال گسترده کافی نیست.";
+    } else {
+      outlookTitle = "فعلا نشانهٔ قوی از افت در شاخص‌های اصلی دیده نمی‌شود";
+      outlookText = "برآورد دو شاخص اصلی در حال حاضر نشانهٔ پرقدرتی از افت نشان نمی‌دهد. این نتیجه تضمین نمی‌کند که در همه نقاط کشور اتصال بدون مشکل باشد.";
+    }
+  } else if (primaryComponents.length === 1) {
+    const item = primaryComponents[0];
+    const name = primaryNames[item.signal] || item.signal;
+    outlookTitle = "فقط برای بخشی از شبکه می‌توان روند کوتاه‌مدت گفت";
+    outlookText = "برای «" + name + "» مدل در ۳۰ دقیقهٔ آینده " + formatTrend(item) + " را برآورد کرده است. این پیش‌بینی فقط درباره همین شاخص است، نه وضعیت کل اینترنت. " +
+      (stalePrimary.length ? "دادهٔ " + stalePrimary.map((entry) => primaryNames[entry.signal] || entry.display_name).join(" و ") + " تازه نیست؛ بنابراین هنوز نمی‌توان درباره افت یا پایداری سراسری نتیجه گرفت." : "برای نتیجه‌گیری ملی، دادهٔ هم‌زمان از شاخص اصلی دیگر هم لازم است.");
+  } else if (components.length) {
+    outlookText = "مدل برای بعضی منابع روند کوتاه‌مدت محاسبه کرده، اما شاخص‌های اصلی برای جمع‌بندی وضعیت کلی اینترنت کافی نیستند.";
+  }
+  if (anomalous.length && primaryComponents.length < 2) {
+    outlookText += " در " + anomalous.map((item) => item.display_name).join(" و ") + " تغییر غیرمعمولی دیده شده؛ این هشدار به‌تنهایی به معنی اختلال اینترنت نیست.";
+  }
   return (
     <div className="page-stack">
       <SectionIntro eyebrow="NetGuard Intelligence" title="هوش مصنوعی و پیش‌بینی">
-        مدل‌ها رفتار معمول هر شاخص را یاد می‌گیرند، انحراف را علامت می‌زنند و فقط در صورت کفایت داده، روند کوتاه‌مدت را برآورد می‌کنند.
+        این بخش بررسی می‌کند در نیم ساعت آینده چه روندی برای اینترنت قابل انتظار است. اگر داده‌های مهم به‌روز نباشند، به‌جای حدس زدن نتیجه را نامشخص اعلام می‌کنیم.
       </SectionIntro>
       <DataBanner status={status} record={dashboard} onRetry={onRetry} />
       <div className="metrics-grid">
-        <Metric label="مدل تشخیص" value={safeText(intelligence.model_name, "در انتظار داده")} hint={intelligence.model_status_label || "مدل مستقل و چندشاخصی"} />
-        <Metric label="امتیاز نشانه‌های افت" value={forecast.risk_index == null ? "—" : num(forecast.risk_index, 0) + " از ۱۰۰"} hint="امتیاز بررسی، نه احتمال اختلال" tone={forecast.available ? "warning" : "default"} />
-        <Metric label="شاخص‌های آماده" value={num(intelligence.trained_signals, 0)} hint={"از " + num(models.length, 0) + " شاخص"} />
-        <Metric label="ناهنجاری چندشاخصی" value={intelligence.joint_model?.score == null ? "—" : num(intelligence.joint_model.score, 3)} hint={intelligence.joint_model?.status_label || "تاریخچهٔ هم‌زمان لازم است"} />
+        <Metric label="وضعیت پیش‌بینی" value={primaryComponents.length === 2 && forecast.available ? "قابل ارائه" : primaryComponents.length ? "محدود" : "نامشخص"} hint={primaryComponents.length === 2 && forecast.available ? "هر دو شاخص اصلی دادهٔ کافی دارند" : "برای پیش‌بینی وضعیت کلی، دادهٔ تازه و هم‌زمان لازم است"} />
+        <Metric label="نشانه‌های افت" value={forecast.risk_index == null ? "نامشخص" : num(forecast.risk_index, 0) + " از ۱۰۰"} hint={forecast.risk_index == null ? "این خط تیره یا وضعیت نامشخص، صفر نیست؛ امتیاز محاسبه نشده است." : "امتیاز بررسی است، نه درصد احتمال قطعی"} tone={forecast.available ? "warning" : "default"} />
+        <Metric label="شاخص‌های دارای دادهٔ کافی" value={num(intelligence.trained_signals, 0)} hint={"از " + num(models.length, 0) + " شاخص"} />
+        <Metric label="بررسی هم‌زمان شاخص‌ها" value={intelligence.joint_model?.score == null ? "نامشخص" : intelligence.joint_model.is_anomaly ? "نیازمند توجه" : "نشانهٔ غیرعادی دیده نشد"} hint={intelligence.joint_model?.status_label || "دادهٔ تازهٔ شاخص‌های اصلی لازم است"} />
       </div>
       <AiBrief intelligence={intelligence} />
-      <Card title="پیش‌بینی عصبی روند کوتاه‌مدت" eyebrow="۱۵، ۳۰ و ۶۰ دقیقه">
-        {forecast.available && <div className="risk-callout"><strong>{num(forecast.risk_index, 0)} از ۱۰۰</strong><span>{forecast.risk_label || "امتیاز آزمایشی"}</span><p>این امتیاز درصد احتمال خاموشی نیست؛ فقط برای اولویت‌بندی بررسی استفاده می‌شود.</p></div>}
-        {components.length ? <div className="forecast-grid">{components.map((item) => (
-          <article className="forecast-card" key={item.signal}>
+      <Card title="در ۳۰ دقیقهٔ آینده چه انتظاری داریم؟" eyebrow="جمع‌بندی سادهٔ پیش‌بینی">
+        <div className="risk-callout">
+          <strong>{outlookTitle}</strong>
+          <p>{outlookText}</p>
+        </div>
+        {components.length ? <div className="forecast-grid">{components.map((item) => {
+          const point = projection30(item);
+          return <article className="forecast-card" key={item.signal}>
             <span className="eyebrow">{primaryNames[item.signal] || item.signal}</span>
             <h3>مقدار فعلی: {num(item.current_value, 2)}</h3>
-            <div className="forecast-points">{asArray(item.horizon_projections).map((point) => (
-              <div key={point.minutes}><small>{num(point.minutes, 0)} دقیقهٔ آینده</small><b>{num(point.projected_value, 2)}</b><span>تغییر: {point.projected_change_percent == null ? "—" : num(point.projected_change_percent, 2) + "٪"}</span></div>
-            ))}</div>
-            <p>مدل: {item.forecast_model || "MLP"} · خطای اعتبارسنجی: {item.validation_mae_percent == null ? "—" : num(item.validation_mae_percent, 3) + "٪"}</p>
-          </article>
-        ))}</div> : <EmptyState title="پیش‌بینی قابل انتشار نیست" detail={forecast.note || "برای هر شاخص، دادهٔ تازه و تاریخچهٔ پیوسته لازم است."} />}
-        <p className="scope-note">مدل MLP از ۱۲ مشاهدهٔ متوالی استفاده می‌کند و با جداسازی زمانی اعتبارسنجی می‌شود. اگر از خط مبنای ساده بهتر نباشد، پیش‌بینی منتشر نمی‌شود. خروجی احتمال کالیبره‌شده نیست.</p>
+            <div className="forecast-points">
+              <div><small>برآورد ۳۰ دقیقهٔ آینده</small><b>{point ? num(point.projected_value, 2) : "—"}</b><span>{formatTrend(item)}</span></div>
+            </div>
+            <p>این عدد روند همین شاخص را نشان می‌دهد؛ به‌تنهایی پیش‌بینی قطعی یا احتمال اختلال نیست.</p>
+          </article>;
+        })}</div> : <EmptyState title="فعلا پیش‌بینی قابل ارائه نیست" detail={forecast.note || "وقتی دادهٔ تازه و تاریخچهٔ کافی برسد، برآورد نمایش داده می‌شود."} />}
       </Card>
-      <Card title="شاخص‌هایی که رفتار غیرمعمول داشته‌اند" eyebrow="تشخیص ناهنجاری مستقل">
-        {models.length ? <div className="model-list">{models.map((item) => <article className="model-row" key={item.source_id}>
-          <div><strong>{safeText(item.display_name, item.signal)}</strong><Badge tone={item.is_anomaly ? "warning" : item.status === "ready" ? "good" : "muted"}>{item.status_label || (item.is_anomaly ? "غیرمعمول" : "در حال یادگیری")}</Badge></div>
-          <p>{safeText(item.interpretation, "توضیح مدل موجود نیست.")}</p>
-          <small>{num(item.sample_count, 0)} نمونه · امتیاز {item.score == null ? "—" : num(item.score, 3)} · آخرین مشاهده {item.observation_age_seconds == null ? "نامشخص" : num(item.observation_age_seconds / 60, 0) + " دقیقه قبل"}</small>
-        </article>)}</div> : <EmptyState title="تاریخچهٔ کافی موجود نیست" />}
+      <Card title="چه تغییرهایی در شاخص‌ها دیده شده؟" eyebrow="بررسی جداگانهٔ منابع">
+        {models.length ? <div className="model-list">{models.map((item) => {
+          const description = item.is_anomaly
+            ? "رفتار اخیر این شاخص با الگوی معمول گذشته تفاوت داشته است. این یک نشانه برای بررسی است و به‌تنهایی اختلال اینترنت را ثابت نمی‌کند."
+            : item.status === "stale_data"
+              ? "اطلاعات این منبع به‌روز نیست؛ بنابراین فعلا نمی‌توان از آن درباره وضعیت فعلی نتیجه گرفت."
+              : item.status === "ready"
+                ? "رفتار فعلی این شاخص به الگوی معمول گذشته نزدیک است."
+                : "هنوز دادهٔ کافی برای بررسی این شاخص جمع نشده است.";
+          return <article className="model-row" key={item.source_id}>
+            <div><strong>{safeText(item.display_name, item.signal)}</strong><Badge tone={item.is_anomaly ? "warning" : item.status === "ready" ? "good" : "muted"}>{item.is_anomaly ? "تغییر غیرمعمول" : item.status === "stale_data" ? "داده قدیمی" : item.status === "ready" ? "نزدیک به حالت معمول" : "دادهٔ ناکافی"}</Badge></div>
+            <p>{description}</p>
+            <small>آخرین داده: {item.observation_age_seconds == null ? "نامشخص" : num(item.observation_age_seconds / 60, 0) + " دقیقه قبل"}{item.score == null ? "" : " · امتیاز بررسی: " + num(item.score * 100, 0) + " از ۱۰۰"}</small>
+          </article>;
+        })}</div> : <EmptyState title="هنوز داده‌ای برای بررسی وجود ندارد" />}
+        <p className="scope-note">امتیاز بررسی، احتمال قطعی نیست. قدیمی بودن داده هم به معنی سالم یا مختل بودن شبکه نیست.</p>
       </Card>
-      <Card title="فرضیه‌های علت احتمالی" eyebrow="تحلیل شواهد">
-        <h3>{cause.hypothesis_label || "هنوز فرضیهٔ قابل اتکایی وجود ندارد"}</h3>
-        <p>{cause.description || cause.scope_note || "برای بررسی علت، هم‌زمانی داده‌های چند منبع لازم است."}</p>
+      <Card title="آیا علت تغییر مشخص است؟" eyebrow="بررسی شواهد">
+        <h3>{cause.hypothesis_label || "هنوز علت مشخصی پیدا نشده است"}</h3>
+        <p>{cause.description || cause.scope_note || "برای مشخص شدن علت، چند منبع مستقل باید تغییر مشابهی را در یک زمان نشان دهند."}</p>
         {cause.alternative_explanations?.length > 0 && <ul className="simple-list">{cause.alternative_explanations.map((item, index) => <li key={index}>{item}</li>)}</ul>}
       </Card>
-      <Card title="زمان احتمالی بازیابی" eyebrow="تخمین رخداد">
-        <EmptyState title="فعلاً قابل برآورد نیست" detail={recovery.note || "تا زمان وجود رخدادهای تاریخیِ تأییدشده با زمان شروع و پایان، عددی برای زمان بازیابی منتشر نمی‌شود."} />
+      <Card title="چه زمانی وضعیت به حالت عادی برمی‌گردد؟" eyebrow="زمان بازیابی">
+        <EmptyState title="فعلا زمان بازیابی مشخص نیست" detail="برای تخمین زمان پایان یک اختلال، باید نمونه‌های کافی از رخدادهای قبلی و زمان پایان آن‌ها داشته باشیم. در حال حاضر چنین اطلاعاتی کافی نیست." />
       </Card>
     </div>
   );
