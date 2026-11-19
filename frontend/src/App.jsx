@@ -1,5 +1,5 @@
 import { describeCoverage, deriveDisplayNationalSummary, deriveLimitedNationalVerdict } from "./public-status.js";
-import { fetchJsonWithRetry } from "./snapshot-client.js";
+import { fetchSnapshotWithFallback } from "./snapshot-client.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity, AlertTriangle, ArrowDownRight, BookOpen, BrainCircuit, CheckCircle2, CircleHelp,
@@ -20,6 +20,8 @@ const NAV = [
   ["method", "روش‌شناسی", BookOpen],
 ];
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "https://netguard-api-oan9.onrender.com").replace(/\/$/, "");
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || "").replace(/\/$/, "");
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 const SNAPSHOT_ENDPOINTS = {
   dashboard_24: "/api/dashboard?hours=24",
   dashboard_72: "/api/dashboard?hours=72",
@@ -589,7 +591,7 @@ function IntelligenceBrief({ brief, intelligence }) {
 
 export default function App() {
   const [page, setPage] = useState("overview");
-  const [windowHours, setWindowHours] = useState(168);
+  const [windowHours, setWindowHours] = useState(24);
   const [eventFilter, setEventFilter] = useState("all");
   const [showOverviewDetails, setShowOverviewDetails] = useState(false);
   const [siteFilter, setSiteFilter] = useState("all");
@@ -682,28 +684,21 @@ export default function App() {
       if (!API_BASE_URL) {
         throw new Error("نشانی API نت‌گارد تنظیم نشده است.");
       }
-      const rows = await Promise.all(keys.map(async (key) => {
-        const payload = await fetchJsonWithRetry(
-          `${API_BASE_URL}${SNAPSHOT_ENDPOINTS[key]}`,
+      const rows = await Promise.all(keys.map((key) =>
+        fetchSnapshotWithFallback(
           {
-            headers: { Accept: "application/json" },
-            cache: "no-store",
+            datasetKey: key,
+            apiUrl: `${API_BASE_URL}${SNAPSHOT_ENDPOINTS[key]}`,
+            supabaseUrl: SUPABASE_URL,
+            supabaseKey: SUPABASE_KEY,
           },
           {
             timeoutMs: 7000,
             maxAttempts: 2,
             retryDelayMs: 350,
           }
-        );
-        return {
-          dataset_key: key,
-          payload,
-          collected_at: payload.snapshot_at || null,
-          status: payload.snapshot_status || "unknown",
-          source_count: payload.source_count ?? 0,
-          error_code: payload.snapshot_error || null,
-        };
-      }));
+        )
+      ));
       const cachedRows = readCachedSnapshotRows().filter((row) => !keys.includes(row.dataset_key));
       const mergedRows = [...cachedRows, ...rows];
       try {
@@ -803,6 +798,14 @@ export default function App() {
 
   let body;
   if (page === "overview") body = <>
+    <div className="toolbar">
+      <div className="range-tabs" aria-label="بازهٔ زمانی داشبورد">
+        {[[24, "۲۴ ساعت"], [72, "۳ روز"], [168, "۷ روز"]].map(([hours, label]) =>
+          <button key={hours} className={windowHours === hours ? "active" : ""} onClick={() => setWindowHours(hours)}>{label}</button>
+        )}
+      </div>
+      <span className="toolbar-note">{number(data.observations.length, 0)} مشاهده در بازهٔ انتخاب‌شده</span>
+    </div>
     <IntelligenceBrief brief={analysis.intelligence?.analysis_brief} intelligence={analysis.intelligence}/>
     <PublicSituationReport summary={analysis.public_summary} signals={signals} intelligence={analysis.intelligence} censorship={censorship} providers={providerData} datacenters={datacenterData} dataQuality={dataQuality} checkedAt={lastPrimaryObservation} isLoading={data.busy} error={data.error}/>
     <div className="hero">
