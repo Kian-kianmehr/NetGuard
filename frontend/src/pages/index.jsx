@@ -89,13 +89,11 @@ function SignalSummaryCard({ signal, observations }) {
 
 function AiBrief({ intelligence }) {
   const brief = intelligence?.analysis_brief;
-  if (!brief) return <EmptyState title="جمع‌بندی هوش مصنوعی آماده نیست" detail="مدل تا زمان دسترسی به تاریخچه و دادهٔ معتبر، نتیجهٔ ساختگی نمایش نمی‌دهد." />;
+  if (!brief) return <EmptyState title="جمع‌بندی فعلا آماده نیست" detail="برای نتیجه‌گیری باید دادهٔ کافی و به‌روز از منابع پایش دریافت شود." />;
   const tone = brief.status === "alert" ? "danger" : brief.status === "normal" ? "good" : "warning";
   return (
-    <Card className={"ai-brief ai-brief-" + tone} title={brief.headline || "گزارش هوشمند نت‌گارد"} eyebrow="برداشت تحلیلی از داده‌های پایش" subtitle={brief.summary}>
-      <div className="ai-brief-meta"><Badge tone={tone}>{brief.confidence_label || "اطمینان نامشخص"}</Badge><span>{brief.generated_at ? formatTime(brief.generated_at) : "زمان تولید نامشخص"}</span></div>
-      {brief.evidence?.length > 0 && <div className="evidence-list"><strong>شواهد</strong><ul>{brief.evidence.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
-      {brief.limitations?.length > 0 && <div className="evidence-list"><strong>محدودیت‌ها</strong><ul>{brief.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+    <Card className={"ai-brief ai-brief-" + tone} title="برداشت از وضعیت فعلی" eyebrow="خلاصهٔ سادهٔ پایش" subtitle={brief.summary || brief.headline || "هنوز جمع‌بندی روشنی از داده‌ها ممکن نیست."}>
+      <div className="ai-brief-meta"><Badge tone={tone}>{brief.confidence_label || "میزان اطمینان مشخص نیست"}</Badge><span>{brief.generated_at ? formatTime(brief.generated_at) : "زمان گزارش نامشخص"}</span></div>
     </Card>
   );
 }
