@@ -124,7 +124,7 @@ export async function fetchSnapshotWithFallback(
 
   try {
     const rows = await fetchJsonWithRetry(
-      `${supabaseUrl.replace(/\\/$/, "")}/rest/v1/netguard_snapshots?${query.toString()}`,
+      `${supabaseUrl.replace(/\/$/, "")}/rest/v1/netguard_snapshots?${query.toString()}`,
       { headers, cache: "no-store" },
       { ...options, maxAttempts: 1 },
     );
