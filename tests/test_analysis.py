@@ -40,26 +40,21 @@ def after_latest_observation(rows):
     return latest + timedelta(minutes=5)
 
 
-def test_observations_far_behind_source_cadence_are_limited_and_operational():
+def test_observations_inside_source_freshness_window_are_not_delayed_by_cycle_time():
     item = source()
     item["expected_interval_seconds"] = 300
+    item["stale_after_seconds"] = 1800
     rows = observations(item["source_id"], [1000 + (index % 2) for index in range(33)])
     item["last_observed_at"] = rows[-1]["observed_at"]
+    # The last sample is 20 minutes old but remains inside the source's 30-minute
+    # validity window; the later AI cycle execution must not invalidate it.
     result, events = analyze_dashboard([item], rows, generated_at=NOW)
     signal = result["signals"][0]
     delayed = [event for event in events if event["event_type"] == "source_delayed"]
     assert signal["freshness_status"] == "fresh"
-    assert signal["display_freshness_status"] == "delayed"
-    assert signal["data_state"] == "limited"
-    assert result["assessment"] == "insufficient_data"
-    assert result["fresh_sources"] == 0
-    assert result["data_quality"]["sources_fresh"] == 0
-    assert result["data_quality"]["sources_delayed"] == 1
-    assert result["data_quality"]["source_details"][0]["cadence_status"] == "delayed"
-    assert delayed
-    assert delayed[0]["evidence_score"] is None
-    assert delayed[0]["lifecycle"] == "operational"
-    assert "اجرای موفق جمع‌آوری" in delayed[0]["description"]
+    assert signal["display_freshness_status"] == "fresh"
+    assert signal["data_state"] in {"usable", "insufficient"}
+    assert not delayed
 
 
 def test_stable_series_is_not_reported_as_an_anomaly():

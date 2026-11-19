@@ -1,51 +1,54 @@
-# معماری عملیاتی NetGuard — نسخهٔ اول
+# معماری عملیاتی NetGuard — چرخهٔ داده و تحلیل مستقل
 
-بازدیدکننده نه جمع‌آوری را شروع می‌کند و نه منتظر اجرای مدل می‌ماند. چرخهٔ داده در پس‌زمینه اجرا می‌شود:
+بازدیدکننده هیچ پردازش جمع‌آوری یا مدل را آغاز نمی‌کند و منتظر اجرای آن نمی‌ماند. سایت فقط آخرین Snapshot کامل و منتشرشده را می‌خواند:
 
 ```text
-Supabase pg_cron / pg_net
-  ├─ هر ۱۰ دقیقه: netguard-collector (IODA)
-  ├─ هر ۱۰ دقیقه: netguard-censorship-collector (OONI)
-  ├─ هر ۱۰ دقیقه: netguard-provider-collector
-  └─ دقیقه‌های 03,13,23,33,43,53:
-       x-netguard-token → Render FastAPI
-                           /internal/collect-snapshots
-                               │
-                      خواندن viewها + تحلیل
-                               │
-                      netguard_snapshots
-                               ▲
-                Supabase REST SELECT + RLS
-                               │
-                 Render Static Site / Browser
+هر ۱۰ دقیقه — Supabase pg_cron
+  ├─ Edge Collector: IODA
+  ├─ Edge Collector: OONI
+  └─ Edge Collector: provider status
+
+دقیقهٔ 03
+  └─ Render FastAPI /internal/collect-snapshots
+       ├─ خواندن دادهٔ آماده‌شده
+       ├─ ساخت cycle_id
+       ├─ ذخیرهٔ dashboard_staging (فقط داده، بدون AI)
+       └─ ساخت Snapshotهای مستقل OONI و مراکز داده
+
+دقیقهٔ 05
+  └─ Render FastAPI /internal/analyze-dashboard-cycle
+       └─ subprocess: python -m netguard.ai_worker
+            ├─ خواندن همان dashboard_staging و cycle_id
+            ├─ اجرای مدل‌ها یک بار روی تاریخچهٔ کامل
+            ├─ ساخت پنجره‌های 24/72/168 ساعته
+            └─ یک RPC تراکنشی برای انتشار هر سه Snapshot
+
+سایت
+  └─ GET /api/dashboard?hours=24|72|168
+       └─ فقط آخرین Snapshot کامل؛ بدون اجرای Collector یا AI
 ```
 
 ## اجزا
 - Frontend: React و Vite روی Render Static Site.
-- Backend: FastAPI روی Render Free برای API خواندنی و ساخت Snapshot.
+- Backend/API: FastAPI روی Render Free برای API خواندنی و اجرای درخواست‌های زمان‌بندی‌شده.
+- AI worker: پردازش Python مستقل در یک child process کوتاه‌عمر روی همان میزبان Backend؛ بدون سرویس یا هزینهٔ زیرساخت جدید.
 - Database: Supabase PostgreSQL.
 - Collectors: سه Supabase Edge Function مستقل برای IODA، OONI و وضعیت جهانی ارائه‌دهندگان.
 - Scheduler: Supabase pg_cron و pg_net.
 
 ## چرخهٔ داده
 1. Edge Functionها هر ۱۰ دقیقه دادهٔ خام را دریافت و در Supabase ذخیره می‌کنند.
-2. observed_at زمان مشاهده و collected_at زمان دریافت را جدا نگه می‌دارند.
-3. job تجمیع در دقیقه‌های 03،13،23،33،43 و 53 درخواست محافظت‌شده‌ای به Render می‌فرستد.
-4. FastAPI تاریخچه‌های ۲۴، ۷۲ و ۱۶۸ ساعت را می‌خواند، تحلیل آماری/ML را اجرا می‌کند و شش Snapshot را می‌سازد.
-5. Snapshotها از طریق RPC محدودشدهٔ netguard_save_snapshot ذخیره می‌شوند.
-6. مرورگر Snapshotهای لازم را با Publishable Key و RLS می‌خواند و cache می‌کند.
+2. زمان مشاهدهٔ منبع (`observed_at`) از زمان دریافت (`collected_at`) جداست.
+3. job تجمیع در دقیقه‌های 03،13،23،33،43 و 53 یک `cycle_id` می‌سازد و تاریخچهٔ همان چرخه را در `dashboard_staging` قرار می‌دهد؛ این مرحله مدل AI را اجرا نمی‌کند.
+4. job مستقل AI در دقیقه‌های 05،15،25،35،45 و 55 همان `cycle_id` را می‌خواند. مدل فقط یک بار اجرا می‌شود و خروجی آن به پنجره‌های 24،72 و 168 ساعت متصل می‌شود.
+5. یک RPC تراکنشی هر سه Snapshot را با همان `cycle_id` منتشر می‌کند. تا پایان تحلیل، Snapshot قبلی دست‌نخورده می‌ماند؛ در خطا، آخرین بستهٔ سالم روی سایت می‌ماند.
+6. داشبورد برای هر درخواست فقط Snapshot از پیش محاسبه‌شده را می‌خواند و هیچ‌وقت منتظر اجرای مدل یا Collector نیست.
 
-## Snapshot و تازگی
-| کلید | محتوا | آستانهٔ stale |
-|---|---|---:|
-| dashboard_24 | ۲۴ ساعت | ۱۵ دقیقه |
-| dashboard_72 | ۳ روز | ۱۵ دقیقه |
-| dashboard_168 | ۷ روز | ۱۵ دقیقه |
-| censorship | شواهد OONI | ۳۰ دقیقه |
-| providers_status | وضعیت جهانی | ۱۵ دقیقه |
-| iran_datacenters | موجودی مراکز | ۳۰ دقیقه |
-
-اگر Snapshot کهنه باشد با is_stale مشخص می‌شود؛ دادهٔ قدیمی به‌عنوان تازه معرفی نمی‌شود.
+## تازگی داده و چرخه
+- زمان اجرای چرخه، زمان مرجع تحلیل است؛ چند دقیقه فاصلهٔ اجرای job تحلیل باعث قدیمی‌تر شمردن داده نمی‌شود.
+- آستانهٔ اعتبار هر منبع از `stale_after_seconds` همان منبع می‌آید، نه یک شرط عمومیِ سخت‌گیرانه‌تر از سه برابر cadence.
+- `observed_at` و `collected_at` هر دو حفظ می‌شوند. اجرای موفق Collector به‌تنهایی ثابت نمی‌کند منبع بالادستی نمونهٔ تازه‌ای منتشر کرده است.
+- اگر یک منبع واقعاً از پنجرهٔ اعتبار خودش عبور کند، فقط همان منبع از نتیجهٔ مربوط کنار گذاشته می‌شود؛ سایر شاخص‌های معتبر همچنان تحلیل می‌شوند.
 
 ## API
 - GET /health: سلامت پردازه و وجود تنظیمات؛ نه آزمون کامل پایگاه داده.
@@ -53,19 +56,8 @@ Supabase pg_cron / pg_net
 - GET /api/censorship
 - GET /api/providers/status
 - GET /api/iran/datacenters
-- POST /internal/collect-snapshots: فقط با x-netguard-token معتبر.
+- POST /internal/collect-snapshots: دریافت و stage داده، فقط با `x-netguard-token`.
+- POST /internal/analyze-dashboard-cycle: اجرای subprocess مدل، فقط با `x-netguard-token`.
 
-## امنیت
-- RLS روی جدول‌های exposed فعال است.
-- anon و authenticated فقط SELECT روی داده‌های عمومی دارند.
-- netguard_collector_credentials policy عمومی ندارد.
-- Edge Functionها کلید نوشتن را از secret محیط اجرا می‌گیرند.
-- RPC netguard_save_snapshot از SECURITY DEFINER استفاده می‌کند، اما توکن داخلی بلند را با hash تطبیق می‌دهد و datasetها را whitelist می‌کند. این طراحی علت هشدار Supabase Advisor دربارهٔ callable بودن RPC است و باید در بازطراحی دسترسی دوباره ارزیابی شود.
-- هیچ Secret Key یا Service Role Key در Frontend نیست.
-
-## محدودیت
-- Render Free ممکن است بخوابد؛ SLA تضمین‌شده وجود ندارد.
-- موفقیت Collector تضمین نمی‌کند منبع بالادستی مشاهدهٔ تازه منتشر کرده باشد.
-- دادهٔ قدیمی، تأخیر cadence و خطای Collector جدا هستند.
-- در شکست تجمیع ممکن است Snapshot قبلی باقی بماند؛ collected_at و is_stale باید بررسی شوند.
-- موجودی مراکز دادهٔ ایران در v1 پایش زندهٔ سلامت ندارد.
+## محدودیت اجرا
+در پلن رایگان، AI به‌صورت process جدا از API request path اجرا می‌شود اما میزبان زیرساخت مشترک است؛ این جداسازی process-level است، نه یک ماشین یا سرویس همیشه‌روشن مستقل. برای جداسازی کامل failure-domain به worker service جدا نیاز است که در این نسخه هزینهٔ جدید ایجاد نمی‌کنیم.
