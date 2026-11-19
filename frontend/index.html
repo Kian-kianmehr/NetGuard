@@ -12,11 +12,13 @@ html,body{min-height:100%;margin:0;background:#080f1d;color:#e8edf6;font-family:
 .boot-screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(ellipse at 50% 38%,#102b36 0%,#080f1d 62%);color:#dce8f3}
 .boot-mark{width:52px;height:52px;display:grid;place-items:center;border:1px solid #35606a;border-radius:16px;background:#133340;color:#70dfc2;font-weight:800;font-size:21px}
 .boot-screen strong{letter-spacing:2px;font-size:17px}
-.boot-screen p{margin:0;color:#93a8bb;font-size:13px}
+.boot-screen p{margin:0;color:#93a8bb;font-size:13px;text-align:center;max-width:min(90vw,440px);line-height:1.9}
 .boot-track{width:150px;height:3px;overflow:hidden;border-radius:5px;background:#1c3041}
 .boot-track span{display:block;width:38%;height:100%;border-radius:5px;background:#70dfc2;animation:boot-progress 1.4s ease-in-out infinite alternate}
 @keyframes boot-progress{from{transform:translateX(0)}to{transform:translateX(165px)}}
 @media(prefers-reduced-motion:reduce){.boot-track span{animation:none;width:100%}}
+.boot-recovery-button{margin-top:8px;padding:10px 18px;border:1px solid #356b68;border-radius:9px;background:#153b3b;color:#9ae8d3;font:inherit;font-size:13px;cursor:pointer}
+.boot-recovery-button:hover{background:#1c4a48}
 </style>
 </head>
 <body>
@@ -28,6 +30,55 @@ html,body{min-height:100%;margin:0;background:#080f1d;color:#e8edf6;font-family:
     <div class="boot-track"><span></span></div>
   </div>
 </div>
-<script type="module" src="/src/main.jsx"></script>
+<script type="module" id="netguard-entry" src="/src/main.jsx"></script>
+<script>
+(() => {
+  const root = document.getElementById("root");
+  const entry = document.getElementById("netguard-entry");
+  let retryCount = 0;
+  let recoveryShown = false;
+
+  function showRecovery() {
+    const splash = root?.querySelector(".boot-screen");
+    if (!splash || recoveryShown) return;
+    recoveryShown = true;
+
+    const message = document.createElement("p");
+    message.textContent = "بارگذاری برنامه کامل نشد. احتمالاً ارتباط هنگام دریافت فایل‌های سایت قطع شده است. اتصال را بررسی کن و دوباره تلاش کن.";
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "boot-recovery-button";
+    button.textContent = "تلاش دوباره";
+    button.addEventListener("click", () => window.location.reload());
+
+    splash.querySelector(".boot-track")?.remove();
+    splash.append(message, button);
+  }
+
+  function retryEntry() {
+    if (!root?.querySelector(".boot-screen") || recoveryShown) return;
+    if (retryCount >= 2) {
+      showRecovery();
+      return;
+    }
+
+    retryCount += 1;
+    window.setTimeout(() => {
+      if (!root?.querySelector(".boot-screen") || recoveryShown) return;
+      const retryScript = document.createElement("script");
+      retryScript.type = "module";
+      const separator = entry.src.includes("?") ? "&" : "?";
+      retryScript.src = entry.src + separator + "ng-retry=" + retryCount;
+      retryScript.addEventListener("error", retryEntry, { once: true });
+      document.body.appendChild(retryScript);
+    }, retryCount * 700);
+  }
+
+  entry?.addEventListener("error", retryEntry);
+  window.addEventListener("unhandledrejection", retryEntry);
+  window.setTimeout(showRecovery, 18000);
+})();
+</script>
 </body>
 </html>
