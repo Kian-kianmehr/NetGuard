@@ -76,3 +76,72 @@ export async function fetchJsonWithRetry(
 
   throw lastError || new Error("دریافت Snapshot ناموفق بود.");
 }
+
+/**
+ * Fetch a public snapshot from the regional API first, then fall back to the
+ * existing public-read Supabase table if the API host is unreachable.
+ *
+ * This uses only the publishable/anon key and the existing public SELECT policy.
+ * It never writes data or exposes a server-side secret.
+ */
+export async function fetchSnapshotWithFallback(
+  { datasetKey, apiUrl, supabaseUrl, supabaseKey },
+  options = {},
+) {
+  let apiError;
+  try {
+    const payload = await fetchJsonWithRetry(
+      apiUrl,
+      {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      },
+      options,
+    );
+    return {
+      dataset_key: datasetKey,
+      payload,
+      collected_at: payload?.snapshot_at || payload?.collected_at || null,
+      status: payload?.snapshot_status || "unknown",
+      source_count: payload?.source_count ?? 0,
+      error_code: payload?.snapshot_error || null,
+    };
+  } catch (error) {
+    apiError = error;
+  }
+
+  if (!supabaseUrl || !supabaseKey) throw apiError;
+
+  const query = new URLSearchParams({
+    select: "dataset_key,payload,collected_at,status,source_count,error_code",
+    dataset_key: `eq.${datasetKey}`,
+    limit: "1",
+  });
+  const headers = { Accept: "application/json", apikey: supabaseKey };
+  if (supabaseKey.startsWith("eyJ")) {
+    headers.Authorization = `Bearer ${supabaseKey}`;
+  }
+
+  try {
+    const rows = await fetchJsonWithRetry(
+      `${supabaseUrl.replace(/\\/$/, "")}/rest/v1/netguard_snapshots?${query.toString()}`,
+      { headers, cache: "no-store" },
+      { ...options, maxAttempts: 1 },
+    );
+    const row = Array.isArray(rows)
+      ? rows.find((item) => item?.dataset_key === datasetKey)
+      : null;
+    if (!row || !row.payload || typeof row.payload !== "object" || Array.isArray(row.payload)) {
+      throw new Error("Snapshot جایگزین در پایگاه داده پیدا نشد.");
+    }
+    return row;
+  } catch (fallbackError) {
+    const error = new Error(
+      "دریافت داده از API و مسیر جایگزین پایگاه داده ناموفق بود؛ اتصال شبکه را بررسی و دوباره تلاش کنید.",
+    );
+    error.apiError = apiError;
+    error.fallbackError = fallbackError;
+    throw error;
+  }
+}
+
