@@ -505,6 +505,11 @@ function IntelligencePage({ dashboard, status, onRetry }) {
   const joint = intelligence.joint_model || {};
   const causeIsUnclear = !cause.hypothesis_id || cause.evidence_strength === "none" || cause.hypothesis_id === "insufficient_evidence";
   const anyAnomaly = models.some((item) => item.status === "ready" && item.is_anomaly) || Boolean(joint.available && joint.is_anomaly);
+  const bgpModel = models.find((item) => item.signal === "bgp");
+  const pingModel = models.find((item) => item.signal === "ping-slash24");
+  const primaryReadyCount = [bgpModel, pingModel].filter((item) => item?.status === "ready").length;
+  const primaryAnomalyCount = [bgpModel, pingModel].filter((item) => item?.status === "ready" && item.is_anomaly).length;
+  const auxiliaryAnomalyCount = models.filter((item) => item.status === "ready" && item.is_anomaly && item.signal !== "bgp" && item.signal !== "ping-slash24").length;
 
   return (
     <div className="page-stack">
@@ -551,6 +556,39 @@ function IntelligencePage({ dashboard, status, onRetry }) {
               : "فعلاً نه؛ وقتی شاخص‌ها در بازه‌های زمانی یکسان با هم مقایسه می‌شوند، الگوی کلی آن‌ها به رفتار معمول گذشته نزدیک است.")
             : "هنوز دادهٔ تازه و هم‌زمان کافی برای مقایسهٔ قابل اتکای شاخص‌ها وجود ندارد."}</p>
         </div>
+
+      <Card title="تحلیل دقیق‌تر؛ این نشانه‌ها کنار هم چه می‌گویند؟" eyebrow="از مشاهده تا برداشت">
+        <div className="ai-deep-analysis">
+          <article>
+            <span className="eyebrow">۱ · وضعیت شواهد اصلی</span>
+            <p>{primaryReadyCount === 2
+              ? primaryAnomalyCount === 2
+                ? "هر دو ابزار اصلی پایش، تغییری بیرون از الگوی معمول خود ثبت کرده‌اند. وقتی دو روش مستقل در یک بازه تغییر نشان می‌دهند، احتمال اینکه با یک اتفاق مهم‌تر روبه‌رو باشیم بیشتر می‌شود؛ با این حال هنوز باید تداوم تغییر و داده‌های بعدی را دید."
+                : primaryAnomalyCount === 1
+                  ? "از دو ابزار اصلی، یکی تغییر غیرمعمول ثبت کرده و دیگری چنین تغییری نشان نداده است. این اختلاف مهم است: ممکن است تغییر فقط روی بخشی از شبکه یا در یکی از روش‌های اندازه‌گیری دیده شده باشد."
+                  : "هر دو ابزار اصلی در محدودهٔ معمول خود هستند. این نشانه امیدوارکننده است، اما فقط می‌گوید در همین دو نوع اندازه‌گیری تغییر غیرعادی دیده نشده؛ نه اینکه اتصال همهٔ کاربران و همهٔ سرویس‌ها حتماً بدون مشکل باشد."
+              : "در حال حاضر فقط " + num(primaryReadyCount, 0) + " مورد از دو ابزار اصلی دادهٔ آماده و قابل ارزیابی دارد. بنابراین تصویر ما از وضعیت شبکه کامل نیست و نبود هشدار را نباید معادل عادی بودن قطعی وضعیت دانست."}</p>
+          </article>
+          <article>
+            <span className="eyebrow">۲ · نشانه‌های فرعی</span>
+            <p>{auxiliaryAnomalyCount
+              ? "در کنار شاخص‌های اصلی، " + num(auxiliaryAnomalyCount, 0) + " منبع فرعی هم رفتاری متفاوت ثبت کرده است. این داده می‌تواند سرنخ مفیدی باشد، اما چون ممکن است از تغییر ترافیک یا شرایط خود منبع تأثیر بگیرد، به‌تنهایی برای اعلام اختلال عمومی کافی نیست."
+              : "در منابع فرعیِ آماده، نشانهٔ غیرعادی دیگری ثبت نشده است یا دادهٔ قابل استفاده‌ای برای چنین مقایسه‌ای وجود ندارد. منابع فرعی برای تکمیل تصویر مفیدند، اما جای شاخص‌های اصلی را نمی‌گیرند."}</p>
+          </article>
+          <article>
+            <span className="eyebrow">۳ · نتیجهٔ مقایسهٔ هم‌زمان</span>
+            <p>{joint.available
+              ? joint.is_anomaly
+                ? "مدل علاوه بر بررسی جداگانهٔ هر منبع، داده‌های هم‌زمان را هم کنار هم گذاشته و یک الگوی متفاوت پیدا کرده است. این موضوع وزن هشدار را بیشتر می‌کند، چون تغییر فقط در یک نمودار جداگانه دیده نشده است؛ اما همچنان علت را مشخص نمی‌کند."
+                : "وقتی داده‌های هم‌زمان منابع با هم مقایسه شده‌اند، الگوی مشترک غیرعادی تشخیص داده نشده است. پس فعلاً شواهد برای تأیید یک تغییر هماهنگ در کل شبکه کافی نیست."
+              : "این مقایسه هنوز انجام‌شدنی نیست؛ چون داده‌های منابع در زمان‌های نزدیک به هم و با تازگی کافی در دسترس نیستند. مقایسهٔ داده‌های مربوط به زمان‌های متفاوت می‌تواند برداشت اشتباه ایجاد کند."}</p>
+          </article>
+          <article>
+            <span className="eyebrow">۴ · این نتیجه برای کاربران چه معنایی دارد؟</span>
+            <p>این گزارش تصویری از چند شاخص ملی می‌دهد، نه آزمایش اتصال تک‌تک افراد. از آن نمی‌توان فهمید اینترنت یک شهر، اپراتور، خانه یا یک وب‌سایت مشخص حتماً قطع یا وصل است. برای چنین نتیجه‌ای به اندازه‌گیری از همان منطقه، اپراتور و مقصد نیاز داریم.</p>
+          </article>
+        </div>
+      </Card>
       </Card>
 
       <PlainForecastCard forecast={forecast} />
