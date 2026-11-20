@@ -38,20 +38,78 @@
         </div>
       </main>
     </div>
+    <script type="module" id="netguard-entry" src="/src/main.jsx"></script>
     <script>
-      window.setTimeout(function () {
-        if (document.documentElement.dataset.netguardReady === "true") return;
-        var help = document.getElementById("boot-help");
-        var retry = document.getElementById("boot-retry");
-        if (help) help.style.display = "block";
-        if (retry) {
-          retry.style.display = "inline-block";
-          retry.addEventListener("click", function () { window.location.reload(); }, { once: true });
+      (function () {
+        var entry = document.getElementById("netguard-entry");
+        var retryCount = 0;
+        var retryLimit = 2;
+
+        function bootIsVisible() {
+          return Boolean(document.querySelector("#root .boot"));
         }
-        var bar = document.querySelector(".boot-bar");
-        if (bar) bar.style.display = "none";
-      }, 14000);
+
+        function showRecovery(message) {
+          if (!bootIsVisible()) return;
+          var help = document.getElementById("boot-help");
+          var retry = document.getElementById("boot-retry");
+          var bar = document.querySelector(".boot-bar");
+
+          if (help) {
+            help.textContent = message || "برنامه در مرورگر اجرا نشد. ممکن است دریافت فایل اصلی سایت در مسیر شبکه قطع شده باشد.";
+            help.style.display = "block";
+          }
+          if (retry) {
+            retry.style.display = "inline-block";
+            retry.onclick = function () {
+              var url = new URL(window.location.href);
+              url.searchParams.set("ng-refresh", String(Date.now()));
+              window.location.replace(url.href);
+            };
+          }
+          if (bar) bar.style.display = "none";
+        }
+
+        function retryEntry() {
+          if (!bootIsVisible()) return;
+          if (retryCount >= retryLimit) {
+            showRecovery("دریافت برنامه پس از چند تلاش ناموفق بود. اتصال را بررسی کن و دوباره صفحه را باز کن.");
+            return;
+          }
+
+          retryCount += 1;
+          window.setTimeout(function () {
+            if (!bootIsVisible()) return;
+            var retryScript = document.createElement("script");
+            var retryUrl = new URL(entry.src, window.location.href);
+            retryScript.type = "module";
+            retryUrl.searchParams.set("ng-retry", String(retryCount));
+            retryScript.src = retryUrl.href;
+            retryScript.addEventListener("error", retryEntry, { once: true });
+            document.body.appendChild(retryScript);
+          }, retryCount * 700);
+        }
+
+        if (entry) entry.addEventListener("error", retryEntry, { once: true });
+
+        window.addEventListener("error", function (event) {
+          if (!bootIsVisible() || !event.message) return;
+          showRecovery("خطای اجرای برنامه: " + String(event.message).slice(0, 180));
+        }, true);
+
+        window.addEventListener("unhandledrejection", function (event) {
+          if (!bootIsVisible()) return;
+          var reason = event.reason && event.reason.message
+            ? event.reason.message
+            : event.reason || "خطای Promise هنگام راه‌اندازی";
+          showRecovery("خطای راه‌اندازی برنامه: " + String(reason).slice(0, 180));
+        });
+
+        window.setTimeout(function () {
+          if (document.documentElement.dataset.netguardReady === "true" || !bootIsVisible()) return;
+          showRecovery();
+        }, 14000);
+      })();
     </script>
-    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
