@@ -486,7 +486,7 @@ function PlainForecastCard({ forecast }) {
           <p className="ai-forecast-explanation">{forecastPlainDescription(forecast)}</p>
         </>
       ) : (
-        <EmptyState title="فعلاً پیش‌بینی قابل اتکایی نداریم" detail={forecast.note || forecastPlainDescription(forecast)} />
+        <EmptyState title="فعلاً پیش‌بینی قابل اتکایی نداریم" detail={forecastPlainDescription(forecast)} />
       )}
       <p className="scope-note">پیش‌بینی دربارهٔ روند هر شاخص است، نه درصد احتمال قطعی یا اختلال اینترنت.</p>
     </Card>
@@ -503,7 +503,8 @@ function IntelligencePage({ dashboard, status, onRetry }) {
   const recovery = intelligence.recovery_estimate || {};
   const plainSummary = buildPlainIntelligenceSummary(intelligence);
   const joint = intelligence.joint_model || {};
-  const causeIsUnclear = cause.evidence_strength === "none" || cause.hypothesis_id === "insufficient_evidence";
+  const causeIsUnclear = !cause.hypothesis_id || cause.evidence_strength === "none" || cause.hypothesis_id === "insufficient_evidence";
+  const anyAnomaly = models.some((item) => item.status === "ready" && item.is_anomaly) || Boolean(joint.available && joint.is_anomaly);
 
   return (
     <div className="page-stack">
@@ -556,7 +557,7 @@ function IntelligencePage({ dashboard, status, onRetry }) {
 
       <Card title="علت اتفاق مشخص شده؟" eyebrow="آنچه هنوز نمی‌دانیم">
         {causeIsUnclear ? (
-          <p>نه، داده‌های فعلی برای تشخیص علت کافی نیستند. می‌دانیم یک تغییر غیرمعمول در بعضی اندازه‌گیری‌ها دیده شده، اما نمی‌توانیم آن را با اطمینان به خرابی زیرساخت، محدودیت دسترسی یا عامل مشخص دیگری نسبت بدهیم.</p>
+          <p>{anyAnomaly ? "داده‌های فعلی برای تشخیص علت کافی نیستند. یک تغییر غیرمعمول دیده شده، اما نمی‌توانیم آن را با اطمینان به خرابی زیرساخت، محدودیت دسترسی یا عامل مشخص دیگری نسبت بدهیم." : "فعلاً تغییر معناداری که بتوان علت مشخصی برای آن تعیین کرد در داده‌ها دیده نمی‌شود. با این حال، نبود نشانه در این مدل‌ها به معنی تضمین سلامت کامل اینترنت نیست."}</p>
         ) : (
           <>
             <h3>{cause.hypothesis_label || "یک احتمال برای بررسی وجود دارد"}</h3>
