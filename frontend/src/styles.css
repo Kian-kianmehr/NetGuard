@@ -342,3 +342,26 @@ td small,.table-sub{display:block;margin-top:4px;color:#7e92a8;font-size:8px;lin
   .ai-forecast-plain-grid{grid-template-columns:1fr}
   .ai-technical-details>summary{align-items:flex-start;flex-wrap:wrap}
 }
+
+
+/* Deeper plain-language reasoning on the AI page only */
+.ai-deep-analysis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.ai-deep-analysis article {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border, rgba(127, 127, 127, .22));
+  border-radius: 14px;
+  background: var(--surface-soft, rgba(127, 127, 127, .045));
+}
+.ai-deep-analysis article p {
+  margin: 8px 0 0;
+  line-height: 1.9;
+  color: var(--text-secondary, inherit);
+}
+@media (max-width: 720px) {
+  .ai-deep-analysis { grid-template-columns: minmax(0, 1fr); }
+}
