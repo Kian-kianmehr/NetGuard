@@ -6,7 +6,7 @@ function toText(value) {
 }
 
 function escapeClosingTag(value, tagName) {
-  return value.replace(new RegExp(`</${tagName}`, "gi"), `<\\/${tagName}`);
+  return value.replace(new RegExp("</" + tagName, "gi"), "<\\/" + tagName);
 }
 
 export function inlineProductionAssets() {
@@ -26,56 +26,56 @@ export function inlineProductionAssets() {
         const entry = chunks.find((item) => item.isEntry);
         if (!entry || chunks.length !== 1) {
           throw new Error(
-            `Expected one self-contained JavaScript chunk, received ${chunks.length}. ` +
+            "Expected one self-contained JavaScript chunk, received " + chunks.length + ". " +
             "Enable Rollup inlineDynamicImports so the dashboard can start without external JS chunks."
           );
         }
 
         let html = toText(htmlAsset.source);
-        const scriptTag = /<script\\b(?=[^>]*\\bsrc=["'][^"']+["'])[^>]*>\\s*<\\/script>/i;
+        const scriptTag = /<script\b(?=[^>]*\bsrc=["'][^"']+["'])[^>]*>\s*<\/script>/i;
         if (!scriptTag.test(html)) {
           throw new Error("NetGuard HTML does not contain the Vite application entry script.");
         }
 
         const inlineScript = escapeClosingTag(entry.code, "script");
-        html = html.replace(scriptTag, `<script type="module">\\n${inlineScript}\\n</script>`);
+        html = html.replace(scriptTag, "<script type=\"module\">\n" + inlineScript + "\n</script>");
 
         const cssAssets = Object.values(bundle).filter(
           (item) => item.type === "asset" && item.fileName.endsWith(".css")
         );
         let inlinedCssCount = 0;
         html = html.replace(
-          /<link\\b(?=[^>]*\\brel=["']stylesheet["'])[^>]*>/gi,
+          /<link\b(?=[^>]*\brel=["']stylesheet["'])[^>]*>/gi,
           (tag) => {
-            const href = tag.match(/\\bhref=["']([^"']+)["']/i)?.[1];
+            const href = tag.match(/\bhref=["']([^"']+)["']/i)?.[1];
             if (!href) throw new Error("A generated stylesheet link has no href.");
-            const normalizedHref = href.split("?")[0].replace(/^\\/+/, "");
+            const normalizedHref = href.split("?")[0].replace(/^\/+/, "");
             const cssAsset = cssAssets.find(
-              (asset) => normalizedHref === asset.fileName || normalizedHref.endsWith(`/${asset.fileName}`)
+              (asset) => normalizedHref === asset.fileName || normalizedHref.endsWith("/" + asset.fileName)
             );
             if (!cssAsset) {
-              throw new Error(`Could not find generated CSS asset for ${href}.`);
+              throw new Error("Could not find generated CSS asset for " + href + ".");
             }
             inlinedCssCount += 1;
-            return `<style>\\n${escapeClosingTag(toText(cssAsset.source), "style")}\\n</style>`;
+            return "<style>\n" + escapeClosingTag(toText(cssAsset.source), "style") + "\n</style>";
           }
         );
 
         if (inlinedCssCount !== cssAssets.length) {
           throw new Error(
-            `Expected to inline ${cssAssets.length} CSS assets, but inlined ${inlinedCssCount}.`
+            "Expected to inline " + cssAssets.length + " CSS assets, but inlined " + inlinedCssCount + "."
           );
         }
 
         html = html.replace(
-          /<link\\b(?=[^>]*\\brel=["']modulepreload["'])[^>]*>\\s*/gi,
+          /<link\b(?=[^>]*\brel=["']modulepreload["'])[^>]*>\s*/gi,
           ""
         );
 
         if (
-          /<script\\b[^>]*\\bsrc=/i.test(html) ||
-          /<link\\b(?=[^>]*\\brel=["']stylesheet["'])/i.test(html) ||
-          /<link\\b(?=[^>]*\\brel=["']modulepreload["'])/i.test(html)
+          /<script\b[^>]*\bsrc=/i.test(html) ||
+          /<link\b(?=[^>]*\brel=["']stylesheet["'])/i.test(html) ||
+          /<link\b(?=[^>]*\brel=["']modulepreload["'])/i.test(html)
         ) {
           throw new Error("NetGuard production HTML still references an external JS or CSS entry asset.");
         }
