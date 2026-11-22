@@ -7,8 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "node --test",
-    "verify:build": "node --test test/build-output.test.js"
+    "test": "node --test"
   },
   "dependencies": {
     "react": "^18.3.1",
