@@ -4,9 +4,7 @@ import { formatFaNumber as num, formatTime, safeText, asArray } from "../lib/dat
 import { Badge, Card, DataBanner, DataMeta, EmptyState, LoadingState, Metric, Notice, SectionIntro, SelectTabs, Table } from "../components/ui.jsx";
 import { SignalChart } from "../components/charts.jsx";
 
-import * as shared from "./shared.jsx";
-
-const { primaryNames, severity, freshness, providerStatus, toneForCondition, SignalStatus, ConditionCard, SignalSummaryCard, AiBrief, ProviderCard, friendlySignalName, observationAgeText, explainSignalInPlainLanguage, buildPlainIntelligenceSummary, forecastChangeText, forecastPlainDescription, PlainForecastCard } = shared;
+import { severity, SignalStatus, ConditionCard, SignalSummaryCard, AiBrief } from "./shared.jsx";
 
 export function OverviewPage({ dashboard, dashboardStatus, onRetry, hours, onHours, onNavigate }) {
   const analysis = dashboard?.analysis || {};
