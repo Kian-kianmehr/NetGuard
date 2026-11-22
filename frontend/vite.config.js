@@ -9,6 +9,10 @@ function escapeClosingTag(value, tagName) {
   return value.replace(new RegExp("</" + tagName, "gi"), "<\\/" + tagName);
 }
 
+function stripInlineScriptContents(html) {
+  return html.replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, "$1$2");
+}
+
 export function inlineProductionAssets() {
   return {
     name: "netguard-inline-production-assets",
@@ -72,10 +76,12 @@ export function inlineProductionAssets() {
           ""
         );
 
+        // Inspect HTML markup only; the inlined application can contain strings that look like HTML.
+        const markupOnly = stripInlineScriptContents(html);
         if (
-          /<script\b[^>]*\bsrc=/i.test(html) ||
-          /<link\b(?=[^>]*\brel=["']stylesheet["'])/i.test(html) ||
-          /<link\b(?=[^>]*\brel=["']modulepreload["'])/i.test(html)
+          /<script\b[^>]*\bsrc=/i.test(markupOnly) ||
+          /<link\b(?=[^>]*\brel=["']stylesheet["'])/i.test(markupOnly) ||
+          /<link\b(?=[^>]*\brel=["']modulepreload["'])/i.test(markupOnly)
         ) {
           throw new Error("NetGuard production HTML still references an external JS or CSS entry asset.");
         }
