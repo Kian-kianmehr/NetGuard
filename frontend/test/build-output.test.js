@@ -9,10 +9,10 @@ const distDirectory = fileURLToPath(new URL("../dist/", import.meta.url));
 test("production HTML has no external JavaScript or stylesheet bootstrap requests", async () => {
   const html = await readFile(path.join(distDirectory, "index.html"), "utf8");
 
-  assert.match(html, /<script\\b[^>]*type="module"[^>]*>[\\s\\S]+?<\\/script>/i);
-  assert.doesNotMatch(html, /<script\\b[^>]*\\bsrc=/i);
-  assert.doesNotMatch(html, /<link\\b(?=[^>]*\\brel=["']stylesheet["'])/i);
-  assert.doesNotMatch(html, /<link\\b(?=[^>]*\\brel=["']modulepreload["'])/i);
+  assert.match(html, /<script\b[^>]*type="module"[^>]*>[\s\S]+?<\/script>/i);
+  assert.doesNotMatch(html, /<script\b[^>]*\bsrc=/i);
+  assert.doesNotMatch(html, /<link\b(?=[^>]*\brel=["']stylesheet["'])/i);
+  assert.doesNotMatch(html, /<link\b(?=[^>]*\brel=["']modulepreload["'])/i);
 
   let assetFiles = [];
   try {
@@ -22,7 +22,7 @@ test("production HTML has no external JavaScript or stylesheet bootstrap request
   }
 
   assert.deepEqual(
-    assetFiles.filter((name) => /\\.(?:m?js|css)(?:\\.map)?$/i.test(name)),
+    assetFiles.filter((name) => /\.(?:m?js|css)(?:\.map)?$/i.test(name)),
     [],
     "JavaScript and CSS should be embedded into the production HTML."
   );
