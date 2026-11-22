@@ -24,7 +24,10 @@ test("inlines the entry JavaScript and stylesheet into index.html", () => {
       type: "chunk",
       fileName: "assets/index-test.js",
       isEntry: true,
-      code: "globalThis.netguardBooted = true;",
+      code: [
+        "globalThis.netguardBooted = true;",
+        "const htmlSnippet = '<script src=\"/not-a-network-request.js\"></script>';",
+      ].join("\n"),
     },
     "assets/index-test.css": {
       type: "asset",
@@ -43,9 +46,10 @@ test("inlines the entry JavaScript and stylesheet into index.html", () => {
   const html = bundle["index.html"].source;
   assert.match(html, /<script type="module">[\s\S]*globalThis\.netguardBooted = true;/);
   assert.match(html, /<style>[\s\S]*body \{ color: #123456; \}/);
-  assert.doesNotMatch(html, /<script\b[^>]*\bsrc=/i);
-  assert.doesNotMatch(html, /rel="modulepreload"/i);
-  assert.doesNotMatch(html, /rel="stylesheet"/i);
+  assert.match(html, /htmlSnippet/);
+  assert.doesNotMatch(html.replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, "$1$2"), /<script\b[^>]*\bsrc=/i);
+  assert.doesNotMatch(html.replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, "$1$2"), /rel="modulepreload"/i);
+  assert.doesNotMatch(html.replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, "$1$2"), /rel="stylesheet"/i);
   assert.equal(bundle["assets/index-test.js"], undefined);
   assert.equal(bundle["assets/index-test.css"], undefined);
   assert.ok(bundle["favicon.svg"]);
