@@ -36,13 +36,24 @@ export function inlineProductionAssets() {
         }
 
         let html = toText(htmlAsset.source);
-        const scriptTag = /<script\b(?=[^>]*\bsrc=["'][^"']+["'])[^>]*>\s*<\/script>/i;
-        if (!scriptTag.test(html)) {
+        const scriptTag = /<script\b(?=[^>]*\bsrc=["'][^"']+["'])[^>]*>\s*<\/script>/gi;
+        const scriptTags = html.match(scriptTag) || [];
+        if (!scriptTags.length) {
           throw new Error("NetGuard HTML does not contain the Vite application entry script.");
         }
 
+        const scriptSources = scriptTags.map((tag) => tag.match(/\bsrc=["']([^"']+)["']/i)?.[1] || "");
+        if (new Set(scriptSources).size !== 1 || scriptSources.some((source) => !source)) {
+          throw new Error("NetGuard HTML contains multiple distinct external script entries: " + JSON.stringify(scriptSources));
+        }
+
         const inlineScript = escapeClosingTag(entry.code, "script");
-        html = html.replace(scriptTag, "<script type=\"module\">\n" + inlineScript + "\n</script>");
+        let entryReplaced = false;
+        html = html.replace(scriptTag, () => {
+          if (entryReplaced) return "";
+          entryReplaced = true;
+          return "<script type=\"module\">\n" + inlineScript + "\n</script>";
+        });
 
         const cssAssets = Object.values(bundle).filter(
           (item) => item.type === "asset" && item.fileName.endsWith(".css")
@@ -76,7 +87,6 @@ export function inlineProductionAssets() {
           ""
         );
 
-        // Inspect HTML markup only; the inlined application can contain strings that look like HTML.
         const markupOnly = stripInlineScriptContents(html);
         const remainingAssets = {
           scripts: markupOnly.match(/<script\b[^>]*\bsrc=[^>]*>/gi) || [],
