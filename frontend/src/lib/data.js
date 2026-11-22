@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { fetchSnapshotWithFallback } from "../snapshot-client.js";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "https://netguard-api-oan9.onrender.com").replace(/\/+$/, "");
@@ -84,14 +84,14 @@ function createInitialStatuses(items) {
 }
 
 export function useNetguardData() {
-  const [items, setItems] = useState(readCache);
-  const [statuses, setStatuses] = useState(() => createInitialStatuses(readCache()));
-  const itemsRef = useRef(items);
-  const inFlight = useRef(new Map());
+  const cacheRef = useRef(null);
+  if (cacheRef.current === null) cacheRef.current = readCache();
+  const initialItems = cacheRef.current;
 
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
+  const [items, setItems] = useState(initialItems);
+  const [statuses, setStatuses] = useState(() => createInitialStatuses(initialItems));
+  const itemsRef = useRef(initialItems);
+  const inFlight = useRef(new Map());
 
   const loadOne = useCallback(async (key, force = false) => {
     const config = SNAPSHOTS[key];
