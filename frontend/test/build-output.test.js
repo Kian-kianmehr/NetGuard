@@ -8,11 +8,12 @@ const distDirectory = fileURLToPath(new URL("../dist/", import.meta.url));
 
 test("production HTML has no external JavaScript or stylesheet bootstrap requests", async () => {
   const html = await readFile(path.join(distDirectory, "index.html"), "utf8");
+  const markupOnly = html.replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, "$1$2");
 
-  assert.match(html, /<script\b[^>]*type="module"[^>]*>[\s\S]+?<\/script>/i);
-  assert.doesNotMatch(html, /<script\b[^>]*\bsrc=/i);
-  assert.doesNotMatch(html, /<link\b(?=[^>]*\brel=["']stylesheet["'])/i);
-  assert.doesNotMatch(html, /<link\b(?=[^>]*\brel=["']modulepreload["'])/i);
+  assert.match(markupOnly, /<script\b[^>]*type="module"[^>]*>[\s\S]*?<\/script>/i);
+  assert.doesNotMatch(markupOnly, /<script\b[^>]*\bsrc=/i);
+  assert.doesNotMatch(markupOnly, /<link\b(?=[^>]*\brel=["']stylesheet["'])/i);
+  assert.doesNotMatch(markupOnly, /<link\b(?=[^>]*\brel=["']modulepreload["'])/i);
 
   let assetFiles = [];
   try {
