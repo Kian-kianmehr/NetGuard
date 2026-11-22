@@ -7,16 +7,18 @@ test("inlines the entry JavaScript and stylesheet into index.html", () => {
     "index.html": {
       type: "asset",
       fileName: "index.html",
-      source: `<!doctype html>
-<html>
-<head>
-<link rel="stylesheet" crossorigin href="/assets/index-test.css">
-<link rel="modulepreload" crossorigin href="/assets/shared-test.js">
-</head>
-<body>
-<script type="module" crossorigin src="/assets/index-test.js"></script>
-</body>
-</html>`,
+      source: [
+        "<!doctype html>",
+        "<html>",
+        "<head>",
+        '<link rel="stylesheet" crossorigin href="/assets/index-test.css">',
+        '<link rel="modulepreload" crossorigin href="/assets/shared-test.js">',
+        "</head>",
+        "<body>",
+        '<script type="module" crossorigin src="/assets/index-test.js"></script>',
+        "</body>",
+        "</html>",
+      ].join("\n"),
     },
     "assets/index-test.js": {
       type: "chunk",
@@ -39,9 +41,9 @@ test("inlines the entry JavaScript and stylesheet into index.html", () => {
   inlineProductionAssets().generateBundle.handler({}, bundle);
 
   const html = bundle["index.html"].source;
-  assert.match(html, /<script type="module">[\\s\\S]*globalThis\\.netguardBooted = true;/);
-  assert.match(html, /<style>[\\s\\S]*body \\{ color: #123456; \\}/);
-  assert.doesNotMatch(html, /<script\\b[^>]*\\bsrc=/i);
+  assert.match(html, /<script type="module">[\s\S]*globalThis\.netguardBooted = true;/);
+  assert.match(html, /<style>[\s\S]*body \{ color: #123456; \}/);
+  assert.doesNotMatch(html, /<script\b[^>]*\bsrc=/i);
   assert.doesNotMatch(html, /rel="modulepreload"/i);
   assert.doesNotMatch(html, /rel="stylesheet"/i);
   assert.equal(bundle["assets/index-test.js"], undefined);
