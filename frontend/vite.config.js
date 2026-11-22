@@ -78,12 +78,17 @@ export function inlineProductionAssets() {
 
         // Inspect HTML markup only; the inlined application can contain strings that look like HTML.
         const markupOnly = stripInlineScriptContents(html);
+        const remainingAssets = {
+          scripts: markupOnly.match(/<script\b[^>]*\bsrc=[^>]*>/gi) || [],
+          stylesheets: markupOnly.match(/<link\b(?=[^>]*\brel=["']stylesheet["'])[^>]*>/gi) || [],
+          modulepreloads: markupOnly.match(/<link\b(?=[^>]*\brel=["']modulepreload["'])[^>]*>/gi) || [],
+        };
         if (
-          /<script\b[^>]*\bsrc=/i.test(markupOnly) ||
-          /<link\b(?=[^>]*\brel=["']stylesheet["'])/i.test(markupOnly) ||
-          /<link\b(?=[^>]*\brel=["']modulepreload["'])/i.test(markupOnly)
+          remainingAssets.scripts.length ||
+          remainingAssets.stylesheets.length ||
+          remainingAssets.modulepreloads.length
         ) {
-          throw new Error("NetGuard production HTML still references an external JS or CSS entry asset.");
+          throw new Error("NetGuard production HTML still references external assets: " + JSON.stringify(remainingAssets));
         }
 
         htmlAsset.source = html;
