@@ -160,6 +160,7 @@ export function useNetguardData() {
   }, [loadOne]);
 
   const refreshPage = useCallback((page, hours, force = false) => {
+    if (page === "overview") return load(["dashboard_" + hours, "intelligence_" + hours], force);
     if (page === "censorship") return load(["censorship"], force);
     if (page === "providers") return load(["providers_status", "iran_datacenters"], force);
     if (page === "intelligence") return load(["intelligence_" + hours], force);
