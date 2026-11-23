@@ -6,6 +6,83 @@ import { SignalChart } from "../components/charts.jsx";
 
 import { primaryNames, AiBrief, friendlySignalName, observationAgeText, explainSignalInPlainLanguage, buildPlainIntelligenceSummary, PlainForecastCard } from "./shared.jsx";
 
+
+function AiQuestionPanel({ intelligence, plainSummary, models, forecast, cause, causeIsUnclear }) {
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState(null);
+  const suggestions = [
+    "وضعیت فعلی اینترنت چطور است؟",
+    "چه تغییر غیرعادی شناسایی شده؟",
+    "پیش‌بینی نیم ساعت آینده چیست؟",
+    "علت اختلال مشخص شده؟",
+  ];
+
+  const ask = (raw = question) => {
+    const original = String(raw || "").trim();
+    setQuestion(original);
+    if (!original) {
+      setAnswer({ text: "سؤال را بنویس یا یکی از پیشنهادها را انتخاب کن.", label: "منتظر پرسش" });
+      return;
+    }
+    const q = original.replace(/[يى]/g, "ی").replace(/ك/g, "ک").toLowerCase();
+    const ready = models.filter((item) => item.status === "ready");
+    const anomalies = ready.filter((item) => item.is_anomaly);
+    let text;
+    let label = "پاسخ بر پایهٔ داده‌های پایش";
+
+    if (/پیش.?بین|آینده|نیم.?ساعت|۳۰ دقیقه|روند/.test(q)) {
+      text = forecastPlainDescription(forecast);
+      if (!forecast?.available) text += " " + (forecast?.note || "در حال حاضر پیش‌بینی معتبر در خروجی مدل ثبت نشده است.");
+    } else if (/علت|چرا|دلیل/.test(q)) {
+      text = causeIsUnclear
+        ? "با داده‌های فعلی علت مشخصی قابل تأیید نیست. مدل می‌تواند تغییر را شناسایی کند، اما بدون شواهد مستقل نمی‌توان آن را به خرابی زیرساخت، محدودیت دسترسی یا عامل دیگری نسبت داد."
+        : (cause.description || cause.hypothesis_label || "یک فرضیه برای بررسی وجود دارد، اما این نتیجه تشخیص قطعی علت نیست.");
+    } else if (/bgp|مسیر|مسیرها/.test(q)) {
+      const item = models.find((entry) => entry.signal === "bgp");
+      text = item ? explainSignalInPlainLanguage(item) : "برای شاخص BGP در این چرخه داده‌ای ثبت نشده است.";
+    } else if (/پینگ|ping|پاسخ.?گوی|پاسخ.?ده/.test(q)) {
+      const item = models.find((entry) => entry.signal === "ping-slash24");
+      text = item ? explainSignalInPlainLanguage(item) : "برای شاخص پایش فعال شبکه در این چرخه داده‌ای ثبت نشده است.";
+    } else if (/ناهنجار|غیر.?معمول|هشدار|تغییر/.test(q)) {
+      text = anomalies.length
+        ? "مدل در " + anomalies.map((item) => friendlySignalName(item.signal)).join("، ") + " تغییر غیرمعمول ثبت کرده است. این نشانه‌ها نیازمند بررسی‌اند و به‌تنهایی وقوع اختلال گسترده یا علت آن را ثابت نمی‌کنند."
+        : ready.length
+          ? "در شاخص‌های آماده، مدل در این چرخه تغییر غیرمعمولی علامت‌گذاری نکرده است. این نتیجه سلامت همهٔ مناطق و اپراتورها را تضمین نمی‌کند."
+          : "هنوز شاخص آماده و دارای تاریخچهٔ کافی برای تشخیص ناهنجاری وجود ندارد.";
+    } else if (/اطمینان|اعتماد|مطمئن/.test(q)) {
+      const brief = intelligence?.analysis_brief || {};
+      text = (brief.confidence_label ? "سطح اطمینان گزارش: " + brief.confidence_label + ". " : "")
+        + (brief.limitations?.length ? "محدودیت‌ها: " + brief.limitations.join("؛ ") : "اطمینان به‌دلیل پوشش محدود داده‌ها باید محتاطانه تفسیر شود.");
+    } else if (/وضعیت|اینترنت|اختلال|الان|فعلی|پایدار/.test(q)) {
+      text = plainSummary.text || "برای جمع‌بندی وضعیت فعلی دادهٔ کافی در دسترس نیست.";
+    } else {
+      text = "این پرسش را نمی‌توان از داده‌های فعلی نت‌گارد با اطمینان پاسخ داد. دستیار به‌جای ساختن جواب، فقط دربارهٔ وضعیت فعلی، تغییرات غیرمعمول، شاخص‌های BGP و پینگ، پیش‌بینی و محدودیت شواهد پاسخ می‌دهد.";
+      label = "محدودهٔ داده کافی نیست";
+    }
+    setAnswer({ text, label });
+  };
+
+  return (
+    <Card className="ai-question-panel">
+      <div className="ai-question-title"><span>✳</span> از تحلیل هوشمند نت‌گارد بپرس</div>
+      <p>پاسخ‌ها از خروجی مدل‌های یادگیری ماشین و شواهد واقعی همین چرخه ساخته می‌شوند؛ اگر داده کافی نباشد، صریح اعلام می‌کنیم.</p>
+      <form className="ai-question-form" onSubmit={(event) => { event.preventDefault(); ask(); }}>
+        <input
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          placeholder="مثلاً آیا در شاخص‌های اصلی تغییر غیرعادی دیده شده؟"
+          aria-label="پرسش درباره وضعیت شبکه"
+        />
+        <button type="submit">تحلیل پرسش</button>
+      </form>
+      <div className="ai-question-prompts">
+        {suggestions.map((prompt) => <button key={prompt} type="button" onClick={() => ask(prompt)}>{prompt}</button>)}
+      </div>
+      {answer && <div className="ai-question-answer" role="status" aria-live="polite"><small>{answer.label}</small><p>{answer.text}</p></div>}
+    </Card>
+  );
+}
+
 export function IntelligencePage({ record, status, onRetry }) {
   const intelligence = record?.intelligence || {};
   const forecast = intelligence.forecast || {};
@@ -29,6 +106,15 @@ export function IntelligencePage({ record, status, onRetry }) {
         اینجا به‌جای دیدن صرفاً امتیاز مدل‌ها، می‌بینی چه تغییری در شبکه شناسایی شده، کدام شواهد آن را پشتیبانی می‌کنند و چه چیزهایی هنوز معلوم نیست.
       </SectionIntro>
       <DataBanner status={status} record={record} onRetry={onRetry} />
+
+      <AiQuestionPanel
+        intelligence={intelligence}
+        plainSummary={plainSummary}
+        models={models}
+        forecast={forecast}
+        cause={cause}
+        causeIsUnclear={causeIsUnclear}
+      />
 
       <Card className="ai-plain-overview">
         <div className="ai-plain-heading">

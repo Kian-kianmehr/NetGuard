@@ -18,13 +18,13 @@ const NAVIGATION = [
 const PAGE_TITLES = Object.fromEntries(NAVIGATION.map((item) => [item.id, item.label]));
 
 export default function App() {
-  const [page, setPage] = useState("overview");
+  const [page, setPage] = useState("intelligence");
   const [hours, setHours] = useState(24);
   const { items, statuses, load, refreshPage } = useNetguardData();
 
   useEffect(() => {
     document.documentElement.dataset.netguardReady = "true";
-    load(["dashboard_24", "censorship", "providers_status", "iran_datacenters"]);
+    load(["dashboard_24", "intelligence_24", "censorship", "providers_status", "iran_datacenters"]);
     const refresh = () => {
       if (document.visibilityState === "visible") {
         load(["dashboard_24", "censorship", "providers_status", "iran_datacenters"]);
