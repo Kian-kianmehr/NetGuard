@@ -4,9 +4,10 @@ import { formatFaNumber as num, formatTime, safeText, asArray } from "../lib/dat
 import { Badge, Card, DataBanner, DataMeta, EmptyState, LoadingState, Metric, Notice, SectionIntro, SelectTabs, Table } from "../components/ui.jsx";
 import { SignalChart } from "../components/charts.jsx";
 
-import { severity, SignalStatus, ConditionCard, SignalSummaryCard } from "./shared.jsx";
+import { severity, SignalStatus, ConditionCard, SignalSummaryCard, buildPlainIntelligenceSummary } from "./shared.jsx";
+import { AiQuestionPanel } from "./intelligence.jsx";
 
-export function OverviewPage({ dashboard, dashboardStatus, onRetry, hours, onHours, onNavigate }) {
+export function OverviewPage({ dashboard, dashboardStatus, intelligenceRecord, intelligenceStatus, onRetry, hours, onHours, onNavigate }) {
   const analysis = dashboard?.analysis || {};
   const signals = asArray(analysis.signals);
   const sources = asArray(dashboard?.sources);
@@ -22,6 +23,19 @@ export function OverviewPage({ dashboard, dashboardStatus, onRetry, hours, onHou
         شاخص‌های زیرساخت، سنجش دسترسی، کیفیت داده و تحلیل هوشمند را در یک گزارش قابل بررسی کنار هم ببین.
       </SectionIntro>
       <DataBanner status={dashboardStatus} record={dashboard} onRetry={onRetry} />
+      {intelligenceRecord && (() => {
+        const intelligence = intelligenceRecord.intelligence || {};
+        const cause = intelligence.cause_analysis || {};
+        const causeIsUnclear = !cause.hypothesis_id || cause.evidence_strength === "none" || cause.hypothesis_id === "insufficient_evidence";
+        return <AiQuestionPanel
+          intelligence={intelligence}
+          plainSummary={buildPlainIntelligenceSummary(intelligence)}
+          models={asArray(intelligence.signals)}
+          forecast={intelligence.forecast || {}}
+          cause={cause}
+          causeIsUnclear={causeIsUnclear}
+        />;
+      })()}
       <div className="toolbar-row">
         <SelectTabs value={hours} onChange={onHours} options={hoursOptions} label="بازهٔ زمانی" />
         <span className="quiet-label">{num(observations.length, 0)} مشاهده در این بازه</span>
