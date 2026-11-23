@@ -8,13 +8,13 @@ const distDirectory = fileURLToPath(new URL("../dist/", import.meta.url));
 
 test("production HTML references generated same-origin JavaScript and CSS assets", async () => {
   const html = await readFile(path.join(distDirectory, "index.html"), "utf8");
-  const script = html.match(/<script\\b(?=[^>]*\\btype=["']module["'])(?=[^>]*\\bsrc=["']([^"']+)["'])[^>]*>/i);
-  const stylesheet = html.match(/<link\\b(?=[^>]*\\brel=["']stylesheet["'])(?=[^>]*\\bhref=["']([^"']+)["'])[^>]*>/i);
+  const script = html.match(/<script\b[^>]*type="module"[^>]*src="([^"]+)"/i);
+  const stylesheet = html.match(/<link\b[^>]*rel="stylesheet"[^>]*href="([^"]+)"/i);
 
   assert.ok(script, "Vite must emit an external module entry script.");
   assert.ok(stylesheet, "Vite must emit a production stylesheet.");
-  assert.match(script[1], /^\\/assets\\/.+\\.js(?:\\?.*)?$/);
-  assert.match(stylesheet[1], /^\\/assets\\/.+\\.css(?:\\?.*)?$/);
+  assert.ok(script[1].startsWith("/assets/") && script[1].endsWith(".js"));
+  assert.ok(stylesheet[1].startsWith("/assets/") && stylesheet[1].endsWith(".css"));
 
   const assetFiles = await readdir(path.join(distDirectory, "assets"));
   assert.ok(assetFiles.includes(path.basename(script[1].split("?")[0])));
