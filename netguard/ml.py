@@ -528,8 +528,13 @@ def _joint_signal_model(
         _stale_after_seconds(source_by_signal[signal]) for signal in required
     )
     joint_collection_age = max(
-        (_collection_age_seconds(str(source_by_signal[signal].get("source_id") or ""), observations, now) or float("inf"))
-        for signal in required
+        (
+            age if age is not None else float("inf")
+            for signal in required
+            for age in [_collection_age_seconds(
+                str(source_by_signal[signal].get("source_id") or ""), observations, now
+            )]
+        )
     )
     if joint_collection_age > joint_freshness_limit:
         return {"available": False, "status": "stale_data", "status_label": "آخرین بستهٔ جمع‌آوری‌شده از مهلت اعتبار عبور کرده است", "reason": "آخرین جمع‌آوری موفق یکی از شاخص‌های اصلی بیش از یک ساعت قبل بوده است", "score": None}
