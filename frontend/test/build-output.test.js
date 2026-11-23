@@ -8,10 +8,10 @@ const distDirectory = fileURLToPath(new URL("../dist/", import.meta.url));
 
 test("production HTML references same-origin JavaScript and CSS assets", async () => {
   const html = await readFile(path.join(distDirectory, "index.html"), "utf8");
-  const scriptTag = html.match(/<script\\b(?=[^>]*\\btype=["']module["'])[^>]*>/i)?.[0];
-  const stylesheetTag = html.match(/<link\\b(?=[^>]*\\brel=["']stylesheet["'])[^>]*>/i)?.[0];
-  const scriptSrc = scriptTag?.match(/\\bsrc=["']([^"']+)["']/i)?.[1];
-  const stylesheetHref = stylesheetTag?.match(/\\bhref=["']([^"']+)["']/i)?.[1];
+  const scriptTag = html.match(/<script\b(?=[^>]*\btype=["']module["'])[^>]*>/i)?.[0];
+  const stylesheetTag = html.match(/<link\b(?=[^>]*\brel=["']stylesheet["'])[^>]*>/i)?.[0];
+  const scriptSrc = scriptTag?.match(/\bsrc=["']([^"']+)["']/i)?.[1];
+  const stylesheetHref = stylesheetTag?.match(/\bhref=["']([^"']+)["']/i)?.[1];
 
   assert.ok(scriptSrc, "Vite must emit an external module entry script.");
   assert.ok(stylesheetHref, "Vite must emit an external production stylesheet.");
