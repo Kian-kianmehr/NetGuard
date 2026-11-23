@@ -5,7 +5,6 @@ import { Badge, Card, DataBanner, DataMeta, EmptyState, LoadingState, Metric, No
 import { SignalChart } from "../components/charts.jsx";
 
 import { severity, SignalStatus, ConditionCard, SignalSummaryCard, buildPlainIntelligenceSummary, PlainForecastCard } from "./shared.jsx";
-import { AiQuestionPanel } from "./intelligence.jsx";
 
 export function OverviewPage({ dashboard, dashboardStatus, intelligenceRecord, intelligenceStatus, onRetry, hours, onHours, onNavigate }) {
   const analysis = dashboard?.analysis || {};
@@ -29,14 +28,6 @@ export function OverviewPage({ dashboard, dashboardStatus, intelligenceRecord, i
         const causeIsUnclear = !cause.hypothesis_id || cause.evidence_strength === "none" || cause.hypothesis_id === "insufficient_evidence";
         const plainSummary = buildPlainIntelligenceSummary(intelligence);
         return <>
-          <AiQuestionPanel
-            intelligence={intelligence}
-            plainSummary={plainSummary}
-            models={asArray(intelligence.signals)}
-            forecast={intelligence.forecast || {}}
-            cause={cause}
-            causeIsUnclear={causeIsUnclear}
-          />
           <Card className="ai-plain-overview">
             <div className="ai-plain-heading">
               <div>
