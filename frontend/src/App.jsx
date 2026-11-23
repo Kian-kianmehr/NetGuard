@@ -58,8 +58,7 @@ export default function App() {
   const dashboard = items["dashboard_" + hours];
   const activeStatus = page === "censorship" ? statuses.censorship
     : page === "providers" ? statuses.providers_status
-      : page === "intelligence" ? statuses["intelligence_" + hours]
-        : page === "method" ? null : statuses["dashboard_" + hours];
+      : page === "method" ? null : statuses["dashboard_" + hours];
 
   return (
     <div className="app-shell" dir="rtl">

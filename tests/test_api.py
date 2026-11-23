@@ -392,3 +392,24 @@ def test_intelligence_api_rejects_unavailable_window():
     with TestClient(app) as client:
         response = client.get("/api/intelligence?hours=48")
     assert response.status_code == 422
+
+
+
+def test_dashboard_api_keeps_ai_payload_out_of_monitoring_response(monkeypatch):
+    snapshot = {
+        "analysis": {
+            "anomalous_sources": 1,
+            "intelligence": {"model_name": "private-ai-read-model"},
+        },
+        "sources": [],
+        "observations": [],
+    }
+    monkeypatch.setattr("app.main._read_snapshot", lambda key, stale_after_seconds: snapshot)
+
+    with TestClient(app) as client:
+        response = client.get("/api/dashboard?hours=24")
+
+    assert response.status_code == 200
+    assert response.json()["analysis"]["anomalous_sources"] == 1
+    assert "intelligence" not in response.json()["analysis"]
+    assert snapshot["analysis"]["intelligence"]["model_name"] == "private-ai-read-model"

@@ -9,16 +9,13 @@ export const SNAPSHOTS = {
   dashboard_24: { path: "/api/dashboard?hours=24", ttl: 15 * 60 * 1000 },
   dashboard_72: { path: "/api/dashboard?hours=72", ttl: 15 * 60 * 1000 },
   dashboard_168: { path: "/api/dashboard?hours=168", ttl: 15 * 60 * 1000 },
-  intelligence_24: { path: "/api/intelligence?hours=24", ttl: 15 * 60 * 1000 },
-  intelligence_72: { path: "/api/intelligence?hours=72", ttl: 15 * 60 * 1000 },
-  intelligence_168: { path: "/api/intelligence?hours=168", ttl: 15 * 60 * 1000 },
   censorship: { path: "/api/censorship", ttl: 30 * 60 * 1000 },
   providers_status: { path: "/api/providers/status", ttl: 15 * 60 * 1000 },
   iran_datacenters: { path: "/api/iran/datacenters", ttl: 30 * 60 * 1000 },
 };
 
-const CACHE_KEY = "netguard.cache.v3";
-const CACHE_VERSION = 3;
+const CACHE_KEY = "netguard.cache.v2";
+const CACHE_VERSION = 2;
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -162,7 +159,6 @@ export function useNetguardData() {
   const refreshPage = useCallback((page, hours, force = false) => {
     if (page === "censorship") return load(["censorship"], force);
     if (page === "providers") return load(["providers_status", "iran_datacenters"], force);
-    if (page === "intelligence") return load(["intelligence_" + hours], force);
     if (page === "method") return Promise.resolve([]);
     return load(["dashboard_" + hours], force);
   }, [load]);
