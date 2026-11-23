@@ -41,7 +41,7 @@
     <script type="module" id="netguard-entry" src="/src/main.jsx"></script>
     <script>
       (function () {
-        var entry = document.getElementById("netguard-entry");
+        var entry = document.querySelector('script[type="module"][src]');
         var retryCount = 0;
         var retryLimit = 2;
 

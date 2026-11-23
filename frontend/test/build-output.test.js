@@ -17,7 +17,6 @@ test("production HTML references same-origin JavaScript and CSS assets", async (
   assert.ok(stylesheetHref, "Vite must emit an external production stylesheet.");
   assert.ok(scriptSrc.startsWith("/assets/") && scriptSrc.endsWith(".js"));
   assert.ok(stylesheetHref.startsWith("/assets/") && stylesheetHref.endsWith(".css"));
-  assert.match(html, /id=["']netguard-entry["']/i, "The boot recovery handler must retain its entry reference.");
 
   const assetFiles = await readdir(path.join(distDirectory, "assets"));
   assert.ok(assetFiles.includes(path.basename(scriptSrc.split("?")[0])));
