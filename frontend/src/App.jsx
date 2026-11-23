@@ -3,11 +3,11 @@ import { useNetguardData } from "./lib/data.js";
 import PageContent from "./pages/index.jsx";
 
 const NAVIGATION = [
-  { id: "overview", label: "نمای کلی", glyph: "◫", group: "پایش" },
+  { id: "overview", label: "مرکز هوشمند", glyph: "✳", group: "مرکز هوشمند" },
   { id: "quality", label: "کیفیت داده", glyph: "▦", group: "پایش" },
   { id: "signals", label: "سیگنال‌ها", glyph: "⌁", group: "پایش" },
   { id: "analysis", label: "تحلیل وضعیت", glyph: "◉", group: "تحلیل" },
-  { id: "intelligence", label: "هوش مصنوعی", glyph: "✳", group: "تحلیل" },
+  { id: "intelligence", label: "مدل‌ها و تحلیل AI", glyph: "◉", group: "مرکز هوشمند" },
   { id: "events", label: "دفتر رخدادها", glyph: "!", group: "تحلیل" },
   { id: "censorship", label: "وب و فیلترینگ", glyph: "◎", group: "زیرساخت" },
   { id: "providers", label: "دیتاسنترها و سرویس‌ها", glyph: "▤", group: "زیرساخت" },
@@ -18,7 +18,7 @@ const NAVIGATION = [
 const PAGE_TITLES = Object.fromEntries(NAVIGATION.map((item) => [item.id, item.label]));
 
 export default function App() {
-  const [page, setPage] = useState("intelligence");
+  const [page, setPage] = useState("overview");
   const [hours, setHours] = useState(24);
   const { items, statuses, load, refreshPage } = useNetguardData();
 
@@ -50,6 +50,7 @@ export default function App() {
   };
 
   const refreshCurrent = () => {
+    if (page === "overview") return load(["dashboard_" + hours, "intelligence_" + hours], true);
     if (page === "censorship") return refreshPage(page, hours, true);
     if (page === "providers") return refreshPage(page, hours, true);
     return refreshPage(page, hours, true);
@@ -70,7 +71,7 @@ export default function App() {
         </div>
         <div className="sidebar-caption">فضای کاری</div>
         <nav className="main-nav" aria-label="بخش‌های نت‌گارد">
-          {["پایش", "تحلیل", "زیرساخت", "سامانه"].map((group) => (
+          {["مرکز هوشمند", "پایش", "تحلیل", "زیرساخت", "سامانه"].map((group) => (
             <div className="nav-group" key={group}>
               <span className="nav-group-label">{group}</span>
               {NAVIGATION.filter((item) => item.group === group).map((item) => (
