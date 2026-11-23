@@ -6,9 +6,8 @@ import { SignalChart } from "../components/charts.jsx";
 
 import { primaryNames, AiBrief, friendlySignalName, observationAgeText, explainSignalInPlainLanguage, buildPlainIntelligenceSummary, PlainForecastCard } from "./shared.jsx";
 
-export function IntelligencePage({ dashboard, status, onRetry }) {
-  const analysis = dashboard?.analysis || {};
-  const intelligence = analysis.intelligence || {};
+export function IntelligencePage({ record, status, onRetry }) {
+  const intelligence = record?.intelligence || {};
   const forecast = intelligence.forecast || {};
   const components = asArray(forecast.components).filter((item) => item.available);
   const models = asArray(intelligence.signals);
@@ -29,7 +28,7 @@ export function IntelligencePage({ dashboard, status, onRetry }) {
       <SectionIntro eyebrow="NetGuard Intelligence" title="هوش مصنوعی و پیش‌بینی">
         اینجا به‌جای دیدن صرفاً امتیاز مدل‌ها، می‌بینی چه تغییری در شبکه شناسایی شده، کدام شواهد آن را پشتیبانی می‌کنند و چه چیزهایی هنوز معلوم نیست.
       </SectionIntro>
-      <DataBanner status={status} record={dashboard} onRetry={onRetry} />
+      <DataBanner status={status} record={record} onRetry={onRetry} />
 
       <Card className="ai-plain-overview">
         <div className="ai-plain-heading">

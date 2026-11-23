@@ -360,3 +360,35 @@ def test_internal_ai_worker_enqueues_task_when_redis_is_configured(monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"status": "queued", "task_id": "task-123"}
+
+
+
+def test_intelligence_api_returns_only_the_persisted_ai_payload(monkeypatch):
+    from app.main import app
+
+    snapshot = {
+        "analysis": {"intelligence": {"model_name": "netguard-test", "signals": []}},
+        "snapshot_at": "2026-11-23T10:00:00Z",
+        "generated_at": "2026-11-23T09:59:00Z",
+        "analysis_completed_at": "2026-11-23T10:01:00Z",
+        "analysis_cycle_id": "cycle-ai-1",
+        "snapshot_status": "success",
+        "is_stale": False,
+    }
+    monkeypatch.setattr("app.main._read_snapshot", lambda key, stale_after_seconds: snapshot)
+
+    with TestClient(app) as client:
+        response = client.get("/api/intelligence?hours=24")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["intelligence"]["model_name"] == "netguard-test"
+    assert payload["cycle_id"] == "cycle-ai-1"
+    assert "sources" not in payload
+    assert "observations" not in payload
+
+
+def test_intelligence_api_rejects_unavailable_window():
+    with TestClient(app) as client:
+        response = client.get("/api/intelligence?hours=48")
+    assert response.status_code == 422
