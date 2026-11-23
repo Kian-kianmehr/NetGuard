@@ -4,7 +4,7 @@ import { formatFaNumber as num, formatTime, safeText, asArray } from "../lib/dat
 import { Badge, Card, DataBanner, DataMeta, EmptyState, LoadingState, Metric, Notice, SectionIntro, SelectTabs, Table } from "../components/ui.jsx";
 import { SignalChart } from "../components/charts.jsx";
 
-import { severity, SignalStatus, ConditionCard, SignalSummaryCard, AiBrief } from "./shared.jsx";
+import { severity, SignalStatus, ConditionCard, SignalSummaryCard } from "./shared.jsx";
 
 export function OverviewPage({ dashboard, dashboardStatus, onRetry, hours, onHours, onNavigate }) {
   const analysis = dashboard?.analysis || {};
@@ -35,7 +35,6 @@ export function OverviewPage({ dashboard, dashboardStatus, onRetry, hours, onHou
             <Metric label="انحراف‌های شناسایی‌شده" value={num(analysis.anomalous_sources, 0)} hint="نیازمند بررسی با شواهد دیگر" icon="⌁" tone={analysis.anomalous_sources ? "warning" : "default"} />
             <Metric label="رخدادهای بازه" value={num(events.length, 0)} hint="رخداد و هشدار عملیاتی" icon="!" />
           </div>
-          <AiBrief intelligence={analysis.intelligence} />
           <Card title="شاخص‌های اصلی" eyebrow="نمای زنده از دادهٔ ذخیره‌شده" subtitle="هر شاخص جداگانه سنجیده می‌شود؛ اعداد با واحدهای متفاوت با هم جمع نمی‌شوند.">
             {signals.length ? <div className="signal-grid">{signals.map((signal) => <SignalSummaryCard key={signal.source_id} signal={signal} observations={observations} />)}</div> : <EmptyState title="شاخصی در Snapshot نیست" detail="دادهٔ ساختگی جایگزین نخواهد شد. زمان و وضعیت آخرین Snapshot را بررسی کن." />}
           </Card>
