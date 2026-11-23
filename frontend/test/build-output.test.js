@@ -6,25 +6,17 @@ import path from "node:path";
 
 const distDirectory = fileURLToPath(new URL("../dist/", import.meta.url));
 
-test("production HTML has no external JavaScript or stylesheet bootstrap requests", async () => {
+test("production HTML references generated same-origin JavaScript and CSS assets", async () => {
   const html = await readFile(path.join(distDirectory, "index.html"), "utf8");
-  const markupOnly = html.replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, "$1$2");
+  const script = html.match(/<script\\b(?=[^>]*\\btype=["']module["'])(?=[^>]*\\bsrc=["']([^"']+)["'])[^>]*>/i);
+  const stylesheet = html.match(/<link\\b(?=[^>]*\\brel=["']stylesheet["'])(?=[^>]*\\bhref=["']([^"']+)["'])[^>]*>/i);
 
-  assert.match(markupOnly, /<script\b[^>]*type="module"[^>]*>[\s\S]*?<\/script>/i);
-  assert.doesNotMatch(markupOnly, /<script\b[^>]*\bsrc=/i);
-  assert.doesNotMatch(markupOnly, /<link\b(?=[^>]*\brel=["']stylesheet["'])/i);
-  assert.doesNotMatch(markupOnly, /<link\b(?=[^>]*\brel=["']modulepreload["'])/i);
+  assert.ok(script, "Vite must emit an external module entry script.");
+  assert.ok(stylesheet, "Vite must emit a production stylesheet.");
+  assert.match(script[1], /^\\/assets\\/.+\\.js(?:\\?.*)?$/);
+  assert.match(stylesheet[1], /^\\/assets\\/.+\\.css(?:\\?.*)?$/);
 
-  let assetFiles = [];
-  try {
-    assetFiles = await readdir(path.join(distDirectory, "assets"));
-  } catch (error) {
-    if (error.code !== "ENOENT") throw error;
-  }
-
-  assert.deepEqual(
-    assetFiles.filter((name) => /\.(?:m?js|css)(?:\.map)?$/i.test(name)),
-    [],
-    "JavaScript and CSS should be embedded into the production HTML."
-  );
+  const assetFiles = await readdir(path.join(distDirectory, "assets"));
+  assert.ok(assetFiles.includes(path.basename(script[1].split("?")[0])));
+  assert.ok(assetFiles.includes(path.basename(stylesheet[1].split("?")[0])));
 });

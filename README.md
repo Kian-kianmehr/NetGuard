@@ -28,6 +28,9 @@ Supabase pg_cron / pg_net
 
 Browser → Render FastAPI (Frankfurt) → Supabase REST SELECT → netguard_snapshots
           API cache کوتاه‌مدت + cache مرورگر
+
+Supabase pg_cron / pg_net → FastAPI (protected endpoint) → Celery → Redis/Valkey
+                                                        └→ AI background worker → Supabase snapshots
 ```
 
 Frontend: React/Vite روی Render Static Site. Backend: FastAPI روی Render Free برای API خواندنی و تولید Snapshot. Database: Supabase PostgreSQL. Collectorها سه Supabase Edge Function مستقل‌اند. بازدیدکننده باعث شروع جمع‌آوری نمی‌شود.
@@ -41,6 +44,7 @@ Frontend: React/Vite روی Render Static Site. Backend: FastAPI روی Render F
 - `GET /api/providers/status`
 - `GET /api/iran/datacenters`
 - `POST /internal/collect-snapshots` — فقط با `x-netguard-token` معتبر.
+- `POST /internal/analyze-dashboard-cycle` — با تنظیم Redis، کار را در Celery صف می‌کند؛ تا زمان فعال‌سازی صف، مسیر سازگاری قبلی حفظ می‌شود.
 
 ## اجرای محلی
 
@@ -87,3 +91,21 @@ MVP ملی بسته می‌شود. نسخهٔ بعدی باید probeهای مس
 ## مدل‌های هوش مصنوعی
 
 NetGuard از Isolation Forest مستقل و چندشاخصی برای تشخیص ناهنجاری و یک شبکهٔ عصبی MLP دو لایهٔ پنهان برای پیش‌بینی سری زمانی استفاده می‌کند. جمع‌بندی شواهد مدل‌ها نیز به‌صورت یک گزارش کوتاه و قابل ردیابی در صفحهٔ اصلی و صفحهٔ هوش مصنوعی نمایش داده می‌شود؛ این خروجی چت‌بات زبانی آزاد نیست و در نبود دادهٔ تازه، محدودیت را صریح اعلام می‌کند. معماری، شیوهٔ آموزش، ارزیابی، محدودیت‌ها و نقشهٔ راه در [مستند معماری AI](docs/AI_ARCHITECTURE_FA.md) آمده است.
+
+
+## پردازش پس‌زمینه با Celery
+
+پردازش مدل‌های AI از مسیر درخواست داشبورد جدا نگه داشته می‌شود. API در صورت وجود `REDIS_URL` یا `CELERY_BROKER_URL`، وظیفهٔ تحلیل را در صف Celery قرار می‌دهد؛ Worker آن را اجرا و Snapshotها را در Supabase منتشر می‌کند. تا وقتی Broker تنظیم نشده باشد، endpoint از مسیر سازگاری قبلی استفاده می‌کند تا زمان‌بندی فعلی مختل نشود.
+
+اجرای محلی Worker:
+
+```bash
+celery -A netguard.celery_app:celery_app worker --loglevel=INFO --concurrency=1
+```
+
+برای Production، فایل اختیاری `render.celery.yaml` الگوی Key Value و Background Worker را فراهم می‌کند. این دو سرویس Render پلن پولی دارند و عمداً به Blueprint اصلی متصل نشده‌اند. پس از تأیید هزینه و ساخت آن‌ها:
+1. متغیرهای `SUPABASE_URL`، `SUPABASE_PUBLISHABLE_KEY` و `NETGUARD_COLLECTOR_TOKEN` را برای Worker تنظیم کنید.
+2. مقدار اتصال داخلی Key Value را با نام `REDIS_URL` به سرویس `netguard-api` اضافه کنید.
+3. پس از Live شدن Worker، endpoint محافظت‌شده به‌صورت خودکار از Celery استفاده می‌کند.
+
+تنظیم صف با سیاست `noeviction` انجام می‌شود تا کلیدهای صف به‌عنوان دادهٔ cache حذف نشوند. نتیجهٔ پردازش در Supabase ذخیره می‌شود و API cache کوتاه‌مدت آن حداکثر پس از پایان TTL تازه خواهد شد.

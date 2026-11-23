@@ -104,6 +104,13 @@ app.add_middleware(
 )
 
 
+def _queue_configured() -> bool:
+    return bool(
+        os.getenv("CELERY_BROKER_URL", "").strip()
+        or os.getenv("REDIS_URL", "").strip()
+    )
+
+
 @app.get("/health")
 def health() -> dict[str, Any]:
     configured = bool(
@@ -115,7 +122,11 @@ def health() -> dict[str, Any]:
             or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
         )
     )
-    return {"status": "ok", "database_configured": configured}
+    return {
+        "status": "ok",
+        "database_configured": configured,
+        "queue_configured": _queue_configured(),
+    }
 
 
 def _build_dashboard_snapshot(hours: int = 168) -> dict[str, Any]:
@@ -686,10 +697,22 @@ def collect_snapshots(x_netguard_token: str = Header(default="")) -> dict[str, A
 
 @app.post("/internal/analyze-dashboard-cycle")
 def analyze_dashboard_cycle(x_netguard_token: str = Header(default="")) -> dict[str, Any]:
-    """Run the CPU-bound AI pipeline in a child process, never in a dashboard request."""
+    """Queue AI work when Redis is configured; retain a safe transition fallback."""
     expected = os.getenv("NETGUARD_COLLECTOR_TOKEN", "")
     if not expected or not x_netguard_token or not __import__("hmac").compare_digest(x_netguard_token, expected):
         raise HTTPException(status_code=401, detail="unauthorized")
+
+    if _queue_configured():
+        try:
+            from netguard.tasks import analyze_dashboard_cycle_task
+
+            queued = analyze_dashboard_cycle_task.delay()
+        except Exception as exc:
+            logger.exception("Could not enqueue the AI analysis task (%s)", type(exc).__name__)
+            raise HTTPException(status_code=503, detail="analysis_queue_unavailable") from None
+        return {"status": "queued", "task_id": queued.id}
+
+    # Backward-compatible path until the Redis broker and worker are provisioned.
     try:
         result = subprocess.run(
             [sys.executable, "-m", "netguard.ai_worker"],

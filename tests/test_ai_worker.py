@@ -44,3 +44,13 @@ def test_ai_worker_publishes_all_windows_from_one_cycle_and_one_model_run(monkey
     assert all(item["analysis"]["intelligence"] is payloads["dashboard_168"]["analysis"]["intelligence"]
                for item in payloads.values())
     assert all(item["analysis_status"] == "complete" for item in payloads.values())
+
+
+
+def test_celery_task_delegates_to_the_existing_ai_pipeline(monkeypatch):
+    from netguard.tasks import analyze_dashboard_cycle_task
+
+    expected = {"status": "published", "cycle_id": "cycle-test"}
+    monkeypatch.setattr("netguard.tasks.run_once", lambda: expected)
+
+    assert analyze_dashboard_cycle_task.run() == expected

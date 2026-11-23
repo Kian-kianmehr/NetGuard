@@ -1,0 +1,30 @@
+# Optional paid infrastructure for the Celery queue.
+# Do not sync this Blueprint until the Render worker/Key Value costs are approved.
+services:
+  - type: keyvalue
+    name: netguard-queue
+    plan: starter
+    region: frankfurt
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+  - type: worker
+    name: netguard-ai-worker
+    runtime: python
+    plan: starter
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A netguard.celery_app:celery_app worker --loglevel=INFO --concurrency=1 --prefetch-multiplier=1
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: NETGUARD_COLLECTOR_TOKEN
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: netguard-queue
+          type: keyvalue
+          property: connectionString

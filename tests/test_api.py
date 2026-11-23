@@ -305,6 +305,8 @@ def test_internal_ai_worker_rejects_requests_without_secret(monkeypatch):
 
 
 def test_internal_ai_worker_runs_outside_the_dashboard_request_path(monkeypatch):
+    monkeypatch.delenv("REDIS_URL", raising=False)
+    monkeypatch.delenv("CELERY_BROKER_URL", raising=False)
     import json
     import app.main as main
 
@@ -334,3 +336,27 @@ def test_internal_ai_worker_runs_outside_the_dashboard_request_path(monkeypatch)
     assert calls[0][1]["timeout"] == 105
     assert main._SNAPSHOT_CACHE == {}
 
+
+
+
+def test_internal_ai_worker_enqueues_task_when_redis_is_configured(monkeypatch):
+    from types import SimpleNamespace
+    import netguard.tasks as tasks
+
+    monkeypatch.setenv("NETGUARD_COLLECTOR_TOKEN", "x" * 48)
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.delenv("CELERY_BROKER_URL", raising=False)
+    monkeypatch.setattr(
+        tasks.analyze_dashboard_cycle_task,
+        "delay",
+        lambda: SimpleNamespace(id="task-123"),
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/internal/analyze-dashboard-cycle",
+            headers={"x-netguard-token": "x" * 48},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "queued", "task_id": "task-123"}
