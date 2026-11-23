@@ -453,7 +453,7 @@ def _signal_trend(
         "change_percent": None,
         "status": "insufficient_history",
     }
-    if not _is_fresh(source, rows, now, observations)
+    if not _is_fresh(source, rows, now, observations):
         result["status"] = "stale_data"
         return result
     latest_time = rows[-1][0]
