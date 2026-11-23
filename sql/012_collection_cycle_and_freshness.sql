@@ -13,8 +13,6 @@ select
   latest.value as latest_value,
   case when latest.observed_at is null then null
        else extract(epoch from (now() - latest.observed_at))::bigint end as observation_age_seconds,
-  case when latest.collected_at is null then null
-       else extract(epoch from (now() - latest.collected_at))::bigint end as collection_age_seconds,
   run.started_at as last_run_started_at,
   run.status as last_run_status,
   case
@@ -28,7 +26,9 @@ select
   s.stale_after_seconds,
   run.error_code as last_run_error_code,
   run.duration_ms as last_run_duration_ms,
-  run.records_received as last_run_records_received
+  run.records_received as last_run_records_received,
+  case when latest.collected_at is null then null
+       else extract(epoch from (now() - latest.collected_at))::bigint end as collection_age_seconds
 from public.sources s
 left join lateral (
   select o.observed_at, o.collected_at, o.value
