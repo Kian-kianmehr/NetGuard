@@ -290,36 +290,7 @@ _CATEGORY_LABELS = {
 def dashboard(hours: int = 168) -> dict[str, Any]:
     if hours not in (24, 72, 168):
         raise HTTPException(status_code=422, detail="Only precomputed windows are available: 24, 72, or 168 hours.")
-    snapshot = _read_snapshot(f"dashboard_{hours}", stale_after_seconds=900)
-    # Keep the monitoring read model independent from the AI read model.
-    analysis = snapshot.get("analysis")
-    if isinstance(analysis, dict) and "intelligence" in analysis:
-        snapshot = {**snapshot, "analysis": {
-            key: value for key, value in analysis.items() if key != "intelligence"
-        }}
-    return snapshot
-
-
-@app.get("/api/intelligence")
-def intelligence_snapshot(hours: int = 24) -> dict[str, Any]:
-    """Read the latest precomputed AI result; never execute models in the API."""
-    if hours not in (24, 72, 168):
-        raise HTTPException(status_code=422, detail="Only precomputed windows are available: 24, 72, or 168 hours.")
-    snapshot = _read_snapshot(f"dashboard_{hours}", stale_after_seconds=900)
-    analysis = snapshot.get("analysis") if isinstance(snapshot.get("analysis"), dict) else {}
-    intelligence = analysis.get("intelligence")
-    if not isinstance(intelligence, dict):
-        raise HTTPException(status_code=503, detail="هنوز خروجی تحلیل هوشمند برای این بازه منتشر نشده است.")
-    return {
-        "intelligence": intelligence,
-        "snapshot_at": snapshot.get("snapshot_at"),
-        "generated_at": snapshot.get("generated_at"),
-        "analysis_completed_at": snapshot.get("analysis_completed_at"),
-        "cycle_id": snapshot.get("analysis_cycle_id") or snapshot.get("cycle_id"),
-        "snapshot_status": snapshot.get("snapshot_status"),
-        "is_stale": snapshot.get("is_stale", True),
-        "stale_after_seconds": snapshot.get("stale_after_seconds", 900),
-    }
+    return _read_snapshot(f"dashboard_{hours}", stale_after_seconds=900)
 
 
 def _build_censorship_snapshot() -> dict[str, Any]:
