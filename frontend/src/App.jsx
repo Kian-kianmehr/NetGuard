@@ -27,7 +27,7 @@ export default function App() {
     load(["dashboard_24", "intelligence_24", "censorship", "providers_status", "iran_datacenters"]);
     const refresh = () => {
       if (document.visibilityState === "visible") {
-        load(["dashboard_24", "censorship", "providers_status", "iran_datacenters"]);
+        load(["dashboard_24", "intelligence_24", "censorship", "providers_status", "iran_datacenters"]);
       }
     };
     const interval = window.setInterval(refresh, 5 * 60 * 1000);
