@@ -8,9 +8,7 @@ import { primaryNames, AiBrief, friendlySignalName, observationAgeText, explainS
 
 
 export function AiQuestionPanel({ intelligence, plainSummary, models, forecast, cause, causeIsUnclear }) {
-  const [question, setQuestion] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [busy, setBusy] = useState(false);
+  const [selectedAnswer, setSelectedAnswer] = useState(null);
   const suggestions = [
     "نیم ساعت آینده چه می‌شود؟",
     "وضعیت فعلی اینترنت ایران چطور است؟",
@@ -100,7 +98,7 @@ export function AiQuestionPanel({ intelligence, plainSummary, models, forecast, 
       text = (plainSummary?.text || "برای جمع‌بندی وضعیت فعلی دادهٔ کافی در دسترس نیست.")
         + (anomalies.length ? "\n\nشاخص‌های نیازمند توجه: " + anomalies.map((item) => friendlySignalName(item.signal)).join("، ") : "")
         + "\n\nاین جمع‌بندی در مقیاس ملی است و وضعیت اتصال یک شهر، اپراتور یا کاربر را به‌تنهایی مشخص نمی‌کند.";
-    } else if (/بیشتر|توضیح|چطور|چگونه|یعنی چه/.test(q) && messages.length) {
+    } else if (/بیشتر|توضیح|چطور|چگونه|یعنی چه/.test(q)) {
       text = "جزئیات بیشتر بر اساس داده‌های فعلی:\n" + (plainSummary?.text || "جمع‌بندی وضعیت در دسترس نیست.")
         + "\n\n" + ready.map((item) => friendlySignalName(item.signal) + ": " + explainSignalInPlainLanguage(item)).join("\n");
     } else {
@@ -110,41 +108,38 @@ export function AiQuestionPanel({ intelligence, plainSummary, models, forecast, 
     return { text, label };
   };
 
-  const ask = (raw = question) => {
-    const original = String(raw || "").trim();
-    if (!original || busy) return;
-    setQuestion("");
-    setBusy(true);
-    const result = answerQuestion(original);
-    if (result) setMessages((current) => [...current, { id: Date.now(), question: original, ...result }].slice(-12));
-    setBusy(false);
+  const selectQuestion = (prompt) => {
+    const result = answerQuestion(prompt);
+    if (result) setSelectedAnswer({ question: prompt, ...result });
   };
 
   return (
     <Card className="ai-question-panel">
-      <div className="ai-question-title"><span>✳</span> دستیار تحلیلی NETGUARD</div>
-      <p>سؤال دلخواهت را بپرس یا از پرسش‌های آماده استفاده کن. پاسخ‌ها از Snapshot شبکه، خروجی مدل‌های یادگیری ماشین و شواهد ثبت‌شده ساخته می‌شوند؛ اگر داده برای نتیجه‌گیری کافی نباشد، صریح می‌گوییم.</p>
-      <form className="ai-question-form" onSubmit={(event) => { event.preventDefault(); ask(); }}>
-        <input
-          value={question}
-          onChange={(event) => setQuestion(event.target.value)}
-          placeholder="مثلاً نیم ساعت آینده چه تغییری در BGP و پینگ می‌بینیم؟"
-          aria-label="پرسش درباره وضعیت شبکه"
-        />
-        <button type="submit" disabled={!question.trim() || busy}>{busy ? "در حال تحلیل…" : "ارسال پرسش"}</button>
-      </form>
+      <div className="ai-question-title"><span>✳</span> پرسش‌وپاسخ هوشمند NETGUARD</div>
+      <p>یکی از پرسش‌های زیر را انتخاب کن تا پاسخ آن بر اساس داده‌های پایش و خروجی مدل‌های NETGUARD نمایش داده شود.</p>
       <div className="ai-question-prompts">
-        {suggestions.map((prompt) => <button key={prompt} type="button" onClick={() => ask(prompt)}>{prompt}</button>)}
-      </div>
-      <div className="ai-chat-history" aria-live="polite">
-        {messages.map((message) => (
-          <div className="ai-chat-turn" key={message.id}>
-            <div className="ai-chat-user"><span>شما</span><p>{message.question}</p></div>
-            <div className="ai-question-answer"><small>{message.label}</small><p>{message.text}</p></div>
-          </div>
+        {suggestions.map((prompt) => (
+          <button
+            key={prompt}
+            type="button"
+            className={selectedAnswer?.question === prompt ? "active" : ""}
+            aria-pressed={selectedAnswer?.question === prompt}
+            onClick={() => selectQuestion(prompt)}
+          >
+            {prompt}
+          </button>
         ))}
       </div>
-      <small className="ai-assistant-footnote">پاسخ‌گو به داده‌های پایش و مدل‌های فعلی NETGUARD متصل است؛ برای موضوعات خارج از این داده‌ها ادعای دانستن نمی‌کند.</small>
+      {selectedAnswer ? (
+        <div className="ai-question-answer" aria-live="polite">
+          <small>{selectedAnswer.label}</small>
+          <h3>{selectedAnswer.question}</h3>
+          <p>{selectedAnswer.text}</p>
+        </div>
+      ) : (
+        <div className="ai-question-empty">برای مشاهدهٔ تحلیل، یکی از پرسش‌های بالا را انتخاب کن.</div>
+      )}
+      <small className="ai-assistant-footnote">در هر لحظه فقط پاسخ پرسش انتخاب‌شده نمایش داده می‌شود؛ انتخاب پرسش دیگر، پاسخ قبلی را جایگزین می‌کند.</small>
     </Card>
   );
 }
