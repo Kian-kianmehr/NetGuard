@@ -24,7 +24,7 @@ export default function PageContent({ page, items, statuses, hours, onHours, onR
 
   switch (page) {
     case "overview":
-      return <OverviewPage dashboard={dashboard} dashboardStatus={dashboardStatus} onRetry={retryDashboard} hours={hours} onHours={onHours} onNavigate={onNavigate} />;
+      return <OverviewPage dashboard={dashboard} dashboardStatus={dashboardStatus} intelligenceRecord={intelligenceRecord} intelligenceStatus={intelligenceStatus} onRetry={() => onRefresh([dashboardKey, intelligenceKey], true)} hours={hours} onHours={onHours} onNavigate={onNavigate} />;;
     case "quality":
       return <QualityPage dashboard={dashboard} status={dashboardStatus} onRetry={retryDashboard} hours={hours} onHours={onHours} />;
     case "censorship":
