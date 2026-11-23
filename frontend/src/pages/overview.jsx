@@ -4,7 +4,7 @@ import { formatFaNumber as num, formatTime, safeText, asArray } from "../lib/dat
 import { Badge, Card, DataBanner, DataMeta, EmptyState, LoadingState, Metric, Notice, SectionIntro, SelectTabs, Table } from "../components/ui.jsx";
 import { SignalChart } from "../components/charts.jsx";
 
-import { severity, SignalStatus, ConditionCard, SignalSummaryCard, buildPlainIntelligenceSummary } from "./shared.jsx";
+import { severity, SignalStatus, ConditionCard, SignalSummaryCard, buildPlainIntelligenceSummary, PlainForecastCard } from "./shared.jsx";
 import { AiQuestionPanel } from "./intelligence.jsx";
 
 export function OverviewPage({ dashboard, dashboardStatus, intelligenceRecord, intelligenceStatus, onRetry, hours, onHours, onNavigate }) {
@@ -27,14 +27,28 @@ export function OverviewPage({ dashboard, dashboardStatus, intelligenceRecord, i
         const intelligence = intelligenceRecord.intelligence || {};
         const cause = intelligence.cause_analysis || {};
         const causeIsUnclear = !cause.hypothesis_id || cause.evidence_strength === "none" || cause.hypothesis_id === "insufficient_evidence";
-        return <AiQuestionPanel
-          intelligence={intelligence}
-          plainSummary={buildPlainIntelligenceSummary(intelligence)}
-          models={asArray(intelligence.signals)}
-          forecast={intelligence.forecast || {}}
-          cause={cause}
-          causeIsUnclear={causeIsUnclear}
-        />;
+        const plainSummary = buildPlainIntelligenceSummary(intelligence);
+        return <>
+          <AiQuestionPanel
+            intelligence={intelligence}
+            plainSummary={plainSummary}
+            models={asArray(intelligence.signals)}
+            forecast={intelligence.forecast || {}}
+            cause={cause}
+            causeIsUnclear={causeIsUnclear}
+          />
+          <Card className="ai-plain-overview">
+            <div className="ai-plain-heading">
+              <div>
+                <span className="eyebrow">برداشت مدل از وضعیت شبکه</span>
+                <h2>{plainSummary.title}</h2>
+                <p>{plainSummary.text}</p>
+              </div>
+              <Badge tone={plainSummary.tone}>{plainSummary.label}</Badge>
+            </div>
+          </Card>
+          <PlainForecastCard forecast={intelligence.forecast || {}} />
+        </>;
       })()}
       <div className="toolbar-row">
         <SelectTabs value={hours} onChange={onHours} options={hoursOptions} label="بازهٔ زمانی" />
