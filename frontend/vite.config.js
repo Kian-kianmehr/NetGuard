@@ -10,7 +10,7 @@ function escapeClosingTag(value, tagName) {
 }
 
 function stripInlineScriptContents(html) {
-  return html.replace(/(<script\\b[^>]*>)[\\s\\S]*?(<\\/script>)/gi, "$1$2");
+  return html.replace(/(<script\b[^>]*>)[\s\S]*?(<\/script>)/gi, "$1$2");
 }
 
 export function inlineProductionAssets() {
@@ -36,13 +36,13 @@ export function inlineProductionAssets() {
         }
 
         let html = toText(htmlAsset.source);
-        const scriptTag = /<script\\b(?=[^>]*\\bsrc=["'][^"']+["'])[^>]*>\\s*<\\/script>/gi;
+        const scriptTag = /<script\b(?=[^>]*\bsrc=["'][^"']+["'])[^>]*>\s*<\/script>/gi;
         const scriptTags = html.match(scriptTag) || [];
         if (!scriptTags.length) {
           throw new Error("NetGuard HTML does not contain the Vite application entry script.");
         }
 
-        const scriptSources = scriptTags.map((tag) => tag.match(/\\bsrc=["']([^"']+)["']/i)?.[1] || "");
+        const scriptSources = scriptTags.map((tag) => tag.match(/\bsrc=["']([^"']+)["']/i)?.[1] || "");
         if (new Set(scriptSources).size !== 1 || scriptSources.some((source) => !source)) {
           throw new Error("NetGuard HTML contains multiple distinct external script entries.");
         }
@@ -52,7 +52,7 @@ export function inlineProductionAssets() {
         html = html.replace(scriptTag, () => {
           if (entryReplaced) return "";
           entryReplaced = true;
-          return "<script type=\"module\">\\n" + inlineScript + "\\n</script>";
+          return "<script type=\"module\">\n" + inlineScript + "\n</script>";
         });
 
         const cssAssets = Object.values(bundle).filter(
@@ -60,17 +60,17 @@ export function inlineProductionAssets() {
         );
         let inlinedCssCount = 0;
         html = html.replace(
-          /<link\\b(?=[^>]*\\brel=["']stylesheet["'])[^>]*>/gi,
+          /<link\b(?=[^>]*\brel=["']stylesheet["'])[^>]*>/gi,
           (tag) => {
-            const href = tag.match(/\\bhref=["']([^"']+)["']/i)?.[1];
+            const href = tag.match(/\bhref=["']([^"']+)["']/i)?.[1];
             if (!href) throw new Error("A generated stylesheet link has no href.");
-            const normalizedHref = href.split("?")[0].replace(/^\\/+/, "");
+            const normalizedHref = href.split("?")[0].replace(/^\/+/, "");
             const cssAsset = cssAssets.find(
               (asset) => normalizedHref === asset.fileName || normalizedHref.endsWith("/" + asset.fileName)
             );
             if (!cssAsset) throw new Error("Could not find generated CSS asset for " + href + ".");
             inlinedCssCount += 1;
-            return "<style>\\n" + escapeClosingTag(toText(cssAsset.source), "style") + "\\n</style>";
+            return "<style>\n" + escapeClosingTag(toText(cssAsset.source), "style") + "\n</style>";
           }
         );
 
@@ -79,15 +79,15 @@ export function inlineProductionAssets() {
         }
 
         html = html.replace(
-          /<link\\b(?=[^>]*\\brel=["']modulepreload["'])[^>]*>\\s*/gi,
+          /<link\b(?=[^>]*\brel=["']modulepreload["'])[^>]*>\s*/gi,
           ""
         );
 
         const markupOnly = stripInlineScriptContents(html);
         if (
-          /<script\\b[^>]*\\bsrc=/i.test(markupOnly) ||
-          /<link\\b(?=[^>]*\\brel=["']stylesheet["'])/i.test(markupOnly) ||
-          /<link\\b(?=[^>]*\\brel=["']modulepreload["'])/i.test(markupOnly)
+          /<script\b[^>]*\bsrc=/i.test(markupOnly) ||
+          /<link\b(?=[^>]*\brel=["']stylesheet["'])/i.test(markupOnly) ||
+          /<link\b(?=[^>]*\brel=["']modulepreload["'])/i.test(markupOnly)
         ) {
           throw new Error("NetGuard production HTML still references external bootstrap assets.");
         }
