@@ -1,76 +1,54 @@
-import React, { lazy, Suspense } from "react";
+import React from "react";
+import { OverviewPage, QualityPage } from "./overview.jsx";
+import { CensorshipPage } from "./censorship.jsx";
+import { ProvidersPage } from "./providers.jsx";
+import { IntelligencePage } from "./intelligence.jsx";
+import { AnalysisPage } from "./analysis.jsx";
+import { SignalsPage } from "./signals.jsx";
+import { EventsPage } from "./events.jsx";
+import { SourcesPage } from "./sources.jsx";
+import { MethodPage } from "./method.jsx";
 
-const OverviewPage = lazy(() => import("./overview.jsx").then((module) => ({ default: module.OverviewPage })));
-const QualityPage = lazy(() => import("./overview.jsx").then((module) => ({ default: module.QualityPage })));
-const CensorshipPage = lazy(() => import("./censorship.jsx").then((module) => ({ default: module.CensorshipPage })));
-const ProvidersPage = lazy(() => import("./providers.jsx").then((module) => ({ default: module.ProvidersPage })));
-const IntelligencePage = lazy(() => import("./intelligence.jsx").then((module) => ({ default: module.IntelligencePage })));
-const AnalysisPage = lazy(() => import("./analysis.jsx").then((module) => ({ default: module.AnalysisPage })));
-const SignalsPage = lazy(() => import("./signals.jsx").then((module) => ({ default: module.SignalsPage })));
-const EventsPage = lazy(() => import("./events.jsx").then((module) => ({ default: module.EventsPage })));
-const SourcesPage = lazy(() => import("./sources.jsx").then((module) => ({ default: module.SourcesPage })));
-const MethodPage = lazy(() => import("./method.jsx").then((module) => ({ default: module.MethodPage })));
-
+// Keep page modules in the initial application graph. The dashboard is small
+// enough for a single reliable bootstrap; navigation must never depend on a
+// late dynamic-import chunk being fetched successfully.
 export default function PageContent({ page, items, statuses, hours, onHours, onRefresh, onNavigate }) {
   const dashboardKey = "dashboard_" + hours;
+  const intelligenceKey = "intelligence_" + hours;
   const dashboard = items[dashboardKey] || null;
   const dashboardStatus = statuses[dashboardKey] || {};
+  const intelligenceRecord = items[intelligenceKey] || null;
+  const intelligenceStatus = statuses[intelligenceKey] || {};
   const retryDashboard = () => onRefresh([dashboardKey], true);
-
-  let Page = MethodPage;
-  let pageProps = {};
+  const retryIntelligence = () => onRefresh([intelligenceKey], true);
 
   switch (page) {
     case "overview":
-      Page = OverviewPage;
-      pageProps = { dashboard, dashboardStatus, onRetry: retryDashboard, hours, onHours, onNavigate };
-      break;
+      return <OverviewPage dashboard={dashboard} dashboardStatus={dashboardStatus} onRetry={retryDashboard} hours={hours} onHours={onHours} onNavigate={onNavigate} />;
     case "quality":
-      Page = QualityPage;
-      pageProps = { dashboard, status: dashboardStatus, onRetry: retryDashboard, hours, onHours };
-      break;
+      return <QualityPage dashboard={dashboard} status={dashboardStatus} onRetry={retryDashboard} hours={hours} onHours={onHours} />;
     case "censorship":
-      Page = CensorshipPage;
-      pageProps = { data: items.censorship, status: statuses.censorship, onRetry: () => onRefresh(["censorship"], true) };
-      break;
+      return <CensorshipPage data={items.censorship} status={statuses.censorship} onRetry={() => onRefresh(["censorship"], true)} />;
     case "providers":
-      Page = ProvidersPage;
-      pageProps = {
-        providersData: items.providers_status,
-        datacenters: items.iran_datacenters,
-        providerStatus: statuses.providers_status,
-        datacenterStatus: statuses.iran_datacenters,
-        onRetryProviders: () => onRefresh(["providers_status"], true),
-        onRetryDatacenters: () => onRefresh(["iran_datacenters"], true),
-      };
-      break;
+      return <ProvidersPage
+        providersData={items.providers_status}
+        datacenters={items.iran_datacenters}
+        providerStatus={statuses.providers_status}
+        datacenterStatus={statuses.iran_datacenters}
+        onRetryProviders={() => onRefresh(["providers_status"], true)}
+        onRetryDatacenters={() => onRefresh(["iran_datacenters"], true)}
+      />;
     case "intelligence":
-      Page = IntelligencePage;
-      pageProps = { dashboard, status: dashboardStatus, onRetry: retryDashboard };
-      break;
+      return <IntelligencePage record={intelligenceRecord} status={intelligenceStatus} onRetry={retryIntelligence} />;
     case "analysis":
-      Page = AnalysisPage;
-      pageProps = { dashboard, status: dashboardStatus, onRetry: retryDashboard };
-      break;
+      return <AnalysisPage dashboard={dashboard} status={dashboardStatus} onRetry={retryDashboard} />;
     case "signals":
-      Page = SignalsPage;
-      pageProps = { dashboard, status: dashboardStatus, onRetry: retryDashboard, hours, onHours };
-      break;
+      return <SignalsPage dashboard={dashboard} status={dashboardStatus} onRetry={retryDashboard} hours={hours} onHours={onHours} />;
     case "events":
-      Page = EventsPage;
-      pageProps = { dashboard, status: dashboardStatus, onRetry: retryDashboard };
-      break;
+      return <EventsPage dashboard={dashboard} status={dashboardStatus} onRetry={retryDashboard} />;
     case "sources":
-      Page = SourcesPage;
-      pageProps = { dashboard, status: dashboardStatus, onRetry: retryDashboard };
-      break;
+      return <SourcesPage dashboard={dashboard} status={dashboardStatus} onRetry={retryDashboard} />;
     default:
-      Page = MethodPage;
+      return <MethodPage />;
   }
-
-  return (
-    <Suspense fallback={<div className="loading-state"><span className="spinner" /><span>در حال بارگذاری بخش...</span></div>}>
-      <Page {...pageProps} />
-    </Suspense>
-  );
 }
