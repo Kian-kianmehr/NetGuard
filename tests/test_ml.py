@@ -47,7 +47,7 @@ def test_model_does_not_score_a_reading_beyond_source_freshness_window():
     assert signal["status"] == "stale_data"
     assert signal["score"] is None
     assert signal["observation_age_seconds"] == 35 * 60
-    assert "پنجرهٔ تازگی 30 دقیقه‌ای" in signal["interpretation"]
+    assert "مهلت 30 دقیقه‌ای" in signal["interpretation"]
 
 
 def test_model_waits_for_real_history_instead_of_making_up_training_data():
@@ -102,7 +102,7 @@ def test_forecast_uses_fresh_ping_when_bgp_observation_is_too_old():
     assert forecast["available"] is False
     assert forecast["risk_index"] is None
     assert by_signal["bgp"]["available"] is False
-    assert "آستانهٔ تازگی" in by_signal["bgp"]["reason"]
+    assert "مهلت 30 دقیقه‌ای" in by_signal["bgp"]["reason"]
     assert by_signal["ping-slash24"]["available"] is True
 
 
@@ -182,7 +182,7 @@ def test_joint_model_fuses_aligned_primary_and_merit_signals():
         rows.extend(source_rows)
 
     joint = analyze_intelligence(sources, rows)["joint_model"]
-    assert joint["available"] is True
+    assert joint["available"] is True, joint
     assert joint["sample_count"] >= 45
     assert joint["active_signals"] == ["bgp", "ping-slash24", "merit-nt"]
     assert 0.0 <= joint["score"] <= 1.0
