@@ -17,6 +17,7 @@ test("production HTML references same-origin JavaScript and CSS assets", async (
   assert.ok(stylesheetHref, "Vite must emit an external production stylesheet.");
   assert.ok(scriptSrc.startsWith("/assets/") && scriptSrc.endsWith(".js"));
   assert.ok(stylesheetHref.startsWith("/assets/") && stylesheetHref.endsWith(".css"));
+  assert.ok(html.includes('script[type="module"][src]'), "The recovery handler must find the generated entry script.");
 
   const assetFiles = await readdir(path.join(distDirectory, "assets"));
   assert.ok(assetFiles.includes(path.basename(scriptSrc.split("?")[0])));
