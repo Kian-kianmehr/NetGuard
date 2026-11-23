@@ -290,7 +290,7 @@ _CATEGORY_LABELS = {
 def dashboard(hours: int = 168) -> dict[str, Any]:
     if hours not in (24, 72, 168):
         raise HTTPException(status_code=422, detail="Only precomputed windows are available: 24, 72, or 168 hours.")
-    snapshot = _read_snapshot(f"dashboard_{hours}", stale_after_seconds=900)
+    snapshot = _read_snapshot(f"dashboard_{hours}", stale_after_seconds=3600)
     # Keep the monitoring read model independent from the AI read model.
     analysis = snapshot.get("analysis")
     if isinstance(analysis, dict) and "intelligence" in analysis:
@@ -305,7 +305,7 @@ def intelligence_snapshot(hours: int = 24) -> dict[str, Any]:
     """Read the latest precomputed AI result; never execute models in the API."""
     if hours not in (24, 72, 168):
         raise HTTPException(status_code=422, detail="Only precomputed windows are available: 24, 72, or 168 hours.")
-    snapshot = _read_snapshot(f"dashboard_{hours}", stale_after_seconds=900)
+    snapshot = _read_snapshot(f"dashboard_{hours}", stale_after_seconds=3600)
     analysis = snapshot.get("analysis") if isinstance(snapshot.get("analysis"), dict) else {}
     intelligence = analysis.get("intelligence")
     if not isinstance(intelligence, dict):

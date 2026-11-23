@@ -15,7 +15,7 @@ begin
 
   perform cron.schedule(
     'netguard-ioda-collector',
-    '*/5 * * * *',
+    '*/30 * * * *',
     $job$
       select net.http_post(
         url := (

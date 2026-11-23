@@ -46,6 +46,28 @@ def _valid_rows(source_id: str, observations: list[dict[str, Any]]) -> list[tupl
     return sorted(rows, key=lambda item: item[0])
 
 
+def _latest_collection_time(source_id: str, observations: list[dict[str, Any]]) -> datetime | None:
+    collected = [
+        parsed for row in observations
+        if row.get("source_id") == source_id
+        and (parsed := _parse_time(row.get("collected_at"))) is not None
+    ]
+    if collected:
+        return max(collected)
+    # Compatibility for legacy records and unit-test fixtures without collected_at.
+    observed = [
+        parsed for row in observations
+        if row.get("source_id") == source_id
+        and (parsed := _parse_time(row.get("observed_at"))) is not None
+    ]
+    return max(observed) if observed else None
+
+
+def _collection_age_seconds(source_id: str, observations: list[dict[str, Any]], now: datetime) -> float | None:
+    collected_at = _latest_collection_time(source_id, observations)
+    return max(0.0, (now - collected_at).total_seconds()) if collected_at else None
+
+
 def _interval_seconds(source: dict[str, Any]) -> int:
     try:
         value = int(source.get("expected_interval_seconds") or 0)
@@ -189,11 +211,16 @@ def _stale_after_seconds(source: dict[str, Any]) -> int:
         return max(1800, interval * 3)
 
 
-def _is_fresh(source: dict[str, Any], rows: list[tuple[datetime, float]], now: datetime) -> bool:
+def _is_fresh(
+    source: dict[str, Any],
+    rows: list[tuple[datetime, float]],
+    now: datetime,
+    observations: list[dict[str, Any]],
+) -> bool:
     if not rows or source.get("freshness_status", "fresh") != "fresh":
         return False
-    latest = rows[-1][0]
-    return max(0.0, (now - latest).total_seconds()) <= _stale_after_seconds(source)
+    age = _collection_age_seconds(str(source.get("source_id") or ""), observations, now)
+    return age is not None and age <= _stale_after_seconds(source)
 
 
 def _signal_model(
@@ -205,7 +232,7 @@ def _signal_model(
     interval = _interval_seconds(source)
     rows = _valid_rows(source_id, observations)
     features = _features(rows, interval)
-    source_fresh = _is_fresh(source, rows, now)
+    source_fresh = _is_fresh(source, rows, now, observations)
     observation_age = (
         max(0.0, (now - rows[-1][0]).total_seconds()) if rows else None
     )
@@ -219,6 +246,8 @@ def _signal_model(
         "training_samples": max(0, len(features) - 1),
         "expected_interval_seconds": interval,
         "observation_age_seconds": round(observation_age) if observation_age is not None else None,
+        "collection_age_seconds": round(_collection_age_seconds(source_id, observations, now))
+            if _collection_age_seconds(source_id, observations, now) is not None else None,
         "cadence_delay_after_seconds": stale_after,
         "score": None,
         "status": "collecting_history" if fresh else "stale_data",
@@ -232,8 +261,8 @@ def _signal_model(
         "interpretation": (
             f"برای آموزش اولیهٔ مدل حداقل {MIN_RAW_POINTS} مشاهدهٔ معتبر و تاریخچهٔ پیوسته لازم است."
             if fresh else (
-                f"آخرین مشاهده {round(observation_age / 60)} دقیقه قبل ثبت شده و از پنجرهٔ "
-                f"تازگی {round(stale_after / 60)} دقیقه‌ای این منبع عبور کرده است."
+                f"آخرین بستهٔ موفق {round((_collection_age_seconds(source_id, observations, now) or 0) / 60)} دقیقه قبل جمع‌آوری شده "
+                f"و از مهلت {round(stale_after / 60)} دقیقه‌ای عبور کرده است."
                 if observation_age is not None else
                 "آخرین مشاهدهٔ معتبر برای امتیازدهی فعلی به‌اندازهٔ کافی تازه نیست."
             )
@@ -286,6 +315,7 @@ def _forecast_component(
     model: dict[str, Any],
     source: dict[str, Any],
     now: datetime,
+    observations: list[dict[str, Any]],
 ) -> dict[str, Any]:
     interval = _interval_seconds(source)
     if not rows or source.get("freshness_status", "fresh") != "fresh":
@@ -297,17 +327,19 @@ def _forecast_component(
         }
     latest_time = rows[-1][0]
     age_seconds = max(0.0, (now - latest_time).total_seconds())
+    collection_age = _collection_age_seconds(str(source.get("source_id") or ""), observations, now)
     maximum_forecast_age = _stale_after_seconds(source)
-    if age_seconds > maximum_forecast_age:
+    if collection_age is None or collection_age > maximum_forecast_age:
         return {
             "signal": signal,
             "available": False,
             "reason": (
-                f"آخرین مشاهده {round(age_seconds / 60)} دقیقه قبل ثبت شده و از "
-                f"آستانهٔ تازگی {round(maximum_forecast_age / 60)} دقیقه‌ای این منبع عبور کرده است"
+                f"آخرین بستهٔ موفق {round((collection_age or 0) / 60)} دقیقه قبل جمع‌آوری شده و از "
+                f"مهلت {round(maximum_forecast_age / 60)} دقیقه‌ای عبور کرده است"
             ),
             "sample_count": len(rows),
             "observation_age_seconds": round(age_seconds),
+            "collection_age_seconds": round(collection_age) if collection_age is not None else None,
             "expected_interval_seconds": interval,
         }
     recent_start = latest_time - timedelta(minutes=FORECAST_WINDOW_MINUTES)
@@ -351,6 +383,7 @@ def _forecast_component(
             "previous_window_samples": len(previous),
             "recent_window_samples": len(recent),
             "observation_age_seconds": round(age_seconds),
+            "collection_age_seconds": round(collection_age) if collection_age is not None else None,
             "expected_interval_seconds": interval,
             "neural_model": neural,
         }
@@ -392,6 +425,7 @@ def _forecast_component(
         "previous_window_samples": len(previous),
         "recent_window_samples": len(recent),
         "observation_age_seconds": round(age_seconds),
+        "collection_age_seconds": round(collection_age) if collection_age is not None else None,
         "expected_interval_seconds": interval,
         "forecast_model": neural.get("model_name"),
         "forecast_architecture": neural.get("architecture"),
@@ -419,15 +453,17 @@ def _signal_trend(
         "change_percent": None,
         "status": "insufficient_history",
     }
-    if not _is_fresh(source, rows, now):
+    if not _is_fresh(source, rows, now, observations)
         result["status"] = "stale_data"
         return result
     latest_time = rows[-1][0]
     observation_age = max(0.0, (now - latest_time).total_seconds())
+    collection_age = _collection_age_seconds(source_id, observations, now)
     result["observation_age_seconds"] = round(observation_age)
-    if observation_age > _stale_after_seconds(source):
+    result["collection_age_seconds"] = round(collection_age) if collection_age is not None else None
+    if collection_age is None or collection_age > _stale_after_seconds(source):
         result["status"] = "stale_data"
-        result["stale_reason"] = "آخرین مشاهده از پنجرهٔ تازگی تعریف‌شده برای منبع عبور کرده است"
+        result["stale_reason"] = "آخرین بستهٔ موفق از مهلت اعتبار چرخهٔ جمع‌آوری عبور کرده است"
         return result
     recent_start = latest_time - timedelta(minutes=FORECAST_WINDOW_MINUTES)
     previous_start = recent_start - timedelta(minutes=FORECAST_WINDOW_MINUTES)
@@ -464,12 +500,13 @@ def _joint_signal_model(
         if source is None:
             continue
         rows = _valid_rows(str(source.get("source_id") or ""), observations)
-        if not rows or not _is_fresh(source, rows, now):
+        if not rows or not _is_fresh(source, rows, now, observations):
             if signal in required:
                 return {"available": False, "status": "stale_data", "status_label": "دادهٔ تازهٔ هر دو شاخص اصلی لازم است", "reason": f"دادهٔ تازهٔ {signal} موجود نیست", "score": None}
             continue
         interval = _interval_seconds(source)
-        if max(0.0, (now - rows[-1][0]).total_seconds()) > _stale_after_seconds(source):
+        collection_age = _collection_age_seconds(str(source.get("source_id") or ""), observations, now)
+        if collection_age is None or collection_age > _stale_after_seconds(source):
             if signal in required:
                 return {"available": False, "status": "stale_data", "status_label": "آخرین مشاهدهٔ یکی از شاخص‌های اصلی از پنجرهٔ تازگی عبور کرده است", "reason": f"آخرین مشاهدهٔ {signal} از آستانهٔ تازگی همان منبع عبور کرده است", "score": None}
             continue
@@ -490,8 +527,12 @@ def _joint_signal_model(
     joint_freshness_limit = min(
         _stale_after_seconds(source_by_signal[signal]) for signal in required
     )
-    if aligned_age > joint_freshness_limit:
-        return {"available": False, "status": "stale_data", "status_label": "آخرین پنجرهٔ مشترک از پنجرهٔ تازگی شاخص‌های اصلی عبور کرده است", "reason": "آخرین بازهٔ مشترک خارج از آستانهٔ تازگی BGP یا پایش فعال است", "score": None}
+    joint_collection_age = max(
+        (_collection_age_seconds(str(source_by_signal[signal].get("source_id") or ""), observations, now) or float("inf"))
+        for signal in required
+    )
+    if joint_collection_age > joint_freshness_limit:
+        return {"available": False, "status": "stale_data", "status_label": "آخرین بستهٔ جمع‌آوری‌شده از مهلت اعتبار عبور کرده است", "reason": "آخرین جمع‌آوری موفق یکی از شاخص‌های اصلی بیش از یک ساعت قبل بوده است", "score": None}
 
     active = list(required)
     merit = bucketed.get("merit-nt", {})
@@ -557,6 +598,7 @@ def _joint_signal_model(
         "dominant_feature_label": labels[active[dominant]],
         "feature_split_counts": {labels[signal]: splits[index] for index, signal in enumerate(active)},
         "observation_age_seconds": round(aligned_age),
+        "collection_age_seconds": round(joint_collection_age),
         "interpretation": (
             "مدل بدون‌نظارت در تغییرات هم‌زمان شاخص‌ها الگوی متفاوتی دیده است؛ این امتیاز علت یا خاموشی را اثبات نمی‌کند."
             if flagged else
@@ -800,6 +842,7 @@ def analyze_intelligence(
             model_by_signal.get(signal, {}),
             by_signal.get(signal, {}),
             reference_now,
+            observations,
         )
         for signal in ("bgp", "ping-slash24")
     ]

@@ -244,3 +244,35 @@ def test_analysis_brief_explains_two_fresh_primary_signals_without_overclaiming(
     assert brief["fresh_primary_signals"] == 2
     assert "سلامت همهٔ اپراتورها" in brief["summary"]
     assert brief["method"] == "model_evidence_synthesis"
+
+
+def test_recently_collected_packet_is_not_stale_when_upstream_observation_is_29_minutes_old():
+    source, rows = make_data([1000 + (index % 2) for index in range(60)], "ioda:IR:bgp", "bgp")
+    source["stale_after_seconds"] = 3600
+    latest_observed = max(datetime.fromisoformat(row["observed_at"]) for row in rows)
+    collected_at = latest_observed + timedelta(minutes=28)
+    for row in rows:
+        row["collected_at"] = collected_at.isoformat()
+    result = analyze_intelligence([source], rows, now=latest_observed + timedelta(minutes=29))
+    signal = result["signals"][0]
+    assert signal["status"] == "ready"
+    assert signal["observation_age_seconds"] == 29 * 60
+    assert signal["collection_age_seconds"] == 60
+
+
+def test_last_successful_collection_remains_usable_for_one_hour_then_expires():
+    source, rows = make_data([1000 + (index % 2) for index in range(60)], "ioda:IR:bgp", "bgp")
+    source["stale_after_seconds"] = 3600
+    latest_observed = max(datetime.fromisoformat(row["observed_at"]) for row in rows)
+    for row in rows:
+        row["collected_at"] = latest_observed.isoformat()
+    within_grace = analyze_intelligence(
+        [source], rows, now=latest_observed + timedelta(minutes=59)
+    )["signals"][0]
+    after_grace = analyze_intelligence(
+        [source], rows, now=latest_observed + timedelta(minutes=61)
+    )["signals"][0]
+    assert within_grace["status"] == "ready"
+    assert within_grace["collection_age_seconds"] == 59 * 60
+    assert after_grace["status"] == "stale_data"
+    assert after_grace["collection_age_seconds"] == 61 * 60

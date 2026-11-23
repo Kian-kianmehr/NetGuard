@@ -12,7 +12,7 @@ class Source:
     unit: str
     description: str
     expected_interval_seconds: int = 300
-    stale_after_seconds: int = 1800
+    stale_after_seconds: int = 3600
 
 
 SOURCES = (
@@ -23,7 +23,7 @@ SOURCES = (
            expected_interval_seconds=600, stale_after_seconds=2400),
     Source("ioda:IR:merit-nt", "merit-nt", "تلسکوپ شبکه", "Unique source IPs",
            "مشاهدات تلسکوپ شبکهٔ Merit؛ تغییر آن به‌تنهایی علت اختلال را اثبات نمی‌کند.",
-           stale_after_seconds=7200),
+           stale_after_seconds=3600),
 )
 
 
