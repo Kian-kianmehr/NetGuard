@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { deriveDisplayNationalSummary, describeCoverage } from "../public-status.js";
 import { formatFaNumber as num, formatTime, safeText, asArray } from "../lib/data.js";
 import { Badge, Card, DataBanner, DataMeta, EmptyState, LoadingState, Metric, Notice, SectionIntro, SelectTabs, Table } from "../components/ui.jsx";
@@ -6,143 +6,6 @@ import { SignalChart } from "../components/charts.jsx";
 
 import { primaryNames, AiBrief, friendlySignalName, observationAgeText, explainSignalInPlainLanguage, buildPlainIntelligenceSummary, PlainForecastCard, forecastPlainDescription } from "./shared.jsx";
 
-
-export function AiQuestionPanel({ intelligence, plainSummary, models, forecast, cause, causeIsUnclear }) {
-  const [selectedAnswer, setSelectedAnswer] = useState(null);
-  const suggestions = [
-    "نیم ساعت آینده چه می‌شود؟",
-    "وضعیت فعلی اینترنت ایران چطور است؟",
-    "کدام شاخص تغییر غیرعادی دارد؟",
-    "وضعیت BGP و مسیرهای اینترنت چیست؟",
-    "تلسکوپ شبکه چه چیزی نشان می‌دهد؟",
-    "پینگ در چه وضعیتی است؟",
-    "چرا ممکن است اختلال رخ داده باشد؟",
-    "دقت و محدودیت پیش‌بینی چقدر است؟",
-  ];
-
-  const answerQuestion = (raw) => {
-    const original = String(raw || "").trim();
-    if (!original) return null;
-    const q = original.replace(/[يى]/g, "ی").replace(/ك/g, "ک").toLowerCase();
-    const ready = models.filter((item) => item.status === "ready");
-    const anomalies = models.filter((item) => item.is_anomaly);
-    const availableForecasts = asArray(forecast?.components).filter((item) => item.available);
-    const forecastLine = (item, minutes) => {
-      const point = asArray(item.horizon_projections).find((entry) => Number(entry.minutes) === minutes)
-        || asArray(item.horizon_projections).find((entry) => Number(entry.minutes) === 30);
-      if (!point) return null;
-      const direction = Number(point.projected_change_percent) > 0.1 ? "افزایش"
-        : Number(point.projected_change_percent) < -0.1 ? "کاهش" : "تقریباً ثابت";
-      return friendlySignalName(item.signal) + ": مقدار فعلی " + num(item.current_value, 2)
-        + "؛ مقدار پیش‌بینی‌شده " + num(point.projected_value, 2)
-        + " (" + direction + " " + num(Math.abs(Number(point.projected_change_percent) || 0), 2) + "٪).";
-    };
-    const forecastAnswer = (minutes) => {
-      const lines = availableForecasts.map((item) => forecastLine(item, minutes)).filter(Boolean);
-      if (lines.length) {
-        return "پیش‌بینی مدل برای " + num(minutes, 0) + " دقیقهٔ آینده بر اساس آخرین بستهٔ تحلیل:\n\n"
-          + lines.join("\n")
-          + "\n\nاین خروجی برآورد روند شاخص‌هاست، نه احتمال قطعی قطع اینترنت. اعتبار آن به کیفیت داده و خطای اعتبارسنجی هر مدل وابسته است.";
-      }
-      const partial = forecastPlainDescription(forecast || {});
-      const reasons = asArray(forecast?.components).map((item) => item.reason).filter(Boolean);
-      return partial + (reasons.length ? "\n\nجزئیات: " + [...new Set(reasons)].join("؛ ") : "")
-        + "\n\nآخرین تحلیل ذخیره‌شده خروجی عددی قابل انتشار برای این افق ندارد؛ عددی را حدس نمی‌زنم. می‌توانی از دکمهٔ به‌روزرسانی استفاده کنی تا آخرین Snapshot دریافت شود.";
-    };
-    const findSignal = (signal) => models.find((item) => item.signal === signal);
-    const signalAnswer = (item) => item
-      ? friendlySignalName(item.signal) + "\n" + explainSignalInPlainLanguage(item)
-        + "\nمقدار فعلی: " + num(item.current_value, 2)
-        + " · تعداد نمونه: " + num(item.sample_count, 0)
-        + " · سن آخرین مشاهده: " + observationAgeText(item.observation_age_seconds)
-        + " · سن آخرین جمع‌آوری: " + observationAgeText(item.collection_age_seconds) + "."
-      : "برای این شاخص در Snapshot فعلی داده‌ای ثبت نشده است.";
-    let text = "";
-    let label = "تحلیل بر پایهٔ داده‌های NETGUARD";
-    if (/پیش.?بین|آینده|نیم.?ساعت|نیم ساعت|۳۰ دقیقه|30 دقیقه|یک ساعت|۶۰ دقیقه|60 دقیقه|۱۵ دقیقه|15 دقیقه/.test(q)) {
-      const minutes = /۶۰|60|یک ساعت/.test(q) ? 60 : /۱۵|15/.test(q) ? 15 : 30;
-      text = forecastAnswer(minutes);
-      label = "خروجی مدل پیش‌بینی";
-    } else if (/bgp|مسیر|مسیرها|دیدپذیری/.test(q)) {
-      text = signalAnswer(findSignal("bgp"));
-    } else if (/تلسکوپ|merit|هانی.?پات/.test(q)) {
-      text = signalAnswer(findSignal("merit-nt"));
-    } else if (/پینگ|ping|پاسخ.?گوی|پاسخ.?ده/.test(q)) {
-      text = signalAnswer(findSignal("ping-slash24"));
-    } else if (/علت|چرا|دلیل|منشا|منشأ/.test(q)) {
-      text = causeIsUnclear
-        ? "با شواهد فعلی علت مشخصی قابل تأیید نیست. مدل می‌تواند هم‌زمانی یا تغییر شاخص‌ها را نشان دهد، اما برای نسبت دادن آن به خرابی زیرساخت، محدودیت دسترسی یا عامل دیگر به شواهد مستقل نیاز داریم."
-        : (cause.description || cause.hypothesis_label || "یک فرضیه برای بررسی وجود دارد؛ این فرضیه تشخیص قطعی علت نیست.");
-    } else if (/ناهنجار|غیر.?معمول|هشدار|تغییر|افت|کاهش|افزایش/.test(q)) {
-      text = anomalies.length
-        ? "این شاخص‌ها از الگوی تاریخی خود فاصله گرفته‌اند: " + anomalies.map((item) => friendlySignalName(item.signal)).join("، ")
-          + ".\n\n" + anomalies.map((item) => friendlySignalName(item.signal) + ": " + explainSignalInPlainLanguage(item)).join("\n")
-          + "\n\nناهنجاری آماری به‌تنهایی به معنی اختلال سراسری یا اثبات علت نیست."
-        : ready.length
-          ? "در شاخص‌های آمادهٔ فعلی ناهنجاری‌ای از آستانهٔ مدل عبور نکرده است. این نتیجه سلامت همهٔ مناطق و اپراتورها را تضمین نمی‌کند."
-          : "هنوز مدل‌ها تاریخچهٔ کافی برای تشخیص ناهنجاری ندارند.";
-    } else if (/اطمینان|اعتماد|دقت|خطا|محدودیت|اعتبار/.test(q)) {
-      const brief = intelligence?.analysis_brief || {};
-      const errors = availableForecasts.map((item) => friendlySignalName(item.signal) + ": خطای اعتبارسنجی "
-        + (item.validation_mae_percent == null ? "ثبت نشده" : num(item.validation_mae_percent, 3) + "٪")
-        + " و مهارت نسبت به خط مبنا "
-        + (item.model_skill_percent == null ? "ثبت نشده" : num(item.model_skill_percent, 2) + "٪"));
-      text = (brief.confidence_label ? "سطح اطمینان گزارش: " + brief.confidence_label + ".\n" : "")
-        + (errors.length ? errors.join("\n") + "\n" : "")
-        + (asArray(brief.limitations).length ? "محدودیت‌ها: " + brief.limitations.join("؛ ") : "پیش‌بینی قطعی نیست و با تغییر شرایط شبکه ممکن است خطا کند.");
-    } else if (/نمونه|داده|جمع.?آوری|کالکتور|منبع|تازگ|قدیم/.test(q)) {
-      text = models.length
-        ? models.map((item) => friendlySignalName(item.signal) + ": " + num(item.sample_count, 0) + " نمونه؛ آخرین جمع‌آوری " + observationAgeText(item.collection_age_seconds) + "؛ آخرین مشاهده " + observationAgeText(item.observation_age_seconds)).join("\n")
-        : "در Snapshot فعلی اطلاعات شاخص‌ها در دسترس نیست.";
-    } else if (/وضعیت|اینترنت|اختلال|الان|فعلی|پایدار|ایران/.test(q)) {
-      text = (plainSummary?.text || "برای جمع‌بندی وضعیت فعلی دادهٔ کافی در دسترس نیست.")
-        + (anomalies.length ? "\n\nشاخص‌های نیازمند توجه: " + anomalies.map((item) => friendlySignalName(item.signal)).join("، ") : "")
-        + "\n\nاین جمع‌بندی در مقیاس ملی است و وضعیت اتصال یک شهر، اپراتور یا کاربر را به‌تنهایی مشخص نمی‌کند.";
-    } else if (/بیشتر|توضیح|چطور|چگونه|یعنی چه/.test(q)) {
-      text = "جزئیات بیشتر بر اساس داده‌های فعلی:\n" + (plainSummary?.text || "جمع‌بندی وضعیت در دسترس نیست.")
-        + "\n\n" + ready.map((item) => friendlySignalName(item.signal) + ": " + explainSignalInPlainLanguage(item)).join("\n");
-    } else {
-      text = "این سؤال را دریافت کردم، اما برای اینکه پاسخ ساختگی ندهم باید موضوع آن به یکی از داده‌ها و خروجی‌های موجود متصل باشد. می‌توانم دربارهٔ وضعیت کلی اینترنت، پیش‌بینی ۱۵/۳۰/۶۰ دقیقه‌ای، BGP، تلسکوپ Merit، Ping، ناهنجاری‌ها، علت‌های احتمالی، تازگی داده و دقت مدل تحلیل بدهم.\n\nاگر منظورت موضوع دیگری است، کمی دقیق‌تر بپرس یا یکی از پرسش‌های پیشنهادی را انتخاب کن.";
-      label = "نیاز به مشخص شدن موضوع";
-    }
-    return { text, label };
-  };
-
-  const selectQuestion = (prompt) => {
-    const result = answerQuestion(prompt);
-    if (result) setSelectedAnswer({ question: prompt, ...result });
-  };
-
-  return (
-    <Card className="ai-question-panel">
-      <div className="ai-question-title"><span>✳</span> پرسش‌وپاسخ هوشمند NETGUARD</div>
-      <p>یکی از پرسش‌های زیر را انتخاب کن تا پاسخ آن بر اساس داده‌های پایش و خروجی مدل‌های NETGUARD نمایش داده شود.</p>
-      <div className="ai-question-prompts">
-        {suggestions.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            className={selectedAnswer?.question === prompt ? "active" : ""}
-            aria-pressed={selectedAnswer?.question === prompt}
-            onClick={() => selectQuestion(prompt)}
-          >
-            {prompt}
-          </button>
-        ))}
-      </div>
-      {selectedAnswer ? (
-        <div className="ai-question-answer" aria-live="polite">
-          <small>{selectedAnswer.label}</small>
-          <h3>{selectedAnswer.question}</h3>
-          <p>{selectedAnswer.text}</p>
-        </div>
-      ) : (
-        <div className="ai-question-empty">برای مشاهدهٔ تحلیل، یکی از پرسش‌های بالا را انتخاب کن.</div>
-      )}
-      <small className="ai-assistant-footnote">در هر لحظه فقط پاسخ پرسش انتخاب‌شده نمایش داده می‌شود؛ انتخاب پرسش دیگر، پاسخ قبلی را جایگزین می‌کند.</small>
-    </Card>
-  );
-}
 
 export function IntelligencePage({ record, status, onRetry }) {
   const intelligence = record?.intelligence || {};
@@ -167,15 +30,6 @@ export function IntelligencePage({ record, status, onRetry }) {
         اینجا به‌جای دیدن صرفاً امتیاز مدل‌ها، می‌بینی چه تغییری در شبکه شناسایی شده، کدام شواهد آن را پشتیبانی می‌کنند و چه چیزهایی هنوز معلوم نیست.
       </SectionIntro>
       <DataBanner status={status} record={record} onRetry={onRetry} />
-
-      <AiQuestionPanel
-        intelligence={intelligence}
-        plainSummary={plainSummary}
-        models={models}
-        forecast={forecast}
-        cause={cause}
-        causeIsUnclear={causeIsUnclear}
-      />
 
       <Card className="ai-plain-overview">
         <div className="ai-plain-heading">
